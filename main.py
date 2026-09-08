@@ -16,13 +16,13 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 SAĞLIK KONTROLÜ (PORT BINDING) ---
+# --- RENDER 7/24 SAĞLIK KONTROL SUNUCUSU (PORT BINDING) ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot 7/24 Aktif ve Calisiyor!")
+        self.wfile.write(b"Bot 7/24 Aktif!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -39,40 +39,40 @@ def run_health_server():
 # --- ÇOK DİLLİ METİNLER ---
 TEXTS = {
     'uz': {
-        'welcome': "Assalomu alaykum! Video yuklovchi botga xush kelibsiz.\n\nInstagram, TikTok, Facebook, X (Twitter) yoki Threads havolasini yuboring.",
+        'welcome': "Assalomu alaykum! Video yuklovchi botga xush kelibsiz.\n\nInstagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring.",
         'downloading': "⏳ Video yuklab olinmoqda, iltimos kuting...",
         'uploading': "📤 Telegramga yuklanmoqda...",
         'error_size': "⚠️ Fayl hajmi Telegram cheklovidan (50 MB) katta.",
         'error_general': "❌ Yuklab olishda xatolik yuz berdi. Havolani tekshiring.",
-        'error_yt': "⚠️ YouTube bu botda qo'llab-quvvatlanmaydi. Faqat Instagram, TikTok, Facebook, X va Threads havolalarini yuboring.",
+        'unsupported': "⚠️ Iltimos, faqat Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring.",
     },
     'ru': {
-        'welcome': "Здравствуйте! Отправьте ссылку из Instagram, TikTok, Facebook, X (Twitter) или Threads.",
+        'welcome': "Здравствуйте! Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter).",
         'downloading': "⏳ Скачивается, пожалуйста подождите...",
         'uploading': "📤 Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
         'error_general': "❌ Ошибка при скачивании. Проверьте ссылку.",
-        'error_yt': "⚠️ YouTube не поддерживается. Отправьте ссылку из Instagram, TikTok, Facebook, X или Threads.",
+        'unsupported': "⚠️ Пожалуйста, отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter).",
     },
     'en': {
-        'welcome': "Hello! Send a link from Instagram, TikTok, Facebook, X (Twitter), or Threads.",
+        'welcome': "Hello! Send a link from Instagram, TikTok, Facebook, or X (Twitter).",
         'downloading': "⏳ Downloading media, please wait...",
         'uploading': "📤 Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
         'error_general': "❌ Download failed. Please verify the link.",
-        'error_yt': "⚠️ YouTube is not supported. Please send links from Instagram, TikTok, Facebook, X, or Threads.",
+        'unsupported': "⚠️ Please send links only from Instagram, TikTok, Facebook, or X (Twitter).",
     },
     'tr': {
-        'welcome': "Merhaba! Instagram, TikTok, Facebook, X (Twitter) veya Threads linki gönderebilirsiniz.",
+        'welcome': "Merhaba! Instagram, TikTok, Facebook veya X (Twitter) linki gönderebilirsiniz.",
         'downloading': "⏳ Medya indiriliyor, lütfen bekleyin...",
         'uploading': "📤 Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
         'error_general': "❌ İndirme başarısız oldu. Linki kontrol edin veya videonun herkese açık olduğundan emin olun.",
-        'error_yt': "⚠️ YouTube bu botta desteklenmemektedir. Yalnızca Instagram, TikTok, Facebook, X (Twitter) ve Threads desteklenmektedir.",
+        'unsupported': "⚠️ Lütfen yalnızca Instagram, TikTok, Facebook veya X (Twitter) linki gönderin.",
     }
 }
 
-# Sunucu RAM koruması için eşzamanlı indirme sınırı
+# Sunucu RAM koruması için eşzamanlı maksimum 2 indirme
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 
 def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE):
@@ -90,20 +90,16 @@ def get_language_keyboard():
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")]
     ])
 
-# Desteklenen platformlar (Instagram, TikTok, Facebook, X/Twitter, Threads)
+# Sadece desteklenen 4 platform: Instagram, TikTok, Facebook, X (Twitter)
 SUPPORTED_PLATFORMS = [
     r'(?:instagram\.com)',
     r'(?:tiktok\.com)',
     r'(?:facebook\.com|fb\.watch|fb\.gg)',
     r'(?:twitter\.com|x\.com)',
-    r'(?:threads\.net|threads\.com)'
 ]
 
 def is_supported_url(url: str) -> bool:
     return any(re.search(p, url, re.IGNORECASE) for p in SUPPORTED_PLATFORMS)
-
-def is_youtube_url(url: str) -> bool:
-    return bool(re.search(r'(?:youtube\.com|youtu\.be)', url, re.IGNORECASE))
 
 def get_downloaded_media_file(directory: str):
     valid_files = []
@@ -125,7 +121,7 @@ async def safe_edit_text(msg, text):
         pass
 
 # =====================================================================
-# DOĞRUDAN İNDİRME MOTORU (Instagram, TikTok, Facebook, X, Threads)
+# DOĞRUDAN İNDİRME MOTORU (Instagram, TikTok, Facebook, X)
 # =====================================================================
 def download_media_sync(url: str, download_dir: str):
     has_ffmpeg = shutil.which('ffmpeg') is not None
@@ -152,7 +148,7 @@ def download_media_sync(url: str, download_dir: str):
         title = info.get('title', 'Video') if info else 'Video'
         final_file = get_downloaded_media_file(download_dir)
         if not final_file:
-            raise RuntimeError("Medya dosyası indirilemedi.")
+            raise RuntimeError("Dosya indirilemedi.")
         return final_file, title
 
 # --- İŞLEME VE TELEGRAM'A GÖNDERME ---
@@ -170,7 +166,7 @@ async def process_download(status_msg, user_id, chat_id, url, context):
                 await safe_edit_text(status_msg, get_text(user_id, 'uploading', context))
                 clean_title = re.sub(r'[\\/*?:"<>|]', '', title)[:60]
 
-                # Doğrudan video olarak gönder; uyumsuzsa dosya olarak gönder
+                # Öncelikle video olarak göndermeyi dene; uyumsuzsa belge (dosya) olarak gönder
                 try:
                     with open(file_path, 'rb') as f:
                         await context.bot.send_video(
@@ -245,17 +241,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = url_match.group(0)
 
-    # YouTube linki atılırsa doğrudan uyar
-    if is_youtube_url(url):
-        await update.message.reply_text(get_text(user_id, 'error_yt', context))
-        return
-
-    # Desteklenmeyen bir link ise hoş geldin/bilgi mesajı at
+    # Desteklenmeyen bir link gelirse bilgilendir
     if not is_supported_url(url):
-        await update.message.reply_text(get_text(user_id, 'welcome', context))
+        await update.message.reply_text(get_text(user_id, 'unsupported', context))
         return
 
-    # DOĞRUDAN İNDİRME: Hiçbir format sormadan anında indir
+    # Sormadan anında doğrudan indirme başlatılır
     status_msg = await update.message.reply_text(get_text(user_id, 'downloading', context))
     asyncio.create_task(process_download(status_msg, user_id, chat_id, url, context))
 
@@ -264,7 +255,7 @@ def main():
     if not token:
         raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
 
-    # 7/24 kesintisiz çalışması için sağlık sunucusunu arka planda başlat
+    # Render 7/24 sağlık sunucusu arka planda başlatılır
     threading.Thread(target=run_health_server, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
@@ -272,7 +263,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot 7/24 aktif; Instagram, TikTok, Facebook, X ve Threads hazır!")
+    print("Bot 7/24 aktif; Instagram, TikTok, Facebook ve X (Twitter) hazır!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER WEB SERVICE HEALTH CHECK ---
+# --- RENDER 7/24 WEB SERVER ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -23,54 +23,54 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
 
     def log_message(self, format, *args):
-        return  # Log kirliliğini engelle
+        return
 
 def run_health_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-# --- ÇOK DİLLİ METİNLER (UZ, RU, EN, TR) ---
+# --- ÇOK DİLLİ METİNLER ---
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Video yuklab beruvchi botga xush kelibsiz.\n\nYouTube, Instagram, TikTok yoki Facebook havolasini yuboring.",
         'choose_format': "Qaysi formatda yuklab olmoqchisiz?",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ovoz (MP3)",
-        'downloading': "Yuklab olinmoqda, iltimos kuting...",
-        'uploading': "Telegramga yuklanmoqda...",
-        'error_size': "Kechirasiz, video hajmi Telegram cheklovidan (50 MB) katta.",
-        'error_general': "Yuklab olishda xatolik yuz berdi. Havola to'g'riligini tekshiring."
+        'downloading': "⏳ Yuklab olinmoqda, iltimos kuting...",
+        'uploading': "📤 Telegramga yuklanmoqda...",
+        'error_size': "⚠️ Video hajmi Telegram cheklovidan (50 MB) katta.",
+        'error_general': "❌ Yuklab olishda xatolik yuz berdi. Havola ochiq/to'g'riligini tekshiring."
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать в загрузчик видео.\n\nОтправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
         'choose_format': "В каком формате хотите скачать?",
         'video_btn': "🎬 Видео",
         'audio_btn': "🎵 Аудио (MP3)",
-        'downloading': "Скачивается, пожалуйста подождите...",
-        'uploading': "Отправка в Telegram...",
-        'error_size': "К сожалению, размер файла превышает лимит Telegram (50 МБ).",
-        'error_general': "Произошла ошибка при загрузке. Проверьте правильность ссылки."
+        'downloading': "⏳ Скачивается, пожалуйста подождите...",
+        'uploading': "📤 Отправка в Telegram...",
+        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
+        'error_general': "❌ Произошла ошибка. Убедитесь, что ссылка правильная и аккаунт открытый."
     },
     'en': {
         'welcome': "Hello! Welcome to the Video Downloader bot.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
         'choose_format': "Choose download format:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Audio (MP3)",
-        'downloading': "Downloading, please wait...",
-        'uploading': "Uploading to Telegram...",
-        'error_size': "Sorry, the media exceeds Telegram's 50 MB limit.",
-        'error_general': "An error occurred while downloading. Please check the link."
+        'downloading': "⏳ Downloading, please wait...",
+        'uploading': "📤 Uploading to Telegram...",
+        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
+        'error_general': "❌ Failed to download. Please ensure the link is public and valid."
     },
     'tr': {
         'welcome': "Merhaba! Video İndirme Botuna hoş geldiniz.\n\nYouTube, Instagram, TikTok veya Facebook linki gönderebilirsiniz.",
         'choose_format': "Hangi formatta indirmek istersiniz?",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ses (MP3)",
-        'downloading': "İndiriliyor, lütfen bekleyin...",
-        'uploading': "Telegram'a yükleniyor...",
-        'error_size': "Üzgünüz, dosya Telegram'ın 50 MB sınırından daha büyük.",
-        'error_general': "İndirme sırasında bir hata oluştu. Linkin geçerli olduğundan emin olun."
+        'downloading': "⏳ İndiriliyor, lütfen bekleyin...",
+        'uploading': "📤 Telegram'a yükleniyor...",
+        'error_size': "⚠️ Dosya Telegram'ın 50 MB sınırından daha büyük.",
+        'error_general': "❌ İndirme başarısız oldu. Linkin herkese açık ve geçerli olduğundan emin olun."
     }
 }
 
@@ -78,37 +78,114 @@ user_languages = {}
 pending_links = {}
 
 def get_text(user_id, key):
-    lang = user_languages.get(user_id, 'en')
-    return TEXTS.get(lang, TEXTS['en']).get(key, '')
+    lang = user_languages.get(user_id, 'tr')
+    return TEXTS.get(lang, TEXTS['tr']).get(key, '')
 
 def get_language_keyboard():
-    keyboard = [
-        [
-            InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"),
-            InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")
-        ],
-        [
-            InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
-            InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")
-        ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
+        [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")]
+    ])
 
 def get_format_keyboard(user_id):
-    keyboard = [
+    return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(get_text(user_id, 'video_btn'), callback_data="dl_video"),
             InlineKeyboardButton(get_text(user_id, 'audio_btn'), callback_data="dl_audio")
         ]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text(
-        "Iltimos, tilni tanlang / Выберите язык / Select language / Lütfen dil seçin:",
+        "Tilni tanlang / Выберите язык / Select language / Lütfen dil seçin:",
         reply_markup=get_language_keyboard()
     )
+
+def download_media_sync(url, is_audio, download_dir):
+    out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
+    
+    # Instagram, TikTok ve YouTube korumalarını aşmak için tarayıcı kimliği
+    ydl_opts = {
+        'outtmpl': out_tmpl,
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'http_headers': {
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+    }
+
+    if is_audio:
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        })
+    else:
+        ydl_opts.update({
+            'format': 'best[ext=mp4][filesize<45M]/best[filesize<45M]/bestvideo[filesize<40M]+bestaudio/best',
+            'merge_output_format': 'mp4',
+        })
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = info.get('title', 'Video')
+        
+        # Klasörde inen dosyayı yakala
+        files = os.listdir(download_dir)
+        if not files:
+            raise FileNotFoundError("Dosya inemedi.")
+        
+        target_file = os.path.join(download_dir, files[0])
+        return target_file, title
+
+async def process_download(query, user_id, url, is_audio, context):
+    try:
+        await query.edit_message_text(get_text(user_id, 'downloading'))
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # İşlemi ana akışı tıkamadan arka planda çalıştır
+            file_path, title = await asyncio.to_thread(download_media_sync, url, is_audio, tmp_dir)
+            
+            # Boyut Kontrolü (50 MB)
+            size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            if size_mb > 49.5:
+                await query.edit_message_text(get_text(user_id, 'error_size'))
+                return
+
+            await query.edit_message_text(get_text(user_id, 'uploading'))
+
+            # Telegram'a Gönder
+            with open(file_path, 'rb') as f:
+                if is_audio:
+                    await context.bot.send_audio(
+                        chat_id=user_id,
+                        audio=f,
+                        title=title[:60],
+                        read_timeout=120,
+                        write_timeout=120
+                    )
+                else:
+                    await context.bot.send_video(
+                        chat_id=user_id,
+                        video=f,
+                        caption=f"🎬 {title[:60]}",
+                        supports_streaming=True,
+                        read_timeout=120,
+                        write_timeout=120
+                    )
+            
+            await query.delete_message()
+            
+    except Exception as e:
+        print(f"Hata detayi: {e}")
+        await query.edit_message_text(get_text(user_id, 'error_general'))
+    finally:
+        pending_links.pop(user_id, None)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -117,11 +194,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data.startswith("lang_"):
-        lang = data.split("_")[1]
-        user_languages[user_id] = lang
-        await query.edit_message_text(
-            f"✅ {get_text(user_id, 'welcome')}"
-        )
+        user_languages[user_id] = data.split("_")[1]
+        await query.edit_message_text(f"✅ {get_text(user_id, 'welcome')}")
         return
 
     if data in ["dl_video", "dl_audio"]:
@@ -129,80 +203,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not url:
             await query.edit_message_text(get_text(user_id, 'error_general'))
             return
-
-        is_audio = (data == "dl_audio")
-        await query.edit_message_text(get_text(user_id, 'downloading'))
-
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, process_and_send_media, query, user_id, url, is_audio, context)
-
-def download_media(url, is_audio, download_dir):
-    out_tmpl = os.path.join(download_dir, '%(id)s.%(ext)s')
-    if is_audio:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': out_tmpl,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-            'no_warnings': True,
-        }
-    else:
-        ydl_opts = {
-            'format': 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]/best[filesize<45M]/best',
-            'outtmpl': out_tmpl,
-            'merge_output_format': 'mp4',
-            'quiet': True,
-            'no_warnings': True,
-        }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
-        if is_audio:
-            filename = os.path.splitext(filename)[0] + '.mp3'
-        elif not filename.endswith('.mp4'):
-            filename = os.path.splitext(filename)[0] + '.mp4'
-        return filename, info.get('title', 'Media')
-
-def process_and_send_media(query, user_id, url, is_audio, context):
-    async def run_async_steps():
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            try:
-                loop = asyncio.get_running_loop()
-                file_path, title = await loop.run_in_executor(None, download_media, url, is_audio, tmp_dir)
-                
-                if not os.path.exists(file_path):
-                    files = os.listdir(tmp_dir)
-                    if files:
-                        file_path = os.path.join(tmp_dir, files[0])
-                    else:
-                        raise FileNotFoundError("Dosya bulunamadı.")
-
-                size_mb = os.path.getsize(file_path) / (1024 * 1024)
-                if size_mb > 49.5:
-                    await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'error_size'))
-                    return
-
-                await query.edit_message_text(get_text(user_id, 'uploading'))
-                
-                with open(file_path, 'rb') as f:
-                    if is_audio:
-                        await context.bot.send_audio(chat_id=user_id, audio=f, title=title)
-                    else:
-                        await context.bot.send_video(chat_id=user_id, video=f, caption=title, supports_streaming=True)
-                
-                await query.delete_message()
-            except Exception as e:
-                print(f"Hata: {e}")
-                await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'error_general'))
-            finally:
-                pending_links.pop(user_id, None)
-
-    asyncio.run_coroutine_threadsafe(run_async_steps(), context.application.loop)
+        
+        # Görevi arka plana fırlat ve kullanıcıyı bekletme
+        asyncio.create_task(process_download(query, user_id, url, data == "dl_audio", context))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -212,27 +215,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     match = url_pattern.search(text)
     
     if match:
-        url = match.group(0)
-        pending_links[user_id] = url
+        pending_links[user_id] = match.group(0)
         await update.message.reply_text(
             get_text(user_id, 'choose_format'),
             reply_markup=get_format_keyboard(user_id)
         )
     else:
-        if user_id not in user_languages:
-            await update.message.reply_text(
-                "Iltimos, tilni tanlang / Select language:",
-                reply_markup=get_language_keyboard()
-            )
-        else:
-            await update.message.reply_text(get_text(user_id, 'welcome'))
+        await update.message.reply_text(get_text(user_id, 'welcome'))
 
 def main():
     token = os.environ.get("BOT_TOKEN")
     if not token:
-        raise ValueError("BOT_TOKEN ayarlanmadi!")
+        raise ValueError("BOT_TOKEN eksik!")
 
-    # Render'ın servisi canlı tutması için web portunu aç
     threading.Thread(target=run_health_server, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()

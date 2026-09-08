@@ -356,7 +356,7 @@ async def fetch_prayer_times(city_input: str):
     }
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        # 1. Aşama: Nun.html standart timingsByAddress servisi
+        # 1. Aşama: Aladhan timingsByAddress servisi
         for cand in unique_candidates:
             url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
             try:
@@ -437,18 +437,21 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
     if hijri_str:
         date_line += f"  •  🌙 `{hijri_str}`"
 
+    # Her vakit adını açık tekil değişkenlere ata (Liste basılmasını önler)
+    lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = labels
+
     card = (
         f"{header}\n"
         f"📍 *[ {clean_disp.upper()} ]*\n"
         f"{date_line}\n"
         f"{fuzzy_note}\n"
         f"┌────────────────────────────┐\n"
-        f"  ▫️ *{labels[0]}:*{' ' * max(1, 9 - len(labels[0]))}`{t_fajr}`\n"
-        f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_sunrise}`\n"
-        f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_dhuhr}`\n"
-        f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_asr}`\n"
-        f"  ▫️ *{labels[4]}:*{' ' * max(1, 9 - len(labels[4]))}`{t_maghrib}`\n"
-        f"  ▫️ *{labels[5]}:*{' ' * max(1, 9 - len(labels[5]))}`{t_isha}`\n"
+        f"  ▫️ *{lbl_fajr}:*{' ' * max(1, 9 - len(lbl_fajr))}`{t_fajr}`\n"
+        f"  ▫️ *{lbl_sunrise}:*{' ' * max(1, 9 - len(lbl_sunrise))}`{t_sunrise}`\n"
+        f"  ▫️ *{lbl_dhuhr}:*{' ' * max(1, 9 - len(lbl_dhuhr))}`{t_dhuhr}`\n"
+        f"  ▫️ *{lbl_asr}:*{' ' * max(1, 9 - len(lbl_asr))}`{t_asr}`\n"
+        f"  ▫️ *{lbl_maghrib}:*{' ' * max(1, 9 - len(lbl_maghrib))}`{t_maghrib}`\n"
+        f"  ▫️ *{lbl_isha}:*{' ' * max(1, 9 - len(lbl_isha))}`{t_isha}`\n"
         f"└────────────────────────────┘\n"
         f"{footer}"
     )

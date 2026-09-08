@@ -255,46 +255,42 @@ def is_mostly_cyrillic(text: str) -> bool:
     return cyr_count >= lat_count
 
 # =====================================================================
-# ŞEHİR ADI NORMALİZASYONU VE VARYANT HARİTASI
+# ÖZBEKİSTAN RESMİ BÖLGE SLUG HARİTASI (namoz-vaqti.uz)
 # =====================================================================
-CITY_ALIASES = {
-    # Özbekistan
-    "kokand": "Kokand", "qoqon": "Kokand", "qo'qon": "Kokand", "qoʻqon": "Kokand", "коканд": "Kokand",
-    "toshkent": "Tashkent", "toskent": "Tashkent", "toshken": "Tashkent", "тошкент": "Tashkent", "ташкент": "Tashkent", "tashkent": "Tashkent",
-    "samarqand": "Samarkand", "samarkant": "Samarkand", "самарқанд": "Samarkand", "самарканд": "Samarkand", "samarkand": "Samarkand",
-    "buxoro": "Bukhara", "buhara": "Bukhara", "бухоро": "Bukhara", "bukhara": "Bukhara",
-    "andijon": "Andijan", "andjan": "Andijan", "андижон": "Andijan", "andijan": "Andijan",
-    "fargona": "Fergana", "farg'ona": "Fergana", "fargʻona": "Fergana", "фарғона": "Fergana", "фергана": "Fergana", "fergana": "Fergana",
-    "margilon": "Margilan", "marg'ilon": "Margilan", "марғилон": "Margilan", "margilan": "Margilan",
-    "urganch": "Urgench", "урганч": "Urgench", "urgench": "Urgench",
-    "xiva": "Khiva", "khiva": "Khiva", "хива": "Khiva",
-    "nukus": "Nukus", "нукус": "Nukus",
-    "jizzax": "Jizzakh", "жиззах": "Jizzakh", "jizzakh": "Jizzakh",
-    "navoiy": "Navoiy", "навоий": "Navoiy", "navoi": "Navoiy",
-    "termiz": "Termez", "термиз": "Termez", "termez": "Termez",
-    "denov": "Denau", "денов": "Denau", "denau": "Denau",
-    "qarshi": "Qarshi", "қарши": "Qarshi",
-    "guliston": "Gulistan", "гулистон": "Gulistan",
-    "shahrisabz": "Shahrisabz", "шаҳрисабз": "Shahrisabz",
-    "angren": "Angren", "ангрен": "Angren",
-    "chirchiq": "Chirchiq", "чирчиқ": "Chirchiq",
-    "zarafshon": "Zarafshan", "зарафшон": "Zarafshan",
+UZ_OFFICIAL_REGIONS = {
+    "toshkent": "toshkent", "tashkent": "toshkent", "тошкент": "toshkent", "ташкент": "toshkent",
+    "qoqon": "qoqon-shahri", "qo'qon": "qoqon-shahri", "qoʻqon": "qoqon-shahri", "kokand": "qoqon-shahri", "коканд": "qoqon-shahri",
+    "samarqand": "samarqand-shahri", "samarkand": "samarqand-shahri", "самарқанд": "samarqand-shahri",
+    "buxoro": "buxoro-shahri", "bukhara": "buxoro-shahri", "бухоро": "buxoro-shahri",
+    "andijon": "andijon-shahri", "andijan": "andijon-shahri", "андижон": "andijon-shahri",
+    "namangan": "namangan-shahri", "наманган": "namangan-shahri",
+    "fargona": "fargona-shahri", "farg'ona": "fargona-shahri", "fargʻona": "fargona-shahri", "fergana": "fargona-shahri", "фарғона": "fargona-shahri",
+    "margilon": "marghilon-shahri", "marg'ilon": "marghilon-shahri", "марғилон": "marghilon-shahri", "marghilon": "marghilon-shahri",
+    "urganch": "urganch-shahri", "urgench": "urgench-shahri", "урганч": "urgench-shahri",
+    "xiva": "xiva-shahri", "khiva": "xiva-shahri", "хива": "xiva-shahri",
+    "nukus": "nukus-shahri", "нукус": "nukus-shahri",
+    "qarshi": "qarshi-shahri", "karshi": "qarshi-shahri", "қарши": "qarshi-shahri",
+    "navoiy": "navoiy-shahri", "navoi": "navoiy-shahri", "навоий": "navoiy-shahri",
+    "termiz": "termiz-shahri", "termez": "termiz-shahri", "термиз": "termiz-shahri",
+    "denov": "denov", "denau": "denov", "денов": "denov",
+    "guliston": "guliston-shahri", "гулистон": "guliston-shahri",
+    "jizzax": "jizzax-shahri", "jizzakh": "jizzax-shahri", "жиззах": "jizzax-shahri",
+    "shahrisabz": "shahrisabz", "шаҳрисабз": "shahrisabz",
+    "angren": "angren", "ангрен": "angren",
+    "chirchiq": "chirchiq", "чирчиқ": "chirchiq",
+    "zarafshon": "zarafshon", "зарафшон": "zarafshon",
+}
 
-    # Türkiye
+GLOBAL_CITY_ALIASES = {
     "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul", "stambul": "Istanbul", "истанбул": "Istanbul", "стамбул": "Istanbul",
     "ankara": "Ankara", "анкара": "Ankara",
     "izmir": "Izmir", "измир": "Izmir",
     "bursa": "Bursa", "бурса": "Bursa",
     "antalya": "Antalya", "анталья": "Antalya",
-    "adana": "Adana", "адана": "Adana",
-    "konya": "Konya",
-    "gaziantep": "Gaziantep", "antep": "Gaziantep",
-    "sanliurfa": "Sanliurfa", "urfa": "Sanliurfa",
-    "kayseri": "Kayseri", "eskisehir": "Eskisehir", "samsun": "Samsun",
-    "trabzon": "Trabzon", "mersin": "Mersin", "malatya": "Malatya",
-    "sivas": "Sivas", "erzurum": "Erzurum", "denizli": "Denizli",
-
-    # Dünya
+    "adana": "Adana", "konya": "Konya", "gaziantep": "Gaziantep",
+    "sanliurfa": "Sanliurfa", "urfa": "Sanliurfa", "kayseri": "Kayseri",
+    "eskisehir": "Eskisehir", "samsun": "Samsun", "trabzon": "Trabzon",
+    "mersin": "Mersin", "malatya": "Malatya", "sivas": "Sivas", "erzurum": "Erzurum", "denizli": "Denizli",
     "moskva": "Moscow", "moscow": "Moscow", "москва": "Moscow",
     "almaty": "Almaty", "olmaota": "Almaty", "алматы": "Almaty",
     "astana": "Astana", "ostona": "Astana", "астана": "Astana",
@@ -305,8 +301,7 @@ CITY_ALIASES = {
     "madina": "Medina", "medine": "Medina",
     "dubai": "Dubai", "dubay": "Dubai",
     "london": "London", "лондон": "London",
-    "berlin": "Berlin",
-    "paris": "Paris", "parij": "Paris",
+    "berlin": "Berlin", "paris": "Paris", "parij": "Paris",
     "reykjavik": "Reykjavik", "reykyavik": "Reykjavik", "рейкьявик": "Reykjavik", "рейкявик": "Reykjavik",
 }
 
@@ -328,86 +323,107 @@ def clean_prayer_query(raw_text: str) -> str:
     return cleaned if cleaned else text
 
 # =====================================================================
-# ÇİFT KATMANLI KESİNTİSİZ NAMAZ VAKTİ MOTORU
+# GÜNCEL & RESMİ NAMAZ VAKTİ MOTORU
 # =====================================================================
 async def fetch_prayer_times(city_input: str):
     city_clean = clean_prayer_query(city_input)
     if not city_clean:
-        return None, None
+        return None, None, None, None, None
 
     norm = normalize_key(city_clean)
-    mapped = CITY_ALIASES.get(norm)
-
-    # Benzerlik algoritması (Yazım hatalarını düzeltir: örn. reykyavik -> Reykjavik)
-    if not mapped:
-        matches = difflib.get_close_matches(norm, list(CITY_ALIASES.keys()), n=1, cutoff=0.7)
-        if matches:
-            mapped = CITY_ALIASES[matches[0]]
-
-    candidates = []
-    if mapped:
-        candidates.append(mapped)
-    candidates.append(city_clean)
-    if not any(c in norm for c in ('uzbekistan', 'turkey', 'turkiya', 'kazakhstan', 'russia')):
-        candidates.append(f"{city_clean} Uzbekistan")
-        candidates.append(f"{city_clean} Turkey")
-
-    unique_candidates = []
-    for c in candidates:
-        if c.lower() not in [x.lower() for x in unique_candidates]:
-            unique_candidates.append(c)
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
     }
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        # 1. Aşama: Nun.html standart timingsByAddress servisi
-        for cand in unique_candidates:
+        # 1. ÖNCELİK: ÖZBEKİSTAN RESMİ PORTALI (namoz-vaqti.uz - Din ishlari bo'yicha qo'mita)
+        uz_slug = UZ_OFFICIAL_REGIONS.get(norm)
+        if not uz_slug:
+            matches = difflib.get_close_matches(norm, list(UZ_OFFICIAL_REGIONS.keys()), n=1, cutoff=0.7)
+            if matches:
+                uz_slug = UZ_OFFICIAL_REGIONS[matches[0]]
+
+        if uz_slug:
+            try:
+                uz_url = f"https://namoz-vaqti.uz/index.php?format=json&region={uz_slug}"
+                resp = await client.get(uz_url, headers=headers)
+                if resp.status_code == 200:
+                    uz_json = resp.json()
+                    times = uz_json.get("today", {}).get("times")
+                    if times:
+                        timings = {
+                            "Fajr": times.get("bomdod", "--:--"),
+                            "Sunrise": times.get("quyosh", "--:--"),
+                            "Dhuhr": times.get("peshin", "--:--"),
+                            "Asr": times.get("asr", "--:--"),
+                            "Maghrib": times.get("shom", "--:--"),
+                            "Isha": times.get("xufton", "--:--"),
+                        }
+                        meta = uz_json.get("meta", {})
+                        city_disp = meta.get("region", {}).get("name", city_clean.title())
+                        date_str = meta.get("date", "")
+                        return timings, city_disp, date_str, "", "Oʻzbekiston Din ishlari boʻyicha qoʻmitasi (Rasmiy)"
+            except Exception:
+                pass
+
+        # 2. ÖNCELİK: TÜRKİYE VE DÜNYA (Aladhan standart servisi)
+        mapped_city = GLOBAL_CITY_ALIASES.get(norm)
+        if not mapped_city:
+            matches = difflib.get_close_matches(norm, list(GLOBAL_CITY_ALIASES.keys()), n=1, cutoff=0.7)
+            if matches:
+                mapped_city = GLOBAL_CITY_ALIASES[matches[0]]
+
+        cand_list = []
+        if mapped_city:
+            cand_list.append(mapped_city)
+        cand_list.append(city_clean)
+
+        for cand in cand_list:
             url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
             try:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("code") == 200 and "data" in data and "timings" in data["data"]:
-                        return data["data"], cand
+                        t = data["data"]["timings"]
+                        d = data["data"].get("date", {})
+                        g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
+                        hijri = d.get("hijri", {})
+                        h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
+                        return t, cand, g_date, h_str, "Jonli AlAdhan API orqali olindi"
             except Exception:
                 pass
 
-        # 2. Aşama: Koordinat Destekli Arama (Geocoding -> Aladhan Koordinat API)
-        for cand in unique_candidates:
+        # 3. ÖNCELİK: KOORDİNAT DESTEKLİ HARİTA ARAMASI
+        for cand in cand_list:
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cand)}&count=1&language=en&format=json"
             try:
                 geo_resp = await client.get(geo_url, headers=headers)
                 if geo_resp.status_code == 200:
-                    geo_json = geo_resp.json()
-                    results = geo_json.get("results")
+                    results = geo_resp.json().get("results")
                     if results and len(results) > 0:
-                        first = results[0]
-                        lat = first.get("latitude")
-                        lon = first.get("longitude")
-                        found_name = first.get("name", cand)
+                        lat = results[0].get("latitude")
+                        lon = results[0].get("longitude")
+                        found_name = results[0].get("name", cand)
 
                         coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}"
                         coord_resp = await client.get(coord_url, headers=headers)
                         if coord_resp.status_code == 200:
                             c_json = coord_resp.json()
                             if c_json.get("code") == 200 and "data" in c_json and "timings" in c_json["data"]:
-                                return c_json["data"], found_name
+                                t = c_json["data"]["timings"]
+                                d = c_json["data"].get("date", {})
+                                g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
+                                hijri = d.get("hijri", {})
+                                h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
+                                return t, found_name, g_date, h_str, "Jonli AlAdhan API orqali olindi"
             except Exception:
                 pass
 
-    return None, None
+    return None, None, None, None, None
 
-def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang: str = 'uz') -> str:
-    timings = data.get("timings", {})
-    date_info = data.get("date", {})
-    readable_date = date_info.get("readable", "")
-    greg_date = date_info.get("gregorian", {}).get("date", readable_date)
-    hijri = date_info.get("hijri", {})
-    hijri_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-
+def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, greg_date: str, hijri_str: str, source_note: str, lang: str = 'uz') -> str:
     t_fajr = timings.get("Fajr", "--:--").split()[0]
     t_sunrise = timings.get("Sunrise", "--:--").split()[0]
     t_dhuhr = timings.get("Dhuhr", "--:--").split()[0]
@@ -422,30 +438,35 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
     if lang == 'tr':
         header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
         labels = ["İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI"]
-        footer = "_Sistem: Canlı AlAdhan API senkronizasyonu_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Arama: \"{clean_inp}\" ➔ *{clean_disp}* olarak belirlendi._\n" if is_fuzzy else ""
     elif lang == 'ru':
         header = "*NUN PROJECT // ВРЕМЯ НАМАЗА*"
         labels = ["ФАДЖР", "ВОСХОД", "ЗУХР", "АСР", "МАГРИБ", "ИША"]
-        footer = "_Система: Данные AlAdhan API онлайн_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Поиск: \"{clean_inp}\" ➔ *{clean_disp}* определено._\n" if is_fuzzy else ""
     elif lang == 'en':
         header = "*NUN PROJECT // PRAYER TIMES*"
         labels = ["FAJR", "SUNRISE", "DHUHR", "ASR", "MAGHRIB", "ISHA"]
-        footer = "_System: Live AlAdhan API sync_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Search: \"{clean_inp}\" ➔ Predicted as *{clean_disp}*._\n" if is_fuzzy else ""
     else:  # 'uz'
         header = "*NUN PROJECT // NAMOZ VAQTLARI*"
         labels = ["BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON"]
-        footer = "_Tizim holati: Jonli AlAdhan API orqali olindi_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Qidiruv: \"{clean_inp}\" ➔ *{clean_disp}* deb aniqlandi._\n" if is_fuzzy else ""
 
-    date_line = f"📅 `{greg_date}`"
+    date_line = f"📅 `{greg_date}`" if greg_date else ""
     if hijri_str:
-        date_line += f"  •  🌙 `{hijri_str}`"
+        date_line += f"  •  🌙 `{hijri_str}`" if date_line else f"🌙 `{hijri_str}`"
 
-    # Her satır için tekil değişkenler atanarak liste parantezleri kesin olarak engellenir
-    lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = labels
+    # Her satıra tekil etiket atanır
+    lbl_fajr = labels[0]
+    lbl_sunrise = labels
+    lbl_dhuhr = labels
+    lbl_asr = labels
+    lbl_maghrib = labels
+    lbl_isha = labels
 
     card = (
         f"{header}\n"
@@ -465,6 +486,143 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
     return card
 
 # =====================================================================
+# SAHİH SABAH VE AKŞAM ZİKİRLERİ VERİTABANI
+# =====================================================================
+ADHKAAR_DATA = {
+    'morning': [
+        {
+            'count': "1x",
+            'arabic': "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
+            'uz': "Biz ham, butun mulk ham Allohga tegishli boʻlgan holda tong ottirdik. Hamd Allohgadir. Allohdan oʻzga iloh yoʻq, U yagonadir va sherigi yoʻqdir. Mulk ham, hamd ham Ungadir va U barcha narsaga qodirdir.",
+            'tr': "Biz de mülk de Allah için sabaha erdik. Hamd Allah'adır. Allah'tan başka ilah yoktur, O tektir ve ortağı yoktur. Mülk O'nundur, hamd O'nadır ve O her şeye kadirdir.",
+            'ru': "Мы дожили до утра, и утро встретила власть, принадлежащая Аллаху. Хвала Аллаху, нет бога, кроме одного лишь Аллаха, у Которого нет сотоварища. Ему принадлежит владычество, Ему хвала, и Он над всякой вещью властен.",
+            'en': "We have entered the morning and the kingdom belongs to Allah. All praise is due to Allah. There is no god but Allah alone, having no partner. To Him belongs sovereignty and to Him is praise, and He has power over all things."
+        },
+        {
+            'count': "1x",
+            'name_uz': "Sayyidul Istigʻfor",
+            'name_tr': "Seyyidü'l İstiğfar",
+            'name_ru': "Саййидуль-Истигфар",
+            'name_en': "Sayyid al-Istighfar",
+            'arabic': "اللَّهُمَّ أَنْتَ رَبِّي لاَ إِلَهَ إِلاَّ أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي، فَاغْفِرْ لِي فَإِنَّهُ لاَ يَغْفِرُ الذُّنُوبَ إِلاَّ أَنْتَ",
+            'uz': "Allohim, Sen mening Rabbimsan, Sendan oʻzga iloh yoʻq. Meni Sen yaratding va men Sening qulingman. Kuchim yetganicha ahding va vaʼdangdaman. Qilgan ishlarimning yomonligidan Sendan panoh tilayman. Menga bergan neʼmatingni eʼtirof etaman va gunohimni boʻynimga olaman. Meni kechir, zero gunohlarni faqat Sendan oʻzga hech kim kechira olmas.",
+            'tr': "Allahım! Sen benim Rabbimsin, Senden başka ilah yoktur. Beni Sen yarattın, ben Senin kulunum ve gücüm yettiğince Sana verdiğim söz ve ahid üzerindeyim. Yaptıklarımın şerrinden Sana sığınırım. Üzerimdeki nimetini itiraf eder, günahımı da kabul ederim. Beni bağışla; çünkü günahları Senden başkası bağışlayamaz.",
+            'ru': "О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. И я буду хранить верность завету и обещанию, данному Тебе, пока у меня хватит сил. Прибегаю к Твоей защите от зла того, что я совершил. Признаю милость, оказанную Тобой мне, и признаю грех свой, прости же меня, ведь никто не прощает грехов, кроме Тебя!",
+            'en': "O Allah, You are my Lord, there is no deity except You. You have created me and I am Your slave, and I am on Your covenant and promise as much as I can. I seek refuge in You from the evil of what I have done. I acknowledge Your favor upon me and I acknowledge my sin, so forgive me, for verily none forgives sins except You."
+        },
+        {
+            'count': "3x",
+            'arabic': "بِسْمِ اللَّهِ الَّذِي لاَ يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الأَرْضِ وَلاَ فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ",
+            'uz': "Allohning ismi bilan boshlaymanki, Uning ismi tufayli na yerda va na osmonda hech bir narsa zarar yetkaza olmaydi. U Eshituvchi va Biluvchidir.",
+            'tr': "İsmiyle yerde ve gökte hiçbir şeyin zarar veremeyeceği Allah'ın adıyla. O, hakkıyla işitendir, kemaliyle bilendir.",
+            'ru': "С именем Аллаха, с именем Которого ничто не причинит вреда ни на земле, ни на небе, ведь Он — Слышащий, Знающий!",
+            'en': "In the name of Allah, with whose name nothing can cause harm on earth nor in the heavens, and He is the All-Hearing, the All-Knowing."
+        },
+        {
+            'count': "3x",
+            'arabic': "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالإِسْلاَمِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا",
+            'uz': "Allohni Rabbim, Islomni dinim va Muhammad sollallohu alayhi vasallamni paygʻambarim deb rozi boʻldim.",
+            'tr': "Rab olarak Allah'tan, din olarak İslam'dan, peygamber olarak Muhammed (s.a.v)'den razı oldum.",
+            'ru': "Доволен я Аллахом как Господом, исламом — как религией и Мухаммадом (да благословит его Аллах и приветствует) — как пророком!",
+            'en': "I am pleased with Allah as my Lord, with Islam as my religion, and with Muhammad (peace and blessings be upon him) as my Prophet."
+        },
+        {
+            'count': "1x",
+            'arabic': "يَا حَيُّ يَا قَيُّومُ بِرَحْمَتِكَ أَسْتَغِيثُ، أَصْلِحْ لِي شَأْنِي كُلَّهُ، وَلاَ تَكِلْنِي إِلَى نَفْسِي طَرْفَةَ عَيْنٍ",
+            'uz': "Yo Hayy, yo Qayyum! Rahmating ila yordam soʻrayman. Mening barcha ishlarimni isloh qil va meni koʻz ochib yumgunchalik fursat ham oʻz nafsimga tashlab qoʻyma.",
+            'tr': "Ey daima diri olan Hayy ve her şeyi ayakta tutan Kayyûm! Rahmetinle yardımını dilerim. Bütün işlerimi ıslah et ve beni göz açıp kapayıncaya kadar bile olsa nefsimle baş başa bırakma.",
+            'ru': "О Живой, о Вседержитель! К милости Твоей прибегаю за помощью: приведи в порядок все мои дела и не вверяй меня душе моей ни на мгновение ока!",
+            'en': "O Ever Living, O Sustainer of all! By Your mercy I seek assistance, rectify for me all of my affairs and do not leave me to myself, even for the blink of an eye."
+        }
+    ],
+    'evening': [
+        {
+            'count': "1x",
+            'arabic': "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
+            'uz': "Biz ham, butun mulk ham Allohga tegishli boʻlgan holda kechga yetdik. Hamd Allohgadir. Allohdan oʻzga iloh yoʻq, U yagonadir va sherigi yoʻqdir. Mulk ham, hamd ham Ungadir va U barcha narsaga qodirdir.",
+            'tr': "Biz de mülk de Allah için akşama erdik. Hamd Allah'adır. Allah'tan başka ilah yoktur, O tektir ve ortağı yoktur. Mülk O'nundur, hamd O'nadır ve O her şeye kadirdir.",
+            'ru': "Мы дожили до вечера, и вечер встретила власть, принадлежащая Аллаху. Хвала Аллаху, нет бога, кроме одного лишь Аллаха, у Которого нет сотоварища. Ему принадлежит владычество, Ему хвала, и Он над всякой вещью властен.",
+            'en': "We have reached the evening and at this very time unto Allah belongs all dominion, and all praise is for Allah. None has the right to be worshipped but Allah alone, having no partner. His is the sovereignty and His is the praise, and He has power over all things."
+        },
+        {
+            'count': "1x",
+            'name_uz': "Sayyidul Istigʻfor",
+            'name_tr': "Seyyidü'l İstiğfar",
+            'name_ru': "Саййидуль-Истигфар",
+            'name_en': "Sayyid al-Istighfar",
+            'arabic': "اللَّهُمَّ أَنْتَ رَبِّي لاَ إِلَهَ إِلاَّ أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عهدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي، فَاغْفِرْ لِي فَإِنَّهُ لاَ يَغْفِرُ الذُّنُوبَ إِلاَّ أَنْتَ",
+            'uz': "Allohim, Sen mening Rabbimsan, Sendan oʻzga iloh yoʻq. Meni Sen yaratding va men Sening qulingman. Kuchim yetganicha ahding va vaʼdangdaman. Qilgan ishlarimning yomonligidan Sendan panoh tilayman. Menga bergan neʼmatingni eʼtirof etaman va gunohimni boʻynimga olaman. Meni kechir, zero gunohlarni faqat Sendan oʻzga hech kim kechira olmas.",
+            'tr': "Allahım! Sen benim Rabbimsin, Senden başka ilah yoktur. Beni Sen yarattın, ben Senin kulunum ve gücüm yettiğince Sana verdiğim söz ve ahid üzerindeyim. Yaptıklarımın şerrinden Sana sığınırım. Üzerimdeki nimetini itiraf eder, günahımı da kabul ederim. Beni bağışla; çünkü günahları Senden başkası bağışlayamaz.",
+            'ru': "О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. И я буду хранить верность завету и обещанию, данному Тебе, пока у меня хватит сил. Прибегаю к Твоей защите от зла того, что я совершил. Признаю милость, оказанную Тобой мне, и признаю грех свой, прости же меня, ведь никто не прощает грехов, кроме Тебя!",
+            'en': "O Allah, You are my Lord, there is no deity except You. You have created me and I am Your slave, and I am on Your covenant and promise as much as I can. I seek refuge in You from the evil of what I have done. I acknowledge Your favor upon me and I acknowledge my sin, so forgive me, for verily none forgives sins except You."
+        },
+        {
+            'count': "3x",
+            'arabic': "بِسْمِ اللَّهِ الَّذِي لاَ يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الأَرْضِ وَلاَ فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ",
+            'uz': "Allohning ismi bilan boshlaymanki, Uning ismi tufayli na yerda va na osmonda hech bir narsa zarar yetkaza olmaydi. U Eshituvchi va Biluvchidir.",
+            'tr': "İsmiyle yerde ve gökte hiçbir şeyin zarar veremeyeceği Allah'ın adıyla. O, hakkıyla işitendir, kemaliyle bilendir.",
+            'ru': "С именем Аллаха, с именем Которого ничто не причинит вреда ни на земле, ни на небе, ведь Он — Слышащий, Знающий!",
+            'en': "In the name of Allah, with whose name nothing can cause harm on earth nor in the heavens, and He is the All-Hearing, the All-Knowing."
+        },
+        {
+            'count': "3x",
+            'arabic': "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالإِسْلاَمِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا",
+            'uz': "Allohni Rabbim, Islomni dinim va Muhammad sollallohu alayhi vasallamni paygʻambarim deb rozi boʻldim.",
+            'tr': "Rab olarak Allah'tan, din olarak İslam'dan, peygamber olarak Muhammed (s.a.v)'den razı oldum.",
+            'ru': "Доволен я Аллахом как Господом, исламом — как религией и Мухаммадом (да благословит его Аллах и приветствует) — как пророком!",
+            'en': "I am pleased with Allah as my Lord, with Islam as my religion, and with Muhammad (peace and blessings be upon him) as my Prophet."
+        },
+        {
+            'count': "1x",
+            'arabic': "يَا حَيُّ يَا قَيُّومُ بِرَحْمَتِكَ أَسْتَغِيثُ، أَصْلِحْ لِي شَأْنِي كُلَّهُ، وَلاَ تَكِلْنِي إِلَى نَفْسِي طَرْفَةَ عَيْنٍ",
+            'uz': "Yo Hayy, yo Qayyum! Rahmating ila yordam soʻrayman. Mening barcha ishlarimni isloh qil va meni koʻz ochib yumgunchalik fursat ham oʻz nafsimga tashlab qoʻyma.",
+            'tr': "Ey daima diri olan Hayy ve her şeyi ayakta tutan Kayyûm! Rahmetinle yardımını dilerim. Bütün işlerimi ıslah et ve beni göz açıp kapayıncaya kadar bile olsa nefsimle baş başa bırakma.",
+            'ru': "О Живой, о Вседержитель! К милости Твоей прибегаю за помощью: приведи в порядок все мои дела и не вверяй меня душе моей ни на мгновение ока!",
+            'en': "O Ever Living, O Sustainer of all! By Your mercy I seek assistance, rectify for me all of my affairs and do not leave me to myself, even for the blink of an eye."
+        }
+    ]
+}
+
+def format_adhkar_card(period: str, lang: str = 'uz') -> str:
+    items = ADHKAAR_DATA.get(period, [])
+    if period == 'morning':
+        if lang == 'tr':
+            header = "*NUN PROJECT // SABAH ZİKİRLERİ (SÜNNET)*\n"
+        elif lang == 'ru':
+            header = "*NUN PROJECT // УТРЕННИЕ ЗИКРЫ (СУННА)*\n"
+        elif lang == 'en':
+            header = "*NUN PROJECT // MORNING ADHKAR (SUNNAH)*\n"
+        else:
+            header = "*NUN PROJECT // TONGGI ZIKRLAR (SUNNAT)*\n"
+    else:
+        if lang == 'tr':
+            header = "*NUN PROJECT // AKŞAM ZİKİRLERİ (SÜNNET)*\n"
+        elif lang == 'ru':
+            header = "*NUN PROJECT // ВЕЧЕРНИЕ ЗИКРЫ (СУННА)*\n"
+        elif lang == 'en':
+            header = "*NUN PROJECT // EVENING ADHKAR (SUNNAH)*\n"
+        else:
+            header = "*NUN PROJECT // KECHKI ZIKRLAR (SUNNAT)*\n"
+
+    lines = [header]
+    for idx, item in enumerate(items, 1):
+        count_str = item.get('count', '1x')
+        arabic = item.get('arabic', '')
+        meaning = item.get(lang, item.get('uz', ''))
+        name_key = f'name_{lang}'
+        name = item.get(name_key)
+        name_line = f"▫️ *{name}* `[{count_str}]`\n" if name else f"▫️ *{idx}-Zikr* `[{count_str}]`\n"
+
+        lines.append(
+            f"{name_line}"
+            f"📖 {arabic}\n\n"
+            f"💬 _{meaning}_\n"
+            f"────────────────────────────"
+        )
+
+    return "\n".join(lines)
+
+# =====================================================================
 # METİNLER & MENÜ YAPILARI
 # =====================================================================
 TEXTS = {
@@ -473,10 +631,14 @@ TEXTS = {
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
         'btn_prayer': "🕌 Namoz vaqtlari",
+        'btn_adhkar': "📿 Zikrlar",
         'btn_c2l': "🔤 Krill ➔ Lotin",
         'btn_l2c': "🔤 Lotin ➔ Krill",
         'btn_lang': "🌐 Tilni tanlash",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Reykjavik*...)_",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Buxoro*...)_",
+        'prompt_adhkar': "📿 *NUN PROJECT // ZIKRLAR*\n\nQaysi zikrlarni oʻqimoqchisiz? Quyidagilardan birini tanlang:",
+        'btn_morning_adhkar': "🌅 Tonggi zikrlar",
+        'btn_evening_adhkar': "🌇 Kechki zikrlar",
         'prompt_c2l': "✍️ Kirill alifbosidagi matnni yuboring, uni Lotin alifbosiga oʻgirib beraman:",
         'prompt_l2c': "✍️ Lotin alifbosidagi matnni yuboring, uni Kirill alifbosiga oʻgirib beraman:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
@@ -492,10 +654,14 @@ TEXTS = {
         'menu_title': "📋 Главное меню:",
         'btn_video': "🎬 Скачать видео",
         'btn_prayer': "🕌 Время намаза",
+        'btn_adhkar': "📿 Зикры",
         'btn_c2l': "🔤 Кириллица ➔ Латиница",
         'btn_l2c': "🔤 Латиница ➔ Кириллица",
         'btn_lang': "🌐 Сменить язык",
         'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города для получения времени намаза:\n_(Например: *Коканд*, *Ташкент*, *Стамбул*, *Москва*, *Самарканд*...)_",
+        'prompt_adhkar': "📿 *NUN PROJECT // ЗИКРЫ*\n\nКакие зикры вы хотите прочитать? Выберите ниже:",
+        'btn_morning_adhkar': "🌅 Утренние зикры",
+        'btn_evening_adhkar': "🌇 Вечерние зикры",
         'prompt_c2l': "✍️ Отправьте текст на кириллице для перевода в латиницу:",
         'prompt_l2c': "✍️ Отправьте текст на латинице для перевода в кириллицу:",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
@@ -511,10 +677,14 @@ TEXTS = {
         'menu_title': "📋 Main Menu:",
         'btn_video': "🎬 Download Video",
         'btn_prayer': "🕌 Prayer Times",
+        'btn_adhkar': "📿 Adhkar",
         'btn_c2l': "🔤 Cyrillic ➔ Latin",
         'btn_l2c': "🔤 Latin ➔ Cyrillic",
         'btn_lang': "🌐 Change Language",
         'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name to get prayer times:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*, *Samarkand*...)_",
+        'prompt_adhkar': "📿 *NUN PROJECT // ADHKAR*\n\nWhich adhkar would you like to recite? Choose below:",
+        'btn_morning_adhkar': "🌅 Morning Adhkar",
+        'btn_evening_adhkar': "🌇 Evening Adhkar",
         'prompt_c2l': "✍️ Send text in Cyrillic to convert into Latin:",
         'prompt_l2c': "✍️ Send text in Latin to convert into Cyrillic:",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
@@ -530,10 +700,14 @@ TEXTS = {
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
         'btn_prayer': "🕌 Namaz Vakitleri",
+        'btn_adhkar': "📿 Zikirler",
         'btn_c2l': "🔤 Kiril ➔ Latin",
         'btn_l2c': "🔤 Latin ➔ Kiril",
         'btn_lang': "🌐 Dil Seçimi",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*, *Bursa*...)_",
+        'prompt_adhkar': "📿 *NUN PROJECT // ZİKİRLER*\n\nHangi zikirleri okumak istersiniz? Aşağıdan seçiniz:",
+        'btn_morning_adhkar': "🌅 Sabah Zikirleri",
+        'btn_evening_adhkar': "🌇 Akşam Zikirleri",
         'prompt_c2l': "✍️ Latin alfabesine çevirmek istediğiniz Kiril metni gönderin:",
         'prompt_l2c': "✍️ Kiril alfabesine çevirmek istediğiniz Latin metni gönderin:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
@@ -562,6 +736,7 @@ def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE) -> str:
 def get_reply_menu(user_id, context):
     return ReplyKeyboardMarkup([
         [KeyboardButton(get_text(user_id, 'btn_video', context)), KeyboardButton(get_text(user_id, 'btn_prayer', context))],
+        [KeyboardButton(get_text(user_id, 'btn_adhkar', context))],
         [KeyboardButton(get_text(user_id, 'btn_c2l', context)), KeyboardButton(get_text(user_id, 'btn_l2c', context))],
         [KeyboardButton(get_text(user_id, 'btn_lang', context))]
     ], resize_keyboard=True)
@@ -570,6 +745,14 @@ def get_language_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
         [InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+    ])
+
+def get_adhkar_selection_keyboard(user_id, context):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(get_text(user_id, 'btn_morning_adhkar', context), callback_data="adhkar_morning"),
+            InlineKeyboardButton(get_text(user_id, 'btn_evening_adhkar', context), callback_data="adhkar_evening"),
+        ]
     ])
 
 # =====================================================================
@@ -684,21 +867,25 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("start", "Botni ishga tushirish"),
             BotCommand("menu", "Asosiy menyu"),
             BotCommand("namoz", "Namoz vaqtlari"),
+            BotCommand("zikr", "Tonggi va kechki zikrlar"),
         ],
         'ru': [
             BotCommand("start", "Запустить бота"),
             BotCommand("menu", "Главное меню"),
             BotCommand("namaz", "Время намаза"),
+            BotCommand("zikr", "Утренние и вечерние зикры"),
         ],
         'en': [
             BotCommand("start", "Start the bot"),
             BotCommand("menu", "Main menu"),
             BotCommand("prayer", "Prayer times"),
+            BotCommand("zikr", "Morning and evening adhkar"),
         ],
         'tr': [
             BotCommand("start", "Botu başlat"),
             BotCommand("menu", "Ana menü"),
             BotCommand("namaz", "Namaz vakitleri"),
+            BotCommand("zikr", "Sabah ve akşam zikirleri"),
         ],
     }
     try:
@@ -738,10 +925,10 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Doğrudan /namaz Kokand veya /namoz Toshkent şeklinde girildiyse
     if context.args:
         city_query = " ".join(context.args)
-        prayer_data, resolved_name = await fetch_prayer_times(city_query)
-        if prayer_data:
+        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(city_query)
+        if timings:
             disp_name = resolved_name.title() if resolved_name else city_query.title()
-            card = format_nun_prayer_card(disp_name, city_query, prayer_data, user_lang)
+            card = format_nun_prayer_card(disp_name, city_query, timings, g_date, h_str, source_note, user_lang)
             try:
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
@@ -752,10 +939,17 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
             return
 
-    # Sadece /namoz yazıldıysa veya menüden basıldıysa buton olmadan şehir sorulur
     context.user_data['mode'] = 'prayer'
     await update.message.reply_text(
         get_text(user_id, 'prompt_prayer', context),
+        parse_mode="Markdown"
+    )
+
+async def adhkar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        get_text(user_id, 'prompt_adhkar', context),
+        reply_markup=get_adhkar_selection_keyboard(user_id, context),
         parse_mode="Markdown"
     )
 
@@ -775,15 +969,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        # Sol alttaki Telegram Menü komutlarını anında güncelle
         await update_user_bot_commands(context, user_id, selected_lang)
-
-        # Alt klavye butonlarını anında yeni dilde güncelle
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ {get_text(user_id, 'lang_changed', context)}\n\n{get_text(user_id, 'welcome', context)}",
             reply_markup=get_reply_menu(user_id, context)
         )
+        return
+
+    # ZİKİR SEÇİMİ (SABAH / AKŞAM)
+    if data in ("adhkar_morning", "adhkar_evening"):
+        period = "morning" if data == "adhkar_morning" else "evening"
+        user_lang = get_user_lang(user_id, context)
+        card = format_adhkar_card(period, user_lang)
+
+        # Diğer zikirlere geçiş butonu
+        other_period = "evening" if period == "morning" else "morning"
+        other_btn_text = get_text(user_id, f'btn_{other_period}_adhkar', context)
+        nav_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"➡️ {other_btn_text}", callback_data=f"adhkar_{other_period}")]
+        ])
+
+        try:
+            await query.message.reply_text(card, parse_mode="Markdown", reply_markup=nav_keyboard)
+        except Exception:
+            await query.message.reply_text(card, reply_markup=nav_keyboard)
         return
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -798,6 +1008,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. Menü Butonları Tıklamaları
     btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
     btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
+    btn_adh = [TEXTS[l]['btn_adhkar'] for l in TEXTS]
     btn_c2l = [TEXTS[l]['btn_c2l'] for l in TEXTS]
     btn_l2c = [TEXTS[l]['btn_l2c'] for l in TEXTS]
     btn_lng = [TEXTS[l]['btn_lang'] for l in TEXTS]
@@ -811,6 +1022,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['mode'] = 'prayer'
         await update.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
+            parse_mode="Markdown"
+        )
+        return
+
+    if raw_text in btn_adh:
+        context.user_data['mode'] = 'adhkar'
+        await update.message.reply_text(
+            get_text(user_id, 'prompt_adhkar', context),
+            reply_markup=get_adhkar_selection_keyboard(user_id, context),
             parse_mode="Markdown"
         )
         return
@@ -844,6 +1064,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_mode = context.user_data.get('mode', 'auto')
     lower_text = raw_text.lower().strip()
 
+    # Zikir kelimesi algılama
+    if bool(re.search(r'\b(zikr|zikirlar|zikirler|adhkar|azkar|зикры|зикр)\b', lower_text)):
+        await update.message.reply_text(
+            get_text(user_id, 'prompt_adhkar', context),
+            reply_markup=get_adhkar_selection_keyboard(user_id, context),
+            parse_mode="Markdown"
+        )
+        return
+
     # Kullanıcı tek başına sadece "namaz" veya "namoz" yazdıysa
     if lower_text in ('namoz', 'namaz', 'prayer', 'vaqt', 'vakit'):
         context.user_data['mode'] = 'prayer'
@@ -856,32 +1085,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
     # 3. Namaz Vakti Modu veya Açıkça Namaz Sorusu (Örn: "Kokand", "Toshkent", "namoz toshkent")
-    # Kullanıcı namaz modundayken kesinlikle çeviriye DÜŞMEZ, modunu korur!
+    # Kullanıcı namaz modundayken ASLA çeviriye DÜŞMEZ, modunu korur!
     if current_mode == 'prayer' or is_prayer_intent:
-        prayer_data, resolved_name = await fetch_prayer_times(raw_text)
-        if prayer_data:
+        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
+        if timings:
             disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
-            card = format_nun_prayer_card(disp_name, raw_text, prayer_data, user_lang)
+            card = format_nun_prayer_card(disp_name, raw_text, timings, g_date, h_str, source_note, user_lang)
             try:
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(card)
-            # Namaz modunda kalmaya devam et
             context.user_data['mode'] = 'prayer'
             return
         else:
-            # Şehir bulunamadığında ASLA Kiril/Latin çevirisine geçmez, uyarı verir!
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
             context.user_data['mode'] = 'prayer'
             return
 
-    # 4. Kiril -> Latin Modu
+    # 4. Kiril -> Latin Modu (Yalnızca kullanıcı butondan bastıysa)
     if current_mode == 'c2l':
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 5. Latin -> Kiril Modu
+    # 5. Latin -> Kiril Modu (Yalnızca kullanıcı butondan bastıysa)
     if current_mode == 'l2c':
         converted = latin_to_cyrillic(raw_text)
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
@@ -890,10 +1117,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 6. Otomatik Algılama: Menüye basmadan sadece bir şehir yazıldıysa
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
-        prayer_data, resolved_name = await fetch_prayer_times(raw_text)
-        if prayer_data:
+        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
+        if timings:
             disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
-            card = format_nun_prayer_card(disp_name, raw_text, prayer_data, user_lang)
+            card = format_nun_prayer_card(disp_name, raw_text, timings, g_date, h_str, source_note, user_lang)
             try:
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
@@ -901,7 +1128,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Cümle halindeki metinler için)
+    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Uzun cümle halindeki metinler için)
     if is_mostly_cyrillic(raw_text):
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
@@ -921,10 +1148,11 @@ def main():
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("namoz", prayer_command))
     app.add_handler(CommandHandler("namaz", prayer_command))
+    app.add_handler(CommandHandler("zikr", adhkar_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot aktif; Namaz Vakitleri, Video ve Çeviri hazır!")
+    print("Nun Bot aktif; Namaz Vakitleri, Zikirler, Video ve Çeviri hazır!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

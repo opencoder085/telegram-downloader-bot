@@ -1,5 +1,6 @@
 import os
 import re
+import difflib
 import json
 import ssl
 import shutil
@@ -257,7 +258,7 @@ def is_mostly_cyrillic(text: str) -> bool:
 # ŞEHİR ADI NORMALİZASYONU VE VARYANT HARİTASI
 # =====================================================================
 CITY_ALIASES = {
-    # Özbekistan ve Fergana Vadisi
+    # Özbekistan
     "kokand": "Kokand", "qoqon": "Kokand", "qo'qon": "Kokand", "qoʻqon": "Kokand", "коканд": "Kokand",
     "toshkent": "Tashkent", "toskent": "Tashkent", "toshken": "Tashkent", "тошкент": "Tashkent", "ташкент": "Tashkent", "tashkent": "Tashkent",
     "samarqand": "Samarkand", "samarkant": "Samarkand", "самарқанд": "Samarkand", "самарканд": "Samarkand", "samarkand": "Samarkand",
@@ -306,6 +307,7 @@ CITY_ALIASES = {
     "london": "London", "лондон": "London",
     "berlin": "Berlin",
     "paris": "Paris", "parij": "Paris",
+    "reykjavik": "Reykjavik", "reykyavik": "Reykjavik", "рейкьявик": "Reykjavik", "рейкявик": "Reykjavik",
 }
 
 def normalize_key(text: str) -> str:
@@ -336,6 +338,12 @@ async def fetch_prayer_times(city_input: str):
     norm = normalize_key(city_clean)
     mapped = CITY_ALIASES.get(norm)
 
+    # Benzerlik algoritması (Yazım hatalarını düzeltir: örn. reykyavik -> Reykjavik)
+    if not mapped:
+        matches = difflib.get_close_matches(norm, list(CITY_ALIASES.keys()), n=1, cutoff=0.7)
+        if matches:
+            mapped = CITY_ALIASES[matches[0]]
+
     candidates = []
     if mapped:
         candidates.append(mapped)
@@ -344,7 +352,6 @@ async def fetch_prayer_times(city_input: str):
         candidates.append(f"{city_clean} Uzbekistan")
         candidates.append(f"{city_clean} Turkey")
 
-    # Benzersiz aday listesi
     unique_candidates = []
     for c in candidates:
         if c.lower() not in [x.lower() for x in unique_candidates]:
@@ -356,7 +363,7 @@ async def fetch_prayer_times(city_input: str):
     }
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        # 1. Aşama: Aladhan timingsByAddress servisi
+        # 1. Aşama: Nun.html standart timingsByAddress servisi
         for cand in unique_candidates:
             url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
             try:
@@ -437,7 +444,7 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
     if hijri_str:
         date_line += f"  •  🌙 `{hijri_str}`"
 
-    # Her vakit adını açık tekil değişkenlere ata (Liste basılmasını önler)
+    # Her satır için tekil değişkenler atanarak liste parantezleri kesin olarak engellenir
     lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = labels
 
     card = (
@@ -469,7 +476,7 @@ TEXTS = {
         'btn_c2l': "🔤 Krill ➔ Lotin",
         'btn_l2c': "🔤 Lotin ➔ Krill",
         'btn_lang': "🌐 Tilni tanlash",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Buxoro*...)_",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Reykjavik*...)_",
         'prompt_c2l': "✍️ Kirill alifbosidagi matnni yuboring, uni Lotin alifbosiga oʻgirib beraman:",
         'prompt_l2c': "✍️ Lotin alifbosidagi matnni yuboring, uni Kirill alifbosiga oʻgirib beraman:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
@@ -739,6 +746,7 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(card)
+            context.user_data['mode'] = 'prayer'
             return
         else:
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
@@ -848,6 +856,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
     # 3. Namaz Vakti Modu veya Açıkça Namaz Sorusu (Örn: "Kokand", "Toshkent", "namoz toshkent")
+    # Kullanıcı namaz modundayken kesinlikle çeviriye DÜŞMEZ, modunu korur!
     if current_mode == 'prayer' or is_prayer_intent:
         prayer_data, resolved_name = await fetch_prayer_times(raw_text)
         if prayer_data:
@@ -857,10 +866,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(card)
-            context.user_data['mode'] = 'auto'
+            # Namaz modunda kalmaya devam et
+            context.user_data['mode'] = 'prayer'
             return
         else:
+            # Şehir bulunamadığında ASLA Kiril/Latin çevirisine geçmez, uyarı verir!
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
+            context.user_data['mode'] = 'prayer'
             return
 
     # 4. Kiril -> Latin Modu
@@ -875,7 +887,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 6. Otomatik Algılama: Menüye basmadan sadece bir şehir yazıldıysa (Örn: "Kokand", "Bursa", "Qo'qon")
+    # 6. Otomatik Algılama: Menüye basmadan sadece bir şehir yazıldıysa
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
         prayer_data, resolved_name = await fetch_prayer_times(raw_text)
@@ -886,9 +898,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(card)
+            context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Aksi halde metin çevirisi (Lotin <-> Kirill)
+    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Cümle halindeki metinler için)
     if is_mostly_cyrillic(raw_text):
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")

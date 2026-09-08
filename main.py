@@ -255,7 +255,7 @@ def is_mostly_cyrillic(text: str) -> bool:
     return cyr_count >= lat_count
 
 # =====================================================================
-# ŞEHİR ADI NORMALİZASYONU VE VARYANT HARİTASI
+# ŞEHİR VE YAZIM HATASI DÜZELTME
 # =====================================================================
 CITY_ALIASES = {
     # Özbekistan
@@ -328,7 +328,7 @@ def clean_prayer_query(raw_text: str) -> str:
     return cleaned if cleaned else text
 
 # =====================================================================
-# DİYANET & RESMİ HESAPLAMALI ÇOKLU API MOTORU
+# NUN PROJECT // CANLI NAMAZ VAKTİ MOTORU
 # =====================================================================
 async def fetch_prayer_times(city_input: str):
     city_clean = clean_prayer_query(city_input)
@@ -338,6 +338,7 @@ async def fetch_prayer_times(city_input: str):
     norm = normalize_key(city_clean)
     mapped = CITY_ALIASES.get(norm)
 
+    # Harf hataları için yakın eşleşme (örn: reykyavik -> Reykjavik)
     if not mapped:
         matches = difflib.get_close_matches(norm, list(CITY_ALIASES.keys()), n=1, cutoff=0.7)
         if matches:
@@ -362,10 +363,9 @@ async def fetch_prayer_times(city_input: str):
     }
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        # 1. Öncelik: Aladhan API (Diyanet İşleri Başkanlığı method=13 ve Hanefi school=1 standardı ile)
+        # 1. Aşama: Nun.html standart timingsByAddress çağrısı (Ek parametresiz kararlı sürüm)
         for cand in unique_candidates:
-            # method=13 (Diyanet) ve school=1 (Hanefi) resmi vakitleri verir
-            url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}&method=13&school=1"
+            url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
             try:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code == 200:
@@ -376,11 +376,11 @@ async def fetch_prayer_times(city_input: str):
                         g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
                         hijri = d.get("hijri", {})
                         h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-                        return t, cand, g_date, h_str, "Diyanet İşleri Başkanlığı (Canlı Senkron)"
+                        return t, cand, g_date, h_str, "Jonli AlAdhan API orqali olindi"
             except Exception:
                 pass
 
-        # 2. Öncelik: Koordinat Bazlı Arama (Open-Meteo Geocoding -> Aladhan Diyanet Koordinat)
+        # 2. Aşama: Koordinat Destekli Geocoding (Bilinmeyen ve küçük ilçeler için)
         for cand in unique_candidates:
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cand)}&count=1&language=en&format=json"
             try:
@@ -394,7 +394,7 @@ async def fetch_prayer_times(city_input: str):
                         lon = first.get("longitude")
                         found_name = first.get("name", cand)
 
-                        coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}&method=13&school=1"
+                        coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}"
                         coord_resp = await client.get(coord_url, headers=headers)
                         if coord_resp.status_code == 200:
                             c_json = coord_resp.json()
@@ -404,13 +404,13 @@ async def fetch_prayer_times(city_input: str):
                                 g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
                                 hijri = d.get("hijri", {})
                                 h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-                                return t, found_name, g_date, h_str, "Diyanet & Astronomik Koordinat Servisi"
+                                return t, found_name, g_date, h_str, "Jonli AlAdhan API orqali olindi"
             except Exception:
                 pass
 
-        # 3. Öncelik: Pray.Zone Uluslararası Açık API Servisi (Yedek kaynak)
+        # 3. Aşama: Pray.Zone Açık API Servisi
         for cand in unique_candidates:
-            pz_url = f"https://api.pray.zone/v2/times/today.json?city={urllib.parse.quote(cand)}&school=1"
+            pz_url = f"https://api.pray.zone/v2/times/today.json?city={urllib.parse.quote(cand)}"
             try:
                 pz_resp = await client.get(pz_url, headers=headers)
                 if pz_resp.status_code == 200:
@@ -429,7 +429,7 @@ async def fetch_prayer_times(city_input: str):
                                 "Isha": pz_times.get("Isha", "--:--"),
                             }
                             g_date = datetime_arr[0].get("date", {}).get("gregorian", "")
-                            return timings, cand, g_date, "", "Pray.Zone Küresel API"
+                            return timings, cand, g_date, "", "Jonli API orqali olindi"
             except Exception:
                 pass
 
@@ -450,30 +450,35 @@ def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, gr
     if lang == 'tr':
         header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
         labels = ["İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI"]
-        footer = f"_Sistem: {source_note}_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Arama: \"{clean_inp}\" ➔ *{clean_disp}* olarak belirlendi._\n" if is_fuzzy else ""
     elif lang == 'ru':
         header = "*NUN PROJECT // ВРЕМЯ НАМАЗА*"
         labels = ["ФАДЖР", "ВОСХОД", "ЗУХР", "АСР", "МАГРИБ", "ИША"]
-        footer = f"_Система: {source_note}_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Поиск: \"{clean_inp}\" ➔ *{clean_disp}* определено._\n" if is_fuzzy else ""
     elif lang == 'en':
         header = "*NUN PROJECT // PRAYER TIMES*"
         labels = ["FAJR", "SUNRISE", "DHUHR", "ASR", "MAGHRIB", "ISHA"]
-        footer = f"_System: {source_note}_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Search: \"{clean_inp}\" ➔ Predicted as *{clean_disp}*._\n" if is_fuzzy else ""
     else:  # 'uz'
         header = "*NUN PROJECT // NAMOZ VAQTLARI*"
         labels = ["BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON"]
-        footer = f"_Tizim holati: {source_note}_"
+        footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Qidiruv: \"{clean_inp}\" ➔ *{clean_disp}* deb aniqlandi._\n" if is_fuzzy else ""
 
     date_line = f"📅 `{greg_date}`"
     if hijri_str:
         date_line += f"  •  🌙 `{hijri_str}`"
 
-    # Her satıra tekil isim bağlanır (Liste basılmasını engeller)
-    lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = labels
+    # Kesin çözüm: Her vakit tek tek açık değişkenle basılır, liste dizi hatası oluşmaz
+    lbl_fajr = labels[0]
+    lbl_sunrise = labels
+    lbl_dhuhr = labels
+    lbl_asr = labels
+    lbl_maghrib = labels
+    lbl_isha = labels
 
     card = (
         f"{header}\n"
@@ -780,7 +785,7 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
             return
 
-    # Sadece /namoz yazıldıysa veya menüden basıldıysa doğrudan şehir sorulur
+    # Sadece /namoz yazıldıysa doğrudan şehir sorulur
     context.user_data['mode'] = 'prayer'
     await update.message.reply_text(
         get_text(user_id, 'prompt_prayer', context),

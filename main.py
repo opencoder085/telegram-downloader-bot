@@ -331,13 +331,14 @@ async def fetch_prayer_times(city_input: str):
         return None, None, None, None, None
 
     norm = normalize_key(city_clean)
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
     }
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        # 1. ÖNCELİK: ÖZBEKİSTAN RESMİ PORTALI (namoz-vaqti.uz - Din ishlari bo'yicha qo'mita)
+        # 1. ÖNCELİK: ÖZBEKİSTAN RESMİ PORTALI (namoz-vaqti.uz)
         uz_slug = UZ_OFFICIAL_REGIONS.get(norm)
         if not uz_slug:
             matches = difflib.get_close_matches(norm, list(UZ_OFFICIAL_REGIONS.keys()), n=1, cutoff=0.7)
@@ -460,7 +461,6 @@ def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, gr
     if hijri_str:
         date_line += f"  •  🌙 `{hijri_str}`" if date_line else f"🌙 `{hijri_str}`"
 
-    # Her satıra tekil etiket atanır
     lbl_fajr = labels[0]
     lbl_sunrise = labels
     lbl_dhuhr = labels
@@ -550,7 +550,7 @@ ADHKAAR_DATA = {
             'name_tr': "Seyyidü'l İstiğfar",
             'name_ru': "Саййидуль-Истигфар",
             'name_en': "Sayyid al-Istighfar",
-            'arabic': "اللَّهُمَّ أَنْتَ رَبِّي لاَ إِلَهَ إِلاَّ أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عهدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي، فَاغْفِرْ لِي فَإِنَّهُ لاَ يَغْفِرُ الذُّنُوبَ إِلاَّ أَنْتَ",
+            'arabic': "اللَّهُمَّ أَنْتَ رَبِّي لاَ إِلَهَ إِلاَّ أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي، فَاغْفِرْ لِي فَإِنَّهُ لاَ يَغْفِرُ الذُّنُوبَ إِلاَّ أَنْتَ",
             'uz': "Allohim, Sen mening Rabbimsan, Sendan oʻzga iloh yoʻq. Meni Sen yaratding va men Sening qulingman. Kuchim yetganicha ahding va vaʼdangdaman. Qilgan ishlarimning yomonligidan Sendan panoh tilayman. Menga bergan neʼmatingni eʼtirof etaman va gunohimni boʻynimga olaman. Meni kechir, zero gunohlarni faqat Sendan oʻzga hech kim kechira olmas.",
             'tr': "Allahım! Sen benim Rabbimsin, Senden başka ilah yoktur. Beni Sen yarattın, ben Senin kulunum ve gücüm yettiğince Sana verdiğim söz ve ahid üzerindeyim. Yaptıklarımın şerrinden Sana sığınırım. Üzerimdeki nimetini itiraf eder, günahımı da kabul ederim. Beni bağışla; çünkü günahları Senden başkası bağışlayamaz.",
             'ru': "О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. И я буду хранить верность завету и обещанию, данному Тебе, пока у меня хватит сил. Прибегаю к Твоей защите от зла того, что я совершил. Признаю милость, оказанную Тобой мне, и признаю грех свой, прости же меня, ведь никто не прощает грехов, кроме Тебя!",
@@ -723,9 +723,9 @@ TEXTS = {
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 
 def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE) -> str:
-    if context.user_data and 'lang' in context.user_data:
+    if context and context.user_data and 'lang' in context.user_data:
         lang = context.user_data['lang']
-        if isinstance(lang, str):
+        if isinstance(lang, str) and lang in TEXTS:
             return lang
     return 'uz'
 
@@ -922,7 +922,6 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_lang = get_user_lang(user_id, context)
 
-    # Doğrudan /namaz Kokand veya /namoz Toshkent şeklinde girildiyse
     if context.args:
         city_query = " ".join(context.args)
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(city_query)
@@ -959,9 +958,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
 
-    # DİL DEĞİŞİMİ
+    # DİL DEĞİŞİMİ: indeksi ile dil doğrudan string ('uz', 'tr', 'ru', 'en') olarak alınır
     if data.startswith("lang_"):
-        selected_lang = data.split("_", 1)  # 'uz', 'tr', 'ru', 'en'
+        selected_lang = data.split("_", 1)
         context.user_data['lang'] = selected_lang
 
         try:
@@ -983,7 +982,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_lang = get_user_lang(user_id, context)
         card = format_adhkar_card(period, user_lang)
 
-        # Diğer zikirlere geçiş butonu
         other_period = "evening" if period == "morning" else "morning"
         other_btn_text = get_text(user_id, f'btn_{other_period}_adhkar', context)
         nav_keyboard = InlineKeyboardMarkup([
@@ -1005,7 +1003,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları
+    # 1. Menü Butonları Tıklamaları (Tüm diller destekli)
     btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
     btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
     btn_adh = [TEXTS[l]['btn_adhkar'] for l in TEXTS]
@@ -1064,7 +1062,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_mode = context.user_data.get('mode', 'auto')
     lower_text = raw_text.lower().strip()
 
-    # Zikir kelimesi algılama
+    # Zikir arama kelimesi
     if bool(re.search(r'\b(zikr|zikirlar|zikirler|adhkar|azkar|зикры|зикр)\b', lower_text)):
         await update.message.reply_text(
             get_text(user_id, 'prompt_adhkar', context),
@@ -1073,7 +1071,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Kullanıcı tek başına sadece "namaz" veya "namoz" yazdıysa
+    # Tek başına "namaz" yazıldıysa
     if lower_text in ('namoz', 'namaz', 'prayer', 'vaqt', 'vakit'):
         context.user_data['mode'] = 'prayer'
         await update.message.reply_text(
@@ -1084,8 +1082,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
-    # 3. Namaz Vakti Modu veya Açıkça Namaz Sorusu (Örn: "Kokand", "Toshkent", "namoz toshkent")
-    # Kullanıcı namaz modundayken ASLA çeviriye DÜŞMEZ, modunu korur!
+    # 3. Namaz Vakti Modu (Kullanıcı namaz modunda kalır, çeviriye DÜŞMEZ)
     if current_mode == 'prayer' or is_prayer_intent:
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
         if timings:
@@ -1102,19 +1099,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 4. Kiril -> Latin Modu (Yalnızca kullanıcı butondan bastıysa)
+    # 4. Kiril -> Latin Modu
     if current_mode == 'c2l':
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 5. Latin -> Kiril Modu (Yalnızca kullanıcı butondan bastıysa)
+    # 5. Latin -> Kiril Modu
     if current_mode == 'l2c':
         converted = latin_to_cyrillic(raw_text)
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 6. Otomatik Algılama: Menüye basmadan sadece bir şehir yazıldıysa
+    # 6. Otomatik Algılama (Şehir yazıldıysa)
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
@@ -1128,7 +1125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Uzun cümle halindeki metinler için)
+    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Uzun cümleler için)
     if is_mostly_cyrillic(raw_text):
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")

@@ -3,6 +3,8 @@ import re
 import asyncio
 import tempfile
 import threading
+import urllib.request
+import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -15,7 +17,7 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 WEB SERVER ---
+# --- RENDER 7/24 SAĞLIK KONTROLÜ ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -30,7 +32,7 @@ def run_health_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-# --- ÇOK DİLLİ METİNLER ---
+# --- 4 DİLLİ METİNLER ---
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Video yuklab beruvchi botga xush kelibsiz.\n\nYouTube, Instagram, TikTok yoki Facebook havolasini yuboring.",
@@ -102,74 +104,104 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_language_keyboard()
     )
 
-def download_media_sync(url, is_audio, download_dir):
-    out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
+# --- YOUTUBE İÇİN COBALT MOTORU (IP ENGELİNİ AŞAN SİSTEM) ---
+def download_via_cobalt(url, is_audio, download_dir):
+    cobalt_instances = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwiatekm.tokyo/api/json",
+        "https://api.wuk.sh/api/json"
+    ]
+    
+    payload = {
+        "url": url,
+        "isAudioOnly": is_audio,
+        "aFormat": "mp3" if is_audio else None,
+        "vQuality": "720"
+    }
+    data = json.dumps(payload).encode('utf-8')
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
 
-    # YouTube engelini aşan istemci öncelikleri
-    is_youtube = ("youtube.com" in url or "youtu.be" in url)
-    client_configs = [
-        "android,web_embedded",
-        "ios",
-        "tv_embedded",
-        "web"
-    ] if is_youtube else [None]
+    media_url = None
+    title = "YouTube Media"
 
-    last_err = None
-
-    for client in client_configs:
+    for api in cobalt_instances:
         try:
-            ydl_opts = {
-                'outtmpl': out_tmpl,
-                'quiet': True,
-                'no_warnings': True,
-                'nocheckcertificate': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                'socket_timeout': 30,
-            }
-
-            if client:
-                ydl_opts['extractor_args'] = {
-                    'youtube': {
-                        'player_client': [client],
-                        'skip': ['configs', 'webpage']
-                    }
-                }
-
-            if is_audio:
-                ydl_opts.update({
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192',
-                    }],
-                })
-            else:
-                ydl_opts.update({
-                    'format': 'best[ext=mp4][filesize<45M]/bestvideo[filesize<38M]+bestaudio/best[filesize<45M]/best',
-                    'merge_output_format': 'mp4',
-                })
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                title = info.get('title', 'Video')
-                
-                files = os.listdir(download_dir)
-                if files:
-                    target_file = os.path.join(download_dir, files[0])
-                    return target_file, title
-        except Exception as e:
-            last_err = e
+            req = urllib.request.Request(api, data=data, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res = json.loads(resp.read().decode())
+                if res.get("status") in ["tunnel", "redirect"]:
+                    media_url = res.get("url")
+                    break
+        except Exception:
             continue
 
-    raise last_err if last_err else RuntimeError("Download failed.")
+    if not media_url:
+        raise RuntimeError("Cobalt API fallback failed")
+
+    ext = "mp3" if is_audio else "mp4"
+    target_file = os.path.join(download_dir, f"media.{ext}")
+    
+    req_dl = urllib.request.Request(media_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req_dl, timeout=60) as resp, open(target_file, 'wb') as out_f:
+        out_f.write(resp.read())
+
+    return target_file, title
+
+# --- INSTAGRAM, TIKTOK, FACEBOOK İÇİN YT-DLP MOTORU ---
+def download_via_ytdlp(url, is_audio, download_dir):
+    out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
+    ydl_opts = {
+        'outtmpl': out_tmpl,
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    }
+
+    if is_audio:
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        })
+    else:
+        ydl_opts.update({
+            'format': 'best[ext=mp4][filesize<45M]/best[filesize<45M]/bestvideo[filesize<40M]+bestaudio/best',
+            'merge_output_format': 'mp4',
+        })
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = info.get('title', 'Video')
+        files = os.listdir(download_dir)
+        if not files:
+            raise FileNotFoundError("Dosya indirilemedi.")
+        return os.path.join(download_dir, files[0]), title
+
+def smart_download(url, is_audio, download_dir):
+    # Eğer YouTube linki ise doğrudan IP engelini aşan Cobalt motorunu çalıştır
+    if "youtube.com" in url or "youtu.be" in url:
+        try:
+            return download_via_cobalt(url, is_audio, download_dir)
+        except Exception:
+            # Cobalt yanıt vermezse yedek olarak yt-dlp'yi dene
+            return download_via_ytdlp(url, is_audio, download_dir)
+    else:
+        # Instagram, TikTok, Facebook için yt-dlp
+        return download_via_ytdlp(url, is_audio, download_dir)
 
 async def process_download(query, user_id, url, is_audio, context):
     try:
         await query.edit_message_text(get_text(user_id, 'downloading'))
         
         with tempfile.TemporaryDirectory() as tmp_dir:
-            file_path, title = await asyncio.to_thread(download_media_sync, url, is_audio, tmp_dir)
+            file_path, title = await asyncio.to_thread(smart_download, url, is_audio, tmp_dir)
             
             size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if size_mb > 49.5:

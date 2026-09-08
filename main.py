@@ -51,6 +51,47 @@ def run_health_server():
     server.serve_forever()
 
 # =====================================================================
+# KALICI DİL YÖNETİM SİSTEMİ (DATABASE & MEMORY)
+# =====================================================================
+LANG_FILE = "user_langs.json"
+USER_LANGS = {}
+
+def load_user_langs():
+    global USER_LANGS
+    if os.path.exists(LANG_FILE):
+        try:
+            with open(LANG_FILE, "r", encoding="utf-8") as f:
+                USER_LANGS = json.load(f)
+        except Exception:
+            USER_LANGS = {}
+
+def save_user_lang(user_id, lang_code: str):
+    global USER_LANGS
+    uid_str = str(user_id)
+    USER_LANGS[uid_str] = lang_code
+    try:
+        with open(LANG_FILE, "w", encoding="utf-8") as f:
+            json.dump(USER_LANGS, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
+    uid_str = str(user_id)
+    # 1. Kalıcı global sözlükten kontrol
+    if uid_str in USER_LANGS and USER_LANGS[uid_str] in TEXTS:
+        return USER_LANGS[uid_str]
+
+    # 2. context.user_data kontrolü (Tip korumalı)
+    if context and context.user_data and 'lang' in context.user_data:
+        l = context.user_data['lang']
+        if isinstance(l, str) and l in TEXTS:
+            return l
+        if isinstance(l, list) and len(l) > 1 and l[1] in TEXTS:
+            return l[1]
+
+    return 'uz'
+
+# =====================================================================
 # ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
 # =====================================================================
 APOSTROPHES = set(["'", "\u2019", "\u2018", "`", "\u02bb", "\u02bc"])
@@ -255,7 +296,7 @@ def is_mostly_cyrillic(text: str) -> bool:
     return cyr_count >= lat_count
 
 # =====================================================================
-# ÖZBEKİSTAN RESMİ BÖLGE SLUG HARİTASI (namoz-vaqti.uz)
+# ÖZBEKİSTAN RESMİ BÖLGE HARİTASI (namoz-vaqti.uz)
 # =====================================================================
 UZ_OFFICIAL_REGIONS = {
     "toshkent": "toshkent", "tashkent": "toshkent", "тошкент": "toshkent", "ташкент": "toshkent",
@@ -331,7 +372,6 @@ async def fetch_prayer_times(city_input: str):
         return None, None, None, None, None
 
     norm = normalize_key(city_clean)
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
@@ -722,23 +762,17 @@ TEXTS = {
 
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 
-def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE) -> str:
-    if context and context.user_data and 'lang' in context.user_data:
-        lang = context.user_data['lang']
-        if isinstance(lang, str) and lang in TEXTS:
-            return lang
-    return 'uz'
-
-def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE) -> str:
+def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     lang = get_user_lang(user_id, context)
     return TEXTS.get(lang, TEXTS['uz']).get(key, '')
 
-def get_reply_menu(user_id, context):
+def get_reply_menu(user_id, context=None):
+    lang = get_user_lang(user_id, context)
     return ReplyKeyboardMarkup([
-        [KeyboardButton(get_text(user_id, 'btn_video', context)), KeyboardButton(get_text(user_id, 'btn_prayer', context))],
-        [KeyboardButton(get_text(user_id, 'btn_adhkar', context))],
-        [KeyboardButton(get_text(user_id, 'btn_c2l', context)), KeyboardButton(get_text(user_id, 'btn_l2c', context))],
-        [KeyboardButton(get_text(user_id, 'btn_lang', context))]
+        [KeyboardButton(TEXTS[lang]['btn_video']), KeyboardButton(TEXTS[lang]['btn_prayer'])],
+        [KeyboardButton(TEXTS[lang]['btn_adhkar'])],
+        [KeyboardButton(TEXTS[lang]['btn_c2l']), KeyboardButton(TEXTS[lang]['btn_l2c'])],
+        [KeyboardButton(TEXTS[lang]['btn_lang'])]
     ], resize_keyboard=True)
 
 def get_language_keyboard():
@@ -747,7 +781,7 @@ def get_language_keyboard():
         [InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
     ])
 
-def get_adhkar_selection_keyboard(user_id, context):
+def get_adhkar_selection_keyboard(user_id, context=None):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(get_text(user_id, 'btn_morning_adhkar', context), callback_data="adhkar_morning"),
@@ -895,17 +929,25 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
         pass
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_lang = update.effective_user.language_code or 'uz'
-    if user_lang.startswith('tr'):
-        context.user_data['lang'] = 'tr'
-    elif user_lang.startswith('ru'):
-        context.user_data['lang'] = 'ru'
-    elif user_lang.startswith('en'):
-        context.user_data['lang'] = 'en'
-    else:
-        context.user_data['lang'] = 'uz'
+    user_id = update.effective_user.id
 
-    await update_user_bot_commands(context, update.effective_user.id, context.user_data['lang'])
+    # Eğer kullanıcının daha önceden seçtiği bir dil yoksa Telegram arayüz diline bak
+    if str(user_id) not in USER_LANGS:
+        tele_lang = update.effective_user.language_code or 'uz'
+        if tele_lang.startswith('tr'):
+            init_lang = 'tr'
+        elif tele_lang.startswith('ru'):
+            init_lang = 'ru'
+        elif tele_lang.startswith('en'):
+            init_lang = 'en'
+        else:
+            init_lang = 'uz'
+        save_user_lang(user_id, init_lang)
+        if context and context.user_data is not None:
+            context.user_data['lang'] = init_lang
+
+    current_lang = get_user_lang(user_id, context)
+    await update_user_bot_commands(context, user_id, current_lang)
     await update.message.reply_text(
         "Tilni tanlang / Lütfen dil seçin / Выберите язык / Select language:",
         reply_markup=get_language_keyboard()
@@ -958,21 +1000,34 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
 
-    # DİL DEĞİŞİMİ: indeksi ile dil doğrudan string ('uz', 'tr', 'ru', 'en') olarak alınır
+    # KESİN DİL DEĞİŞİMİ: data.replace ile doğrudan saf string ('uz', 'tr', 'ru', 'en') alınır
     if data.startswith("lang_"):
-        selected_lang = data.split("_", 1)
-        context.user_data['lang'] = selected_lang
+        selected_lang = data.replace("lang_", "").strip()
+        if selected_lang not in TEXTS:
+            selected_lang = 'uz'
+
+        # 1. Kalıcı global hafızaya ve context'e kaydet
+        save_user_lang(user_id, selected_lang)
+        if context and context.user_data is not None:
+            context.user_data['lang'] = selected_lang
 
         try:
             await query.message.delete()
         except Exception:
             pass
 
+        # 2. Telegram Menü butonundaki komutları yeni dille güncelle
         await update_user_bot_commands(context, user_id, selected_lang)
+
+        # 3. Alt klavye butonlarını (ReplyKeyboardMarkup) ve onay mesajını YENİ DİLDE gönder
+        new_menu = get_reply_menu(user_id, context)
+        welcome_text = TEXTS[selected_lang]['welcome']
+        changed_text = TEXTS[selected_lang]['lang_changed']
+
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"✅ {get_text(user_id, 'lang_changed', context)}\n\n{get_text(user_id, 'welcome', context)}",
-            reply_markup=get_reply_menu(user_id, context)
+            text=f"✅ {changed_text}\n\n{welcome_text}",
+            reply_markup=new_menu
         )
         return
 
@@ -1003,7 +1058,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları (Tüm diller destekli)
+    # 1. Menü Butonları Tıklamaları (Tüm dillerin buton metinlerini yakalar)
     btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
     btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
     btn_adh = [TEXTS[l]['btn_adhkar'] for l in TEXTS]
@@ -1062,7 +1117,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_mode = context.user_data.get('mode', 'auto')
     lower_text = raw_text.lower().strip()
 
-    # Zikir arama kelimesi
+    # Zikir kelimesi algılama
     if bool(re.search(r'\b(zikr|zikirlar|zikirler|adhkar|azkar|зикры|зикр)\b', lower_text)):
         await update.message.reply_text(
             get_text(user_id, 'prompt_adhkar', context),
@@ -1082,7 +1137,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
-    # 3. Namaz Vakti Modu (Kullanıcı namaz modunda kalır, çeviriye DÜŞMEZ)
+    # 3. Namaz Vakti Modu (Kullanıcı namaz modundayken çeviriye DÜŞMEZ)
     if current_mode == 'prayer' or is_prayer_intent:
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
         if timings:
@@ -1111,7 +1166,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 6. Otomatik Algılama (Şehir yazıldıysa)
+    # 6. Otomatik Algılama (Şehir girildiyse)
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
@@ -1125,7 +1180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Uzun cümleler için)
+    # 7. Cümle halindeki genel metinler için çeviri
     if is_mostly_cyrillic(raw_text):
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
@@ -1138,6 +1193,9 @@ def main():
     if not token:
         raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
 
+    # Önceden kaydedilmiş kullanıcı dillerini yükle
+    load_user_langs()
+
     threading.Thread(target=run_health_server, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
@@ -1149,7 +1207,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot aktif; Namaz Vakitleri, Zikirler, Video ve Çeviri hazır!")
+    print("Nun Bot aktif; Kalıcı Dil Yönetimi, Namaz Vakitleri, Zikirler ve Video hazır!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

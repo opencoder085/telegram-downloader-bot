@@ -4,7 +4,6 @@ import asyncio
 import tempfile
 import threading
 import json
-import subprocess
 import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -18,13 +17,12 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 SAĞLIK SUNUCUSU ---
+# --- RENDER SAĞLIK SUNUCUSU (7/24 AÇIK TUTAR) ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-
     def log_message(self, format, *args):
         return
 
@@ -33,37 +31,37 @@ def run_health_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-# --- 4 DİLLİ METİNLER ---
+# --- METİNLER (4 DİL) ---
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Video yuklab beruvchi botga xush kelibsiz.\n\nYouTube, Instagram, TikTok yoki Facebook havolasini yuboring.",
         'choose_format': "YouTube uchun formatni tanlang:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ovoz (MP3)",
-        'downloading': "⏳ Yuklab olinmoqda, iltimos kuting...",
-        'uploading': "📤 Telegramga yuklanmoqda...",
-        'error_size': "⚠️ Video hajmi Telegram cheklovidan (50 MB) katta.",
-        'error_general': "❌ Yuklab olishda xatolik yuz berdi. Havolani tekshiring."
+        'downloading': "⏳ Yuklanmoqda, kuting...",
+        'uploading': "📤 Telegramga yuborilmoqda...",
+        'error_size': "⚠️ Video hajmi 50 MB dan katta.",
+        'error_general': "❌ Xatolik yuz berdi. Havolani tekshiring."
     },
     'ru': {
-        'welcome': "Здравствуйте! Добро пожаловать в загрузчик видео.\n\nОтправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
+        'welcome': "Здравствуйте! Добро пожаловать.\n\nОтправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
         'choose_format': "Выберите формат для YouTube:",
         'video_btn': "🎬 Видео",
         'audio_btn': "🎵 Аудио (MP3)",
-        'downloading': "⏳ Скачивается, пожалуйста подождите...",
+        'downloading': "⏳ Скачивается, подождите...",
         'uploading': "📤 Отправка в Telegram...",
-        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
-        'error_general': "❌ Ошибка загрузки. Проверьте ссылку."
+        'error_size': "⚠️ Файл больше 50 МБ.",
+        'error_general': "❌ Ошибка загрузки."
     },
     'en': {
-        'welcome': "Hello! Welcome to Video Downloader bot.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
+        'welcome': "Hello! Welcome.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
         'choose_format': "Choose format for YouTube:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Audio (MP3)",
-        'downloading': "⏳ Downloading, please wait...",
-        'uploading': "📤 Uploading to Telegram...",
-        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
-        'error_general': "❌ Download failed. Please verify the link."
+        'downloading': "⏳ Downloading...",
+        'uploading': "📤 Uploading...",
+        'error_size': "⚠️ File exceeds 50 MB.",
+        'error_general': "❌ Download failed."
     },
     'tr': {
         'welcome': "Merhaba! Video İndirme Botuna hoş geldiniz.\n\nYouTube, Instagram, TikTok veya Facebook linki gönderebilirsiniz.",
@@ -72,7 +70,7 @@ TEXTS = {
         'audio_btn': "🎵 Ses (MP3)",
         'downloading': "⏳ İndiriliyor, lütfen bekleyin...",
         'uploading': "📤 Telegram'a yükleniyor...",
-        'error_size': "⚠️ Dosya Telegram'ın 50 MB sınırından daha büyük.",
+        'error_size': "⚠️ Dosya Telegram'ın 50 MB sınırından büyük.",
         'error_general': "❌ İndirme başarısız oldu. Linki kontrol edin."
     }
 }
@@ -108,138 +106,92 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def is_youtube_url(url):
     return bool(re.search(r'(?:youtube\.com|youtu\.be)', url, re.IGNORECASE))
 
-def extract_youtube_id(url):
-    match = re.search(r'(?:v=|\/|shorts\/)([0-9A-Za-z_-]{11})', url)
-    return match.group(1) if match else None
-
-# --- YOUTUBE ÖZEL DAĞITIK AKIŞ MOTORU (DATACENTER IP ENGELİNİ AŞAR) ---
-def download_youtube_advanced(url, is_audio, download_dir):
-    video_id = extract_youtube_id(url)
-    if not video_id:
-        raise ValueError("Gecersiz YouTube linki.")
-
-    # 1. Piped API Dağıtık Ağı
-    piped_instances = [
-        "https://api.piped.privacydev.net",
-        "https://pipedapi.tokhmi.xyz",
-        "https://pipedapi.ducks.party",
-        "https://pipedapi.drgns.space",
-        "https://pipedapi.kavin.rocks"
+# --- MOTOR 1: COBALT API (YOUTUBE İÇİN - FFMPEG GEREKTİRMEZ) ---
+def download_youtube_cobalt(url, is_audio, download_dir):
+    # En aktif public sunucular (V9 ve V10 sürümleri)
+    instances = [
+        "https://co.wuk.sh",
+        "https://api.cobalt.tools",
+        "https://cobalt-api.kwiatekm.tokyo",
+        "https://api.wuk.sh"
     ]
+    
+    # Hem yeni hem eski API sürümlerini destekleyen birleşik komut
+    payload = {
+        "url": url,
+        "vQuality": "720",
+        "videoQuality": "720",
+        "isAudioOnly": is_audio,
+        "downloadMode": "audio" if is_audio else "auto",
+        "aFormat": "mp3",
+        "audioFormat": "mp3"
+    }
+    req_data = json.dumps(payload).encode('utf-8')
+    
+    # Anti-Bot duvarını aşan tarayıcı kimliği
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Origin": "https://cobalt.tools",
+        "Referer": "https://cobalt.tools/"
+    }
 
-    title = "YouTube Media"
     stream_url = None
-
-    for inst in piped_instances:
-        try:
-            req = urllib.request.Request(
-                f"{inst}/streams/{video_id}",
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                title = data.get("title", "YouTube Media")
-                
-                if is_audio:
-                    audio_streams = data.get("audioStreams", [])
-                    if audio_streams:
-                        stream_url = audio_streams[0].get("url")
-                        break
-                else:
-                    video_streams = data.get("videoStreams", [])
-                    # Hem ses hem görüntü içeren birleşik akışları ara
-                    combined = [s for s in video_streams if not s.get("videoOnly", True)]
-                    if combined:
-                        stream_url = combined[0].get("url")
-                        break
-                    elif video_streams:
-                        stream_url = video_streams[0].get("url")
-                        break
-        except Exception:
-            continue
-
-    # 2. Invidious API Dağıtık Ağı (Piped yanıt vermezse)
-    if not stream_url:
-        invidious_instances = [
-            "https://invidious.nerdvpn.de",
-            "https://inv.nadeko.net",
-            "https://invidious.jing.rocks",
-            "https://inv.tux.pizza"
-        ]
-        for inst in invidious_instances:
+    
+    for inst in instances:
+        for endpoint in ["/", "/api/json"]:
             try:
-                req = urllib.request.Request(
-                    f"{inst}/api/v1/videos/{video_id}",
-                    headers={"User-Agent": "Mozilla/5.0"}
-                )
-                with urllib.request.urlopen(req, timeout=6) as resp:
+                target = inst.rstrip('/') + endpoint
+                req = urllib.request.Request(target, data=req_data, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
-                    title = data.get("title", "YouTube Media")
-                    if is_audio:
-                        adaptive = data.get("adaptiveFormats", [])
-                        audios = [a for a in adaptive if "audio" in a.get("type", "")]
-                        if audios:
-                            stream_url = audios[0].get("url")
-                            break
-                    else:
-                        formats = data.get("formatStreams", [])
-                        if formats:
-                            stream_url = formats[0].get("url")
-                            break
+                    if "url" in data:
+                        stream_url = data["url"]
+                        break
             except Exception:
                 continue
+        if stream_url:
+            break
 
     if not stream_url:
-        raise RuntimeError("YouTube akis adresi alinamadi.")
+        raise RuntimeError("YouTube baglantisi saglanamadi.")
 
-    # Akışı indir
-    raw_file = os.path.join(download_dir, "raw_stream")
-    req_dl = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req_dl, timeout=90) as resp, open(raw_file, 'wb') as f:
+    ext = "mp3" if is_audio else "mp4"
+    dest = os.path.join(download_dir, f"media.{ext}")
+    
+    # Dosyayı hazır olarak sunucudan çek
+    req_file = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req_file, timeout=60) as resp, open(dest, 'wb') as f:
         while True:
-            chunk = resp.read(1024 * 1024)
+            chunk = resp.read(16384)
             if not chunk:
                 break
             f.write(chunk)
 
-    # FFmpeg ile Telegram'a uygun formata çevir
-    if is_audio:
-        final_file = os.path.join(download_dir, "audio.mp3")
-        subprocess.run(
-            ['ffmpeg', '-y', '-i', raw_file, '-vn', '-b:a', '192k', final_file],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        return final_file, title
-    else:
-        final_file = os.path.join(download_dir, "video.mp4")
-        subprocess.run(
-            ['ffmpeg', '-y', '-i', raw_file, '-c', 'copy', '-movflags', '+faststart', final_file],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        return final_file, title
+    return dest, "YouTube Media"
 
-# --- INSTAGRAM, TIKTOK, FACEBOOK MOTORU ---
+# --- MOTOR 2: YT-DLP (INSTAGRAM/TIKTOK İÇİN - FFMPEG GEREKTİRMEZ) ---
 def download_social_media(url, download_dir):
-    out_tmpl = os.path.join(download_dir, 'video.%(ext)s')
+    out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
     ydl_opts = {
         'outtmpl': out_tmpl,
-        'format': 'best[ext=mp4][filesize<45M]/best[filesize<45M]/best',
-        'merge_output_format': 'mp4',
+        'format': 'best', # ffmpeg birleştirme işlemi istemez, tek parça çeker
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         title = info.get('title', 'Video')
         files = os.listdir(download_dir)
         if not files:
-            raise FileNotFoundError("Video indirilemedi.")
+            raise FileNotFoundError("Dosya inemedi.")
         return os.path.join(download_dir, files[0]), title
 
-def universal_download(url, is_audio, download_dir):
+def smart_engine(url, is_audio, download_dir):
     if is_youtube_url(url):
-        return download_youtube_advanced(url, is_audio, download_dir)
+        return download_youtube_cobalt(url, is_audio, download_dir)
     else:
         return download_social_media(url, download_dir)
 
@@ -248,7 +200,7 @@ async def process_download(status_msg, user_id, url, is_audio, context):
         await status_msg.edit_text(get_text(user_id, 'downloading'))
         
         with tempfile.TemporaryDirectory() as tmp_dir:
-            file_path, title = await asyncio.to_thread(universal_download, url, is_audio, tmp_dir)
+            file_path, title = await asyncio.to_thread(smart_engine, url, is_audio, tmp_dir)
             
             size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if size_mb > 49.5:
@@ -257,14 +209,15 @@ async def process_download(status_msg, user_id, url, is_audio, context):
 
             await status_msg.edit_text(get_text(user_id, 'uploading'))
 
+            # Telegram'ın ağır dosyalarda bağlantıyı koparmaması için 300 saniye mühlet (Timeout)
             with open(file_path, 'rb') as f:
                 if is_audio:
                     await context.bot.send_audio(
                         chat_id=user_id,
                         audio=f,
                         title=title[:60],
-                        read_timeout=180,
-                        write_timeout=180
+                        read_timeout=300,
+                        write_timeout=300
                     )
                 else:
                     await context.bot.send_video(
@@ -272,14 +225,14 @@ async def process_download(status_msg, user_id, url, is_audio, context):
                         video=f,
                         caption=f"🎬 {title[:60]}",
                         supports_streaming=True,
-                        read_timeout=180,
-                        write_timeout=180
+                        read_timeout=300,
+                        write_timeout=300
                     )
             
             await status_msg.delete()
             
     except Exception as e:
-        print(f"Hata detayi: {e}")
+        print(f"Hata: {e}")
         await status_msg.edit_text(get_text(user_id, 'error_general'))
     finally:
         pending_links.pop(user_id, None)
@@ -314,14 +267,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = url_match.group(0)
 
-    # YouTube: Seçenek butonları çıkar (Video / Ses)
+    # 1. YouTube: Seçenek butonları çıkar (Video / Ses)
     if is_youtube_url(url):
         pending_links[user_id] = url
         await update.message.reply_text(
             get_text(user_id, 'choose_format'),
             reply_markup=get_yt_format_keyboard(user_id)
         )
-    # Instagram, TikTok, Facebook: Sormadan direkt video indir
+    # 2. Instagram, TikTok, Facebook: Sormadan direkt video indir
     else:
         status_msg = await update.message.reply_text(get_text(user_id, 'downloading'))
         asyncio.create_task(process_download(status_msg, user_id, url, False, context))

@@ -25,13 +25,13 @@ try:
 except ImportError:
     PytubeFix = None
 
-# --- RENDER 7/24 SAĞLIK KONTROL SUNUCUSU (PORT BINDING) ---
+# --- RENDER 7/24 SAĞLIK KONTROLÜ (PORT BINDING) ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot 7/24 Aktif ve Calisiyor!")
+        self.wfile.write(b"Bot 7/24 Aktif!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -117,10 +117,6 @@ def get_format_keyboard(user_id, token, context):
 def is_youtube_url(url: str) -> bool:
     return bool(re.search(r'(?:youtube\.com/(?:watch|shorts|live|embed)|youtu\.be/)', url, re.IGNORECASE))
 
-def get_youtube_video_id(url: str):
-    m = re.search(r'(?:v=|\/|shorts\/)([0-9A-Za-z_-]{11})', url)
-    return m.group(1) if m else None
-
 def is_supported_url(url: str) -> bool:
     patterns = [
         r'(?:youtube\.com|youtu\.be)',
@@ -130,13 +126,32 @@ def is_supported_url(url: str) -> bool:
     ]
     return any(re.search(p, url, re.IGNORECASE) for p in patterns)
 
+# --- 11 KB'LIK SAHTE DOSYALARI ENGELLEYEN DOĞRULAYICI ---
+def is_valid_media_file(filepath: str) -> bool:
+    if not filepath or not os.path.exists(filepath):
+        return False
+    size = os.path.getsize(filepath)
+    # 200 KB'dan küçük bir YouTube videosu olamaz; bunlar kesinlikle HTML hata sayfasıdır
+    if size < 200 * 1024:
+        return False
+    try:
+        with open(filepath, 'rb') as f:
+            header = f.read(64)
+            # Eğer HTML veya JSON hata metni içeriyorsa sahtedir
+            if header.startswith((b'<!DOCTYPE', b'<!doctype', b'<html', b'{"error', b'{"status', b'Error', b'Access Denied')):
+                return False
+        return True
+    except Exception:
+        return False
+
 def get_downloaded_media_file(directory: str):
     valid_files = []
     for f in os.listdir(directory):
         full_path = os.path.join(directory, f)
         if os.path.isfile(full_path):
             if not f.endswith(('.part', '.ytdl', '.temp', '.aria2', '.json', '.jpg', '.jpeg', '.png', '.webp', '.vtt', '.srt')):
-                valid_files.append(full_path)
+                if is_valid_media_file(full_path):
+                    valid_files.append(full_path)
     if not valid_files:
         return None
     valid_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
@@ -149,65 +164,83 @@ async def safe_edit_text(msg, text, reply_markup=None):
         pass
 
 # =====================================================================
-# 1. YOUTUBE MOTORU: INVIDIOUS PROXY AĞI (Render IP Engelini %100 Aşar)
+# 1. MOTOR: PYTUBEFIX PROGRESSIVE (Ses ve Görüntü Birleşik - FFmpeg İstemez)
 # =====================================================================
-def download_via_invidious(video_id: str, is_audio: bool, download_dir: str):
-    # Dünya çapındaki aktif ve hızlı Invidious ağları
-    instances = [
-        "https://inv.nadeko.net",
-        "https://yewtu.be",
-        "https://invidious.nerdvpn.de",
-        "https://iv.ggtyler.dev",
-        "https://invidious.projectsegfau.lt"
-    ]
+def download_via_pytubefix(url: str, is_audio: bool, download_dir: str):
+    if not PytubeFix:
+        raise ImportError("pytubefix yüklü değil.")
 
-    itag = "140" if is_audio else "18"  # 18 = 360p progressive MP4 (ses+görüntü tek parça)
-    ext = "mp3" if is_audio else "mp4"
-
-    for inst in instances:
+    # Android istemcisi veri merkezi IP kısıtlamasına takılmaz
+    for client in ['ANDROID', 'MWEB']:
         try:
-            # 1. Video başlığını almayı dene
-            title = "YouTube_Video"
-            try:
-                info_req = urllib.request.Request(
-                    f"{inst}/api/v1/videos/{video_id}",
-                    headers={'User-Agent': 'Mozilla/5.0'}
-                )
-                with urllib.request.urlopen(info_req, timeout=7) as resp:
-                    info_data = json.loads(resp.read().decode('utf-8'))
-                    title = info_data.get('title', 'YouTube_Video')
-            except Exception:
-                pass
+            yt = PytubeFix(url, client=client)
+            title = yt.title or "YouTube_Media"
 
-            # 2. Invidious proxy tüneli üzerinden videoyu doğrudan indir
-            stream_url = f"{inst}/latest_version?id={video_id}&itag={itag}&local=true"
-            target_file = os.path.join(download_dir, f"media.{ext}")
+            if is_audio:
+                stream = yt.streams.get_audio_only()
+                if not stream:
+                    stream = yt.streams.filter(only_audio=True).first()
+            else:
+                stream = yt.streams.filter(progressive=True).order_by('resolution').desc().first()
+                if not stream:
+                    stream = yt.streams.get_highest_resolution()
 
-            req = urllib.request.Request(stream_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                total_bytes = 0
-                with open(target_file, 'wb') as out_f:
-                    while True:
-                        chunk = resp.read(64 * 1024)
-                        if not chunk:
-                            break
-                        total_bytes += len(chunk)
-                        if total_bytes > 49.5 * 1024 * 1024:
-                            raise ValueError("FILE_TOO_LARGE")
-                        out_f.write(chunk)
-
-                # İndirilen dosya geçerli boyuttaysa dön
-                if os.path.getsize(target_file) > 1024:
+            if stream:
+                target_file = stream.download(output_path=download_dir)
+                if is_valid_media_file(target_file):
                     return target_file, title
-        except ValueError as v_err:
-            raise v_err
         except Exception:
             continue
 
-    raise RuntimeError("Invidious proxy denemesi başarısız oldu.")
+    raise RuntimeError("Pytubefix indirilemedi.")
 
 # =====================================================================
-# 2. YOUTUBE MOTORU: COBALT API AĞI (2. Seviye Yedek)
+# 2. MOTOR: YT-DLP (android_vr & mweb İstemcisi ile Render Uyumlu)
+# =====================================================================
+def download_via_ytdlp(url: str, is_audio: bool, download_dir: str):
+    is_yt = is_youtube_url(url)
+    has_ffmpeg = shutil.which('ffmpeg') is not None
+
+    opts = {
+        'outtmpl': os.path.join(download_dir, 'media_%(id)s.%(ext)s'),
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'socket_timeout': 30,
+        'retries': 5,
+    }
+
+    if is_yt:
+        # android_vr ve mweb, Google'ın sunucu IP bloklarını aşan istemcilerdir
+        opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['android_vr', 'mweb', 'ios', 'web_embedded'],
+            }
+        }
+        if has_ffmpeg:
+            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            if not is_audio:
+                opts['merge_output_format'] = 'mp4'
+        else:
+            opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/18/22/best'
+    else:
+        # Instagram, Facebook, TikTok
+        opts['http_headers'] = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+        opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/best'
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = info.get('title', 'Media') if info else 'Media'
+        final_file = get_downloaded_media_file(download_dir)
+        if final_file and is_valid_media_file(final_file):
+            return final_file, title
+        raise RuntimeError("yt-dlp geçerli medya indiremedi.")
+
+# =====================================================================
+# 3. MOTOR: COBALT API AĞI (Doğrulanmış Harici Akış)
 # =====================================================================
 def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
     instances = ["https://cobalt-api.ayo.tf", "https://cobalt.canine.tools", "https://api.cobalt.tools"]
@@ -242,70 +275,33 @@ def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
                                 break
                             out_f.write(chunk)
 
-                return target_file, os.path.splitext(filename)[0]
+                if is_valid_media_file(target_file):
+                    return target_file, os.path.splitext(filename)[0]
         except Exception:
             continue
 
     raise RuntimeError("Cobalt API başarısız.")
 
-# =====================================================================
-# 3. MOTOR: YT-DLP (Instagram, Facebook, TikTok + Yerel YouTube)
-# =====================================================================
-def download_via_ytdlp(url: str, is_audio: bool, download_dir: str):
-    is_yt = is_youtube_url(url)
-    opts = {
-        'outtmpl': os.path.join(download_dir, 'media_%(id)s.%(ext)s'),
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'socket_timeout': 30,
-        'retries': 5,
-    }
-
-    if is_yt:
-        opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/18/22/best'
-        opts['extractor_args'] = {'youtube': {'player_client': ['android_vr', 'web_embedded', 'mweb', 'ios']}}
-    else:
-        opts['http_headers'] = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
-        opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/best'
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        title = info.get('title', 'Media') if info else 'Media'
-        final_file = get_downloaded_media_file(download_dir)
-        if not final_file:
-            raise RuntimeError("Medya dosyası bulunamadı.")
-        return final_file, title
-
-# --- ÇOKLU İNDİRME KÖPRÜSÜ ---
+# --- KOMBİNE İNDİRME KÖPRÜSÜ ---
 def download_media_sync(url: str, is_audio: bool, download_dir: str):
-    # Instagram, Facebook ve TikTok -> Doğrudan yt-dlp ile sorunsuz indir
+    # Instagram, TikTok, Facebook -> Doğrudan yt-dlp ile sorunsuz çalışır
     if not is_youtube_url(url):
         return download_via_ytdlp(url, is_audio, download_dir)
 
-    # YouTube: 1. Aşama -> Invidious Tüneli (Render IP engelini %100 baypas eder)
-    vid = get_youtube_video_id(url)
-    if vid:
-        try:
-            return download_via_invidious(vid, is_audio, download_dir)
-        except ValueError as v_err:
-            raise v_err
-        except Exception as e1:
-            print(f"Invidious hatasi: {e1}. Cobalt deneniyor...")
-
-    # YouTube: 2. Aşama -> Cobalt CDN Tüneli
+    # YouTube: 1. Aşama -> Pytubefix Progressive (Kendi kendine yeten tek parça MP4)
     try:
-        return download_via_cobalt(url, is_audio, download_dir)
-    except ValueError as v_err:
-        raise v_err
-    except Exception as e2:
-        print(f"Cobalt hatasi: {e2}. yt-dlp deneniyor...")
+        return download_via_pytubefix(url, is_audio, download_dir)
+    except Exception as e1:
+        print(f"Pytubefix hatası: {e1}. yt-dlp deneniyor...")
 
-    # YouTube: 3. Aşama -> yt-dlp (android_vr)
-    return download_via_ytdlp(url, is_audio, download_dir)
+    # YouTube: 2. Aşama -> yt-dlp (android_vr VR başlığı taklidi)
+    try:
+        return download_via_ytdlp(url, is_audio, download_dir)
+    except Exception as e2:
+        print(f"yt-dlp hatası: {e2}. Cobalt deneniyor...")
+
+    # YouTube: 3. Aşama -> Cobalt API
+    return download_via_cobalt(url, is_audio, download_dir)
 
 # --- İŞLEME VE GÖNDERME ---
 async def process_download(status_msg, user_id, chat_id, url, is_audio, context):
@@ -362,16 +358,11 @@ async def process_download(status_msg, user_id, chat_id, url, is_audio, context)
                 except Exception:
                     pass
 
-        except ValueError as v:
-            if str(v) == "FILE_TOO_LARGE":
-                await safe_edit_text(status_msg, get_text(user_id, 'error_size', context))
-            else:
-                await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
         except Exception as e:
-            print(f"Genel Hata [{url}]: {e}")
+            print(f"İndirme Hatası [{url}]: {e}")
             await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
 
-# --- TELEGRAM ETKİLEŞİM HANDLERS ---
+# --- TELEGRAM HANDLERS ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'tr'
     if user_lang.startswith('uz'):

@@ -3,8 +3,8 @@ import re
 import asyncio
 import tempfile
 import threading
-import urllib.request
 import json
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 SAĞLIK KONTROLÜ ---
+# --- RENDER WEB SUNUCUSU (7/24 CANLI TUTMA) ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -36,7 +36,7 @@ def run_health_server():
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Video yuklab beruvchi botga xush kelibsiz.\n\nYouTube, Instagram, TikTok yoki Facebook havolasini yuboring.",
-        'choose_format': "Qaysi formatda yuklab olmoqchisiz?",
+        'choose_format': "YouTube uchun formatni tanlang:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ovoz (MP3)",
         'downloading': "⏳ Yuklab olinmoqda, iltimos kuting...",
@@ -46,7 +46,7 @@ TEXTS = {
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать в загрузчик видео.\n\nОтправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
-        'choose_format': "В каком формате хотите скачать?",
+        'choose_format': "Выберите формат для YouTube:",
         'video_btn': "🎬 Видео",
         'audio_btn': "🎵 Аудио (MP3)",
         'downloading': "⏳ Скачивается, пожалуйста подождите...",
@@ -56,7 +56,7 @@ TEXTS = {
     },
     'en': {
         'welcome': "Hello! Welcome to Video Downloader bot.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
-        'choose_format': "Choose download format:",
+        'choose_format': "Choose format for YouTube:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Audio (MP3)",
         'downloading': "⏳ Downloading, please wait...",
@@ -66,7 +66,7 @@ TEXTS = {
     },
     'tr': {
         'welcome': "Merhaba! Video İndirme Botuna hoş geldiniz.\n\nYouTube, Instagram, TikTok veya Facebook linki gönderebilirsiniz.",
-        'choose_format': "Hangi formatta indirmek istersiniz?",
+        'choose_format': "YouTube için format seçin:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ses (MP3)",
         'downloading': "⏳ İndiriliyor, lütfen bekleyin...",
@@ -89,7 +89,7 @@ def get_language_keyboard():
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")]
     ])
 
-def get_format_keyboard(user_id):
+def get_yt_format_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(get_text(user_id, 'video_btn'), callback_data="dl_video"),
@@ -104,61 +104,91 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_language_keyboard()
     )
 
-# --- YOUTUBE İÇİN COBALT MOTORU (IP ENGELİNİ AŞAN SİSTEM) ---
-def download_via_cobalt(url, is_audio, download_dir):
-    cobalt_instances = [
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt-api.kwiatekm.tokyo/api/json",
-        "https://api.wuk.sh/api/json"
+def is_youtube_url(url):
+    return bool(re.search(r'(?:youtube\.com|youtu\.be)', url, re.IGNORECASE))
+
+# --- MOTOR 1: ÇOKLU PROXY/COBALT ÇÖZÜCÜ (YOUTUBE DATACENTER BYPASS) ---
+def try_cobalt_download(url, is_audio, download_dir):
+    # En stabil açık Cobalt API sunucu havuzu
+    instances = [
+        "https://api.cobalt.tools",
+        "https://co.wuk.sh",
+        "https://cobalt-api.kwiatekm.tokyo",
+        "https://dlapi.miichelle.moe"
     ]
     
     payload = {
         "url": url,
-        "isAudioOnly": is_audio,
-        "aFormat": "mp3" if is_audio else None,
-        "vQuality": "720"
+        "downloadMode": "audio" if is_audio else "auto",
+        "audioFormat": "mp3",
+        "videoQuality": "720"
     }
-    data = json.dumps(payload).encode('utf-8')
+    
+    req_data = json.dumps(payload).encode('utf-8')
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0"
     }
-
-    media_url = None
+    
+    stream_url = None
     title = "YouTube Media"
 
-    for api in cobalt_instances:
+    for inst in instances:
         try:
-            req = urllib.request.Request(api, data=data, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                res = json.loads(resp.read().decode())
-                if res.get("status") in ["tunnel", "redirect"]:
-                    media_url = res.get("url")
-                    break
+            # Hem yeni v10 hem eski api/json endpointini dene
+            for endpoint in ["/", "/api/json"]:
+                target_url = inst.rstrip('/') + endpoint
+                try:
+                    req = urllib.request.Request(target_url, data=req_data, headers=headers, method="POST")
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        res = json.loads(resp.read().decode('utf-8'))
+                        if res.get("url"):
+                            stream_url = res.get("url")
+                            break
+                        elif res.get("status") in ["tunnel", "redirect"]:
+                            stream_url = res.get("url")
+                            break
+                except Exception:
+                    continue
+            if stream_url:
+                break
         except Exception:
             continue
 
-    if not media_url:
-        raise RuntimeError("Cobalt API fallback failed")
+    if not stream_url:
+        raise RuntimeError("Proxy stream cozumlenemedi.")
 
     ext = "mp3" if is_audio else "mp4"
-    target_file = os.path.join(download_dir, f"media.{ext}")
-    
-    req_dl = urllib.request.Request(media_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req_dl, timeout=60) as resp, open(target_file, 'wb') as out_f:
-        out_f.write(resp.read())
+    dest = os.path.join(download_dir, f"media.{ext}")
+    req_file = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req_file, timeout=60) as resp, open(dest, 'wb') as f:
+        f.write(resp.read())
 
-    return target_file, title
+    return dest, title
 
-# --- INSTAGRAM, TIKTOK, FACEBOOK İÇİN YT-DLP MOTORU ---
-def download_via_ytdlp(url, is_audio, download_dir):
+# --- MOTOR 2: GELİŞMİŞ YT-DLP MOTORU ---
+def try_ytdlp_download(url, is_audio, download_dir):
     out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
+    
+    # YouTube için bot-guard istemeyen TV ve Web-Embedded profili
+    extractor_args = {}
+    if is_youtube_url(url):
+        extractor_args = {
+            'youtube': {
+                'player_client': ['tv_embedded', 'android_creator', 'web_creator'],
+                'skip': ['configs', 'webpage']
+            }
+        }
+
     ydl_opts = {
         'outtmpl': out_tmpl,
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1+ (KHTML, like Gecko) TV Safari/538.1+',
+        'extractor_args': extractor_args,
+        'socket_timeout': 30,
     }
 
     if is_audio:
@@ -178,37 +208,37 @@ def download_via_ytdlp(url, is_audio, download_dir):
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        title = info.get('title', 'Video')
+        title = info.get('title', 'Media')
         files = os.listdir(download_dir)
         if not files:
-            raise FileNotFoundError("Dosya indirilemedi.")
+            raise FileNotFoundError("Dosya bulunamadi")
         return os.path.join(download_dir, files[0]), title
 
-def smart_download(url, is_audio, download_dir):
-    # Eğer YouTube linki ise doğrudan IP engelini aşan Cobalt motorunu çalıştır
-    if "youtube.com" in url or "youtu.be" in url:
+def smart_engine(url, is_audio, download_dir):
+    if is_youtube_url(url):
+        # 1. Önce YouTube proxy havuzunu dene (Render IP engeline takılmaz)
         try:
-            return download_via_cobalt(url, is_audio, download_dir)
+            return try_cobalt_download(url, is_audio, download_dir)
         except Exception:
-            # Cobalt yanıt vermezse yedek olarak yt-dlp'yi dene
-            return download_via_ytdlp(url, is_audio, download_dir)
+            # 2. Olmazsa tv_embedded modunda yt-dlp dene
+            return try_ytdlp_download(url, is_audio, download_dir)
     else:
-        # Instagram, TikTok, Facebook için yt-dlp
-        return download_via_ytdlp(url, is_audio, download_dir)
+        # Instagram, TikTok, Facebook doğrudan yt-dlp ile sorunsuz iner
+        return try_ytdlp_download(url, is_audio, download_dir)
 
-async def process_download(query, user_id, url, is_audio, context):
+async def process_download(status_msg, user_id, url, is_audio, context):
     try:
-        await query.edit_message_text(get_text(user_id, 'downloading'))
+        await status_msg.edit_text(get_text(user_id, 'downloading'))
         
         with tempfile.TemporaryDirectory() as tmp_dir:
-            file_path, title = await asyncio.to_thread(smart_download, url, is_audio, tmp_dir)
+            file_path, title = await asyncio.to_thread(smart_engine, url, is_audio, tmp_dir)
             
             size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if size_mb > 49.5:
-                await query.edit_message_text(get_text(user_id, 'error_size'))
+                await status_msg.edit_text(get_text(user_id, 'error_size'))
                 return
 
-            await query.edit_message_text(get_text(user_id, 'uploading'))
+            await status_msg.edit_text(get_text(user_id, 'uploading'))
 
             with open(file_path, 'rb') as f:
                 if is_audio:
@@ -229,11 +259,11 @@ async def process_download(query, user_id, url, is_audio, context):
                         write_timeout=180
                     )
             
-            await query.delete_message()
+            await status_msg.delete()
             
     except Exception as e:
         print(f"Hata detayi: {e}")
-        await query.edit_message_text(get_text(user_id, 'error_general'))
+        await status_msg.edit_text(get_text(user_id, 'error_general'))
     finally:
         pending_links.pop(user_id, None)
 
@@ -254,23 +284,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(get_text(user_id, 'error_general'))
             return
         
-        asyncio.create_task(process_download(query, user_id, url, data == "dl_audio", context))
+        asyncio.create_task(process_download(query.message, user_id, url, data == "dl_audio", context))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
-    url_pattern = re.compile(r'https?://(?:www\.)?[^\s]+')
-    match = url_pattern.search(text)
-    
-    if match:
-        pending_links[user_id] = match.group(0)
+    url_match = re.search(r'https?://(?:www\.)?[^\s]+', text)
+    if not url_match:
+        await update.message.reply_text(get_text(user_id, 'welcome'))
+        return
+
+    url = url_match.group(0)
+
+    # 1. Kural: YouTube linkiyse seçenek sun (Video veya Ses)
+    if is_youtube_url(url):
+        pending_links[user_id] = url
         await update.message.reply_text(
             get_text(user_id, 'choose_format'),
-            reply_markup=get_format_keyboard(user_id)
+            reply_markup=get_yt_format_keyboard(user_id)
         )
+    # 2. Kural: Instagram, TikTok, Facebook ise doğrudan videoyu indir
     else:
-        await update.message.reply_text(get_text(user_id, 'welcome'))
+        status_msg = await update.message.reply_text(get_text(user_id, 'downloading'))
+        asyncio.create_task(process_download(status_msg, user_id, url, False, context))
 
 def main():
     token = os.environ.get("BOT_TOKEN")

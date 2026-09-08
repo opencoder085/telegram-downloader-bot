@@ -2,6 +2,8 @@ import os
 import re
 import asyncio
 import tempfile
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,12 +15,25 @@ from telegram.ext import (
 )
 import yt_dlp
 
+# --- RENDER WEB SERVICE HEALTH CHECK ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        return  # Log kirliliğini engelle
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
 # --- ÇOK DİLLİ METİNLER (UZ, RU, EN, TR) ---
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Video yuklab beruvchi botga xush kelibsiz.\n\nYouTube, Instagram, TikTok yoki Facebook havolasini yuboring.",
-        'select_lang': "Tilni tanlang / Выберите язык / Select language / Dil seçin:",
-        'lang_changed': "Til muvaffaqiyatli o'zgartirildi!",
         'choose_format': "Qaysi formatda yuklab olmoqchisiz?",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ovoz (MP3)",
@@ -29,8 +44,6 @@ TEXTS = {
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать в загрузчик видео.\n\nОтправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
-        'select_lang': "Выберите язык / Select language / Tilni tanlang / Dil seçin:",
-        'lang_changed': "Язык успешно изменен!",
         'choose_format': "В каком формате хотите скачать?",
         'video_btn': "🎬 Видео",
         'audio_btn': "🎵 Аудио (MP3)",
@@ -41,8 +54,6 @@ TEXTS = {
     },
     'en': {
         'welcome': "Hello! Welcome to the Video Downloader bot.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
-        'select_lang': "Select language / Dil seçin / Выберите язык / Tilni tanlang:",
-        'lang_changed': "Language successfully updated!",
         'choose_format': "Choose download format:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Audio (MP3)",
@@ -53,8 +64,6 @@ TEXTS = {
     },
     'tr': {
         'welcome': "Merhaba! Video İndirme Botuna hoş geldiniz.\n\nYouTube, Instagram, TikTok veya Facebook linki gönderebilirsiniz.",
-        'select_lang': "Dil seçin / Select language / Выберите язык / Tilni tanlang:",
-        'lang_changed': "Dil başarıyla güncellendi!",
         'choose_format': "Hangi formatta indirmek istersiniz?",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Ses (MP3)",
@@ -96,20 +105,8 @@ def get_format_keyboard(user_id):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in user_languages:
-        await update.message.reply_text(
-            "Iltimos, tilni tanlang / Выберите язык / Select language / Lütfen dil seçin:",
-            reply_markup=get_language_keyboard()
-        )
-    else:
-        await update.message.reply_text(
-            get_text(user_id, 'welcome'),
-            reply_markup=get_language_keyboard()
-        )
-
-async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Tilni tanlang / Выберите язык / Select language / Dil seçin:",
+        "Iltimos, tilni tanlang / Выберите язык / Select language / Lütfen dil seçin:",
         reply_markup=get_language_keyboard()
     )
 
@@ -123,7 +120,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = data.split("_")[1]
         user_languages[user_id] = lang
         await query.edit_message_text(
-            f"{get_text(user_id, 'lang_changed')}\n\n{get_text(user_id, 'welcome')}"
+            f"✅ {get_text(user_id, 'welcome')}"
         )
         return
 
@@ -141,7 +138,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def download_media(url, is_audio, download_dir):
     out_tmpl = os.path.join(download_dir, '%(id)s.%(ext)s')
-    
     if is_audio:
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -155,7 +151,6 @@ def download_media(url, is_audio, download_dir):
             'no_warnings': True,
         }
     else:
-        # Telegram'ın 50 MB sınırına takılmamak için 45 MB hedefli akıllı kalite seçimi
         ydl_opts = {
             'format': 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]/best[filesize<45M]/best',
             'outtmpl': out_tmpl,
@@ -181,14 +176,12 @@ def process_and_send_media(query, user_id, url, is_audio, context):
                 file_path, title = await loop.run_in_executor(None, download_media, url, is_audio, tmp_dir)
                 
                 if not os.path.exists(file_path):
-                    # Bazen uzantı farklı olabilir, klasördeki ilk dosyayı al
                     files = os.listdir(tmp_dir)
                     if files:
                         file_path = os.path.join(tmp_dir, files[0])
                     else:
                         raise FileNotFoundError("Dosya bulunamadı.")
 
-                # 50 MB Telegram Limiti Kontrolü
                 size_mb = os.path.getsize(file_path) / (1024 * 1024)
                 if size_mb > 49.5:
                     await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'error_size'))
@@ -204,7 +197,7 @@ def process_and_send_media(query, user_id, url, is_audio, context):
                 
                 await query.delete_message()
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"Hata: {e}")
                 await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'error_general'))
             finally:
                 pending_links.pop(user_id, None)
@@ -215,7 +208,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
-    # URL tespiti (YouTube, Instagram, TikTok, Facebook vb.)
     url_pattern = re.compile(r'https?://(?:www\.)?[^\s]+')
     match = url_pattern.search(text)
     
@@ -236,33 +228,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'welcome'))
 
 def main():
-    import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running 7/24!")
-
-def run_health_server():
-    server = HTTPServer(('0.0.0.0', 8080), HealthCheckHandler)
-    server.serve_forever()
-
-def main():
     token = os.environ.get("BOT_TOKEN")
     if not token:
-        raise ValueError("BOT_TOKEN ortam değişkeni ayarlanmadı!")
+        raise ValueError("BOT_TOKEN ayarlanmadi!")
 
-    # Render'ın ücretsiz web sunucusu şartını sağlayan arka plan sinyali
+    # Render'ın servisi canlı tutması için web portunu aç
     threading.Thread(target=run_health_server, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
-
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot basariyla calisiyor...")
     app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
+    main()

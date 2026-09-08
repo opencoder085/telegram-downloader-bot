@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 import threading
 import json
+import subprocess
 import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,7 +18,7 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER WEB SUNUCUSU (7/24 CANLI TUTMA) ---
+# --- RENDER 7/24 SAĞLIK SUNUCUSU ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -107,131 +108,147 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def is_youtube_url(url):
     return bool(re.search(r'(?:youtube\.com|youtu\.be)', url, re.IGNORECASE))
 
-# --- MOTOR 1: ÇOKLU PROXY/COBALT ÇÖZÜCÜ (YOUTUBE DATACENTER BYPASS) ---
-def try_cobalt_download(url, is_audio, download_dir):
-    # En stabil açık Cobalt API sunucu havuzu
-    instances = [
-        "https://api.cobalt.tools",
-        "https://co.wuk.sh",
-        "https://cobalt-api.kwiatekm.tokyo",
-        "https://dlapi.miichelle.moe"
-    ]
-    
-    payload = {
-        "url": url,
-        "downloadMode": "audio" if is_audio else "auto",
-        "audioFormat": "mp3",
-        "videoQuality": "720"
-    }
-    
-    req_data = json.dumps(payload).encode('utf-8')
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0"
-    }
-    
-    stream_url = None
-    title = "YouTube Media"
+def extract_youtube_id(url):
+    match = re.search(r'(?:v=|\/|shorts\/)([0-9A-Za-z_-]{11})', url)
+    return match.group(1) if match else None
 
-    for inst in instances:
+# --- YOUTUBE ÖZEL DAĞITIK AKIŞ MOTORU (DATACENTER IP ENGELİNİ AŞAR) ---
+def download_youtube_advanced(url, is_audio, download_dir):
+    video_id = extract_youtube_id(url)
+    if not video_id:
+        raise ValueError("Gecersiz YouTube linki.")
+
+    # 1. Piped API Dağıtık Ağı
+    piped_instances = [
+        "https://api.piped.privacydev.net",
+        "https://pipedapi.tokhmi.xyz",
+        "https://pipedapi.ducks.party",
+        "https://pipedapi.drgns.space",
+        "https://pipedapi.kavin.rocks"
+    ]
+
+    title = "YouTube Media"
+    stream_url = None
+
+    for inst in piped_instances:
         try:
-            # Hem yeni v10 hem eski api/json endpointini dene
-            for endpoint in ["/", "/api/json"]:
-                target_url = inst.rstrip('/') + endpoint
-                try:
-                    req = urllib.request.Request(target_url, data=req_data, headers=headers, method="POST")
-                    with urllib.request.urlopen(req, timeout=8) as resp:
-                        res = json.loads(resp.read().decode('utf-8'))
-                        if res.get("url"):
-                            stream_url = res.get("url")
-                            break
-                        elif res.get("status") in ["tunnel", "redirect"]:
-                            stream_url = res.get("url")
-                            break
-                except Exception:
-                    continue
-            if stream_url:
-                break
+            req = urllib.request.Request(
+                f"{inst}/streams/{video_id}",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                title = data.get("title", "YouTube Media")
+                
+                if is_audio:
+                    audio_streams = data.get("audioStreams", [])
+                    if audio_streams:
+                        stream_url = audio_streams[0].get("url")
+                        break
+                else:
+                    video_streams = data.get("videoStreams", [])
+                    # Hem ses hem görüntü içeren birleşik akışları ara
+                    combined = [s for s in video_streams if not s.get("videoOnly", True)]
+                    if combined:
+                        stream_url = combined[0].get("url")
+                        break
+                    elif video_streams:
+                        stream_url = video_streams[0].get("url")
+                        break
         except Exception:
             continue
 
+    # 2. Invidious API Dağıtık Ağı (Piped yanıt vermezse)
     if not stream_url:
-        raise RuntimeError("Proxy stream cozumlenemedi.")
+        invidious_instances = [
+            "https://invidious.nerdvpn.de",
+            "https://inv.nadeko.net",
+            "https://invidious.jing.rocks",
+            "https://inv.tux.pizza"
+        ]
+        for inst in invidious_instances:
+            try:
+                req = urllib.request.Request(
+                    f"{inst}/api/v1/videos/{video_id}",
+                    headers={"User-Agent": "Mozilla/5.0"}
+                )
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    title = data.get("title", "YouTube Media")
+                    if is_audio:
+                        adaptive = data.get("adaptiveFormats", [])
+                        audios = [a for a in adaptive if "audio" in a.get("type", "")]
+                        if audios:
+                            stream_url = audios[0].get("url")
+                            break
+                    else:
+                        formats = data.get("formatStreams", [])
+                        if formats:
+                            stream_url = formats[0].get("url")
+                            break
+            except Exception:
+                continue
 
-    ext = "mp3" if is_audio else "mp4"
-    dest = os.path.join(download_dir, f"media.{ext}")
-    req_file = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req_file, timeout=60) as resp, open(dest, 'wb') as f:
-        f.write(resp.read())
+    if not stream_url:
+        raise RuntimeError("YouTube akis adresi alinamadi.")
 
-    return dest, title
+    # Akışı indir
+    raw_file = os.path.join(download_dir, "raw_stream")
+    req_dl = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req_dl, timeout=90) as resp, open(raw_file, 'wb') as f:
+        while True:
+            chunk = resp.read(1024 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
 
-# --- MOTOR 2: GELİŞMİŞ YT-DLP MOTORU ---
-def try_ytdlp_download(url, is_audio, download_dir):
-    out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
-    
-    # YouTube için bot-guard istemeyen TV ve Web-Embedded profili
-    extractor_args = {}
-    if is_youtube_url(url):
-        extractor_args = {
-            'youtube': {
-                'player_client': ['tv_embedded', 'android_creator', 'web_creator'],
-                'skip': ['configs', 'webpage']
-            }
-        }
+    # FFmpeg ile Telegram'a uygun formata çevir
+    if is_audio:
+        final_file = os.path.join(download_dir, "audio.mp3")
+        subprocess.run(
+            ['ffmpeg', '-y', '-i', raw_file, '-vn', '-b:a', '192k', final_file],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return final_file, title
+    else:
+        final_file = os.path.join(download_dir, "video.mp4")
+        subprocess.run(
+            ['ffmpeg', '-y', '-i', raw_file, '-c', 'copy', '-movflags', '+faststart', final_file],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return final_file, title
 
+# --- INSTAGRAM, TIKTOK, FACEBOOK MOTORU ---
+def download_social_media(url, download_dir):
+    out_tmpl = os.path.join(download_dir, 'video.%(ext)s')
     ydl_opts = {
         'outtmpl': out_tmpl,
+        'format': 'best[ext=mp4][filesize<45M]/best[filesize<45M]/best',
+        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
-        'nocheckcertificate': True,
-        'user_agent': 'Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1+ (KHTML, like Gecko) TV Safari/538.1+',
-        'extractor_args': extractor_args,
-        'socket_timeout': 30,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     }
-
-    if is_audio:
-        ydl_opts.update({
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        })
-    else:
-        ydl_opts.update({
-            'format': 'best[ext=mp4][filesize<45M]/best[filesize<45M]/bestvideo[filesize<40M]+bestaudio/best',
-            'merge_output_format': 'mp4',
-        })
-
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        title = info.get('title', 'Media')
+        title = info.get('title', 'Video')
         files = os.listdir(download_dir)
         if not files:
-            raise FileNotFoundError("Dosya bulunamadi")
+            raise FileNotFoundError("Video indirilemedi.")
         return os.path.join(download_dir, files[0]), title
 
-def smart_engine(url, is_audio, download_dir):
+def universal_download(url, is_audio, download_dir):
     if is_youtube_url(url):
-        # 1. Önce YouTube proxy havuzunu dene (Render IP engeline takılmaz)
-        try:
-            return try_cobalt_download(url, is_audio, download_dir)
-        except Exception:
-            # 2. Olmazsa tv_embedded modunda yt-dlp dene
-            return try_ytdlp_download(url, is_audio, download_dir)
+        return download_youtube_advanced(url, is_audio, download_dir)
     else:
-        # Instagram, TikTok, Facebook doğrudan yt-dlp ile sorunsuz iner
-        return try_ytdlp_download(url, is_audio, download_dir)
+        return download_social_media(url, download_dir)
 
 async def process_download(status_msg, user_id, url, is_audio, context):
     try:
         await status_msg.edit_text(get_text(user_id, 'downloading'))
         
         with tempfile.TemporaryDirectory() as tmp_dir:
-            file_path, title = await asyncio.to_thread(smart_engine, url, is_audio, tmp_dir)
+            file_path, title = await asyncio.to_thread(universal_download, url, is_audio, tmp_dir)
             
             size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if size_mb > 49.5:
@@ -297,14 +314,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = url_match.group(0)
 
-    # 1. Kural: YouTube linkiyse seçenek sun (Video veya Ses)
+    # YouTube: Seçenek butonları çıkar (Video / Ses)
     if is_youtube_url(url):
         pending_links[user_id] = url
         await update.message.reply_text(
             get_text(user_id, 'choose_format'),
             reply_markup=get_yt_format_keyboard(user_id)
         )
-    # 2. Kural: Instagram, TikTok, Facebook ise doğrudan videoyu indir
+    # Instagram, TikTok, Facebook: Sormadan direkt video indir
     else:
         status_msg = await update.message.reply_text(get_text(user_id, 'downloading'))
         asyncio.create_task(process_download(status_msg, user_id, url, False, context))

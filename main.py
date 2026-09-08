@@ -368,8 +368,7 @@ async def fetch_prayer_times(city_input: str):
             except Exception:
                 pass
 
-        # 2. Aşama: Kesin Çözüm (Open-Meteo Geocoding -> Aladhan Koordinat API)
-        # Kokand gibi Nominatim'in doğrudan tek kelimeyle bulamadığı şehirleri koordinata çevirip vakti çeker
+        # 2. Aşama: Koordinat Destekli Arama (Geocoding -> Aladhan Koordinat API)
         for cand in unique_candidates:
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cand)}&count=1&language=en&format=json"
             try:
@@ -447,7 +446,7 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
         f"  ▫️ *{labels[0]}:*{' ' * max(1, 9 - len(labels[0]))}`{t_fajr}`\n"
         f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_sunrise}`\n"
         f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_dhuhr}`\n"
-        f"  ▫️ *{labels[3]}:*{' ' * max(1, 9 - len(labels[3]))}`{t_asr}`\n"
+        f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_asr}`\n"
         f"  ▫️ *{labels[4]}:*{' ' * max(1, 9 - len(labels[4]))}`{t_maghrib}`\n"
         f"  ▫️ *{labels[5]}:*{' ' * max(1, 9 - len(labels[5]))}`{t_isha}`\n"
         f"└────────────────────────────┘\n"
@@ -742,7 +741,7 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
             return
 
-    # Sadece /namoz veya menüden basıldıysa buton olmadan doğrudan şehir sorsun
+    # Sadece /namoz yazıldıysa veya menüden basıldıysa buton olmadan şehir sorulur
     context.user_data['mode'] = 'prayer'
     await update.message.reply_text(
         get_text(user_id, 'prompt_prayer', context),
@@ -799,7 +798,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if raw_text in btn_pry:
         context.user_data['mode'] = 'prayer'
-        # Butonlar kaldırıldı, sadece şehir ismi yazmasını ister
         await update.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
             parse_mode="Markdown"

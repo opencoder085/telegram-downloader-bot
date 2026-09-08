@@ -1,6 +1,5 @@
 import os
 import re
-import difflib
 import json
 import ssl
 import shutil
@@ -255,19 +254,16 @@ def is_mostly_cyrillic(text: str) -> bool:
     return cyr_count >= lat_count
 
 # =====================================================================
-# ŞEHİR VE ADRES ÇÖZÜMLEME (NUN.HTML ESNEKLİĞİ)
+# ŞEHİR ADI NORMALİZASYONU VE VARYANT HARİTASI
 # =====================================================================
-ALIASES = {
-    # Özbekistan şehirleri ve varyantları
-    "toshkent": "Tashkent", "toskent": "Tashkent", "toshken": "Tashkent",
-    "тошкент": "Tashkent", "ташкент": "Tashkent", "tashkent": "Tashkent",
-    "samarqand": "Samarkand", "samarkant": "Samarkand", "самарқанд": "Samarkand",
-    "самарканд": "Samarkand", "samarkand": "Samarkand",
+CITY_ALIASES = {
+    # Özbekistan ve Fergana Vadisi
+    "kokand": "Kokand", "qoqon": "Kokand", "qo'qon": "Kokand", "qoʻqon": "Kokand", "коканд": "Kokand",
+    "toshkent": "Tashkent", "toskent": "Tashkent", "toshken": "Tashkent", "тошкент": "Tashkent", "ташкент": "Tashkent", "tashkent": "Tashkent",
+    "samarqand": "Samarkand", "samarkant": "Samarkand", "самарқанд": "Samarkand", "самарканд": "Samarkand", "samarkand": "Samarkand",
     "buxoro": "Bukhara", "buhara": "Bukhara", "бухоро": "Bukhara", "bukhara": "Bukhara",
     "andijon": "Andijan", "andjan": "Andijan", "андижон": "Andijan", "andijan": "Andijan",
-    "namangan": "Namangan", "наманган": "Namangan",
-    "fargona": "Fergana", "farg'ona": "Fergana", "фарғона": "Fergana", "fergana": "Fergana",
-    "qoqon": "Kokand", "qo'qon": "Kokand", "коканд": "Kokand", "kokand": "Kokand",
+    "fargona": "Fergana", "farg'ona": "Fergana", "fargʻona": "Fergana", "фарғона": "Fergana", "фергана": "Fergana", "fergana": "Fergana",
     "margilon": "Margilan", "marg'ilon": "Margilan", "марғилон": "Margilan", "margilan": "Margilan",
     "urganch": "Urgench", "урганч": "Urgench", "urgench": "Urgench",
     "xiva": "Khiva", "khiva": "Khiva", "хива": "Khiva",
@@ -275,19 +271,22 @@ ALIASES = {
     "jizzax": "Jizzakh", "жиззах": "Jizzakh", "jizzakh": "Jizzakh",
     "navoiy": "Navoiy", "навоий": "Navoiy", "navoi": "Navoiy",
     "termiz": "Termez", "термиз": "Termez", "termez": "Termez",
+    "denov": "Denau", "денов": "Denau", "denau": "Denau",
     "qarshi": "Qarshi", "қарши": "Qarshi",
     "guliston": "Gulistan", "гулистон": "Gulistan",
-    "denov": "Denau", "денов": "Denau",
+    "shahrisabz": "Shahrisabz", "шаҳрисабз": "Shahrisabz",
+    "angren": "Angren", "ангрен": "Angren",
+    "chirchiq": "Chirchiq", "чирчиқ": "Chirchiq",
+    "zarafshon": "Zarafshan", "зарафшон": "Zarafshan",
 
-    # Türkiye şehirleri ve varyantları
-    "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul",
-    "stambul": "Istanbul", "истанбул": "Istanbul", "стамбул": "Istanbul",
-    "ankara": "Ankara", "анкара": "Ankara", "anqara": "Ankara",
+    # Türkiye
+    "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul", "stambul": "Istanbul", "истанбул": "Istanbul", "стамбул": "Istanbul",
+    "ankara": "Ankara", "анкара": "Ankara",
     "izmir": "Izmir", "измир": "Izmir",
     "bursa": "Bursa", "бурса": "Bursa",
     "antalya": "Antalya", "анталья": "Antalya",
-    "konya": "Konya", "конъя": "Konya",
     "adana": "Adana", "адана": "Adana",
+    "konya": "Konya",
     "gaziantep": "Gaziantep", "antep": "Gaziantep",
     "sanliurfa": "Sanliurfa", "urfa": "Sanliurfa",
     "kayseri": "Kayseri", "eskisehir": "Eskisehir", "samsun": "Samsun",
@@ -301,12 +300,12 @@ ALIASES = {
     "bishkek": "Bishkek", "бишкек": "Bishkek",
     "dushanbe": "Dushanbe", "душанбе": "Dushanbe",
     "baku": "Baku", "boku": "Baku", "баку": "Baku",
-    "makka": "Makkah", "mekke": "Makkah", "mecca": "Makkah", "макка": "Makkah",
-    "madina": "Medina", "medine": "Medina", "medina": "Medina", "мадина": "Medina",
-    "dubai": "Dubai", "dubay": "Dubai", "дубай": "Dubai",
+    "makka": "Makkah", "mekke": "Makkah", "mecca": "Makkah",
+    "madina": "Medina", "medine": "Medina",
+    "dubai": "Dubai", "dubay": "Dubai",
     "london": "London", "лондон": "London",
-    "berlin": "Berlin", "берлин": "Berlin",
-    "paris": "Paris", "parij": "Paris", "париж": "Paris",
+    "berlin": "Berlin",
+    "paris": "Paris", "parij": "Paris",
 }
 
 def normalize_key(text: str) -> str:
@@ -327,7 +326,7 @@ def clean_prayer_query(raw_text: str) -> str:
     return cleaned if cleaned else text
 
 # =====================================================================
-# ALADHAN API BAĞLANTISI (NUN.HTML İLE BİREBİR AYNI MANTIK)
+# ÇİFT KATMANLI KESİNTİSİZ NAMAZ VAKTİ MOTORU
 # =====================================================================
 async def fetch_prayer_times(city_input: str):
     city_clean = clean_prayer_query(city_input)
@@ -335,15 +334,17 @@ async def fetch_prayer_times(city_input: str):
         return None, None
 
     norm = normalize_key(city_clean)
-    mapped_city = ALIASES.get(norm)
+    mapped = CITY_ALIASES.get(norm)
 
-    # Aday sorgu isimleri (Örn: "Tashkent", "Toshkent")
     candidates = []
-    if mapped_city:
-        candidates.append(mapped_city)
+    if mapped:
+        candidates.append(mapped)
     candidates.append(city_clean)
+    if not any(c in norm for c in ('uzbekistan', 'turkey', 'turkiya', 'kazakhstan', 'russia')):
+        candidates.append(f"{city_clean} Uzbekistan")
+        candidates.append(f"{city_clean} Turkey")
 
-    # Tekrarları temizle
+    # Benzersiz aday listesi
     unique_candidates = []
     for c in candidates:
         if c.lower() not in [x.lower() for x in unique_candidates]:
@@ -354,40 +355,42 @@ async def fetch_prayer_times(city_input: str):
         "Accept": "application/json, text/plain, */*",
     }
 
-    # 1. Öncelikli Yöntem: Asenkron HTTPX (Telegram kütüphanesinin kendi motoru)
-    try:
-        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-            for cand in unique_candidates:
-                url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
-                try:
-                    resp = await client.get(url, headers=headers)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("code") == 200 and "data" in data and "timings" in data["data"]:
-                            return data["data"], cand
-                except Exception:
-                    pass
-    except Exception as e:
-        print(f"HTTPX isteği hatası: {e}")
-
-    # 2. Yedek Yöntem: SSL doğrulaması devre dışı urllib
-    try:
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-
+    async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
+        # 1. Aşama: Nun.html standart timingsByAddress servisi
         for cand in unique_candidates:
             url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
             try:
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as resp:
-                    data = json.loads(resp.read().decode('utf-8'))
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
                     if data.get("code") == 200 and "data" in data and "timings" in data["data"]:
                         return data["data"], cand
             except Exception:
                 pass
-    except Exception as e:
-        print(f"Urllib isteği hatası: {e}")
+
+        # 2. Aşama: Kesin Çözüm (Open-Meteo Geocoding -> Aladhan Koordinat API)
+        # Kokand gibi Nominatim'in doğrudan tek kelimeyle bulamadığı şehirleri koordinata çevirip vakti çeker
+        for cand in unique_candidates:
+            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cand)}&count=1&language=en&format=json"
+            try:
+                geo_resp = await client.get(geo_url, headers=headers)
+                if geo_resp.status_code == 200:
+                    geo_json = geo_resp.json()
+                    results = geo_json.get("results")
+                    if results and len(results) > 0:
+                        first = results[0]
+                        lat = first.get("latitude")
+                        lon = first.get("longitude")
+                        found_name = first.get("name", cand)
+
+                        coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}"
+                        coord_resp = await client.get(coord_url, headers=headers)
+                        if coord_resp.status_code == 200:
+                            c_json = coord_resp.json()
+                            if c_json.get("code") == 200 and "data" in c_json and "timings" in c_json["data"]:
+                                return c_json["data"], found_name
+            except Exception:
+                pass
 
     return None, None
 
@@ -443,7 +446,7 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
         f"┌────────────────────────────┐\n"
         f"  ▫️ *{labels[0]}:*{' ' * max(1, 9 - len(labels[0]))}`{t_fajr}`\n"
         f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_sunrise}`\n"
-        f"  ▫️ *{labels[2]}:*{' ' * max(1, 9 - len(labels[2]))}`{t_dhuhr}`\n"
+        f"  ▫️ *{labels}:*{' ' * max(1, 9 - len(labels))}`{t_dhuhr}`\n"
         f"  ▫️ *{labels[3]}:*{' ' * max(1, 9 - len(labels[3]))}`{t_asr}`\n"
         f"  ▫️ *{labels[4]}:*{' ' * max(1, 9 - len(labels[4]))}`{t_maghrib}`\n"
         f"  ▫️ *{labels[5]}:*{' ' * max(1, 9 - len(labels[5]))}`{t_isha}`\n"
@@ -457,14 +460,14 @@ def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang:
 # =====================================================================
 TEXTS = {
     'uz': {
-        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\n\nQuyidagi menyudan kerakli boʻlimni tanlang yoki shahar nomini yuboring:",
+        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\n\nKerakli boʻlimni tanlang yoki toʻgʻridan-toʻgʻri shahar nomini yuboring:",
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
         'btn_prayer': "🕌 Namoz vaqtlari",
         'btn_c2l': "🔤 Krill ➔ Lotin",
         'btn_l2c': "🔤 Lotin ➔ Krill",
         'btn_lang': "🌐 Tilni tanlash",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nQaysi shahar namoz vaqtlarini bilmoqchisiz?\nShahar nomini yozing (masalan: *Toshkent*, *Istanbul*, *Samarqand*, *Buxoro*):",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Buxoro*...)_",
         'prompt_c2l': "✍️ Kirill alifbosidagi matnni yuboring, uni Lotin alifbosiga oʻgirib beraman:",
         'prompt_l2c': "✍️ Lotin alifbosidagi matnni yuboring, uni Kirill alifbosiga oʻgirib beraman:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
@@ -472,7 +475,7 @@ TEXTS = {
         'uploading': "📤 Telegramga yuklanmoqda...",
         'error_size': "⚠️ Fayl hajmi Telegram cheklovidan (50 MB) katta.",
         'error_general': "❌ Xatolik yuz berdi. Qaytadan urinib koʻring.",
-        'city_not_found': "❌ Shahar aniqlanmadi. Iltimos, shahar nomini qaytadan yozing (masalan: *Toshkent*, *Istanbul*, *Samarqand*).",
+        'city_not_found': "❌ Shahar aniqlanmadi. Iltimos, shahar nomini toʻgʻri yozing (Masalan: *Qoʻqon*, *Toshkent*, *Istanbul*).",
         'lang_changed': "✅ Til muvaffaqiyatli oʻzgartirildi!",
     },
     'ru': {
@@ -483,7 +486,7 @@ TEXTS = {
         'btn_c2l': "🔤 Кириллица ➔ Латиница",
         'btn_l2c': "🔤 Латиница ➔ Кириллица",
         'btn_lang': "🌐 Сменить язык",
-        'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города (например: *Ташкент*, *Стамбул*, *Самарканд*, *Москва*):",
+        'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города для получения времени намаза:\n_(Например: *Коканд*, *Ташкент*, *Стамбул*, *Москва*, *Самарканд*...)_",
         'prompt_c2l': "✍️ Отправьте текст на кириллице для перевода в латиницу:",
         'prompt_l2c': "✍️ Отправьте текст на латинице для перевода в кириллицу:",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
@@ -491,7 +494,7 @@ TEXTS = {
         'uploading': "📤 Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
         'error_general': "❌ Произошла ошибка. Попробуйте снова.",
-        'city_not_found': "❌ Город не распознан. Пожалуйста, напишите заново (например: *Ташкент*, *Стамбул*, *Москва*).",
+        'city_not_found': "❌ Город не распознан. Пожалуйста, напишите заново (Например: *Коканд*, *Ташкент*, *Стамбул*).",
         'lang_changed': "✅ Язык успешно изменен!",
     },
     'en': {
@@ -502,7 +505,7 @@ TEXTS = {
         'btn_c2l': "🔤 Cyrillic ➔ Latin",
         'btn_l2c': "🔤 Latin ➔ Cyrillic",
         'btn_lang': "🌐 Change Language",
-        'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name (e.g. *Tashkent*, *Istanbul*, *London*, *Samarkand*):",
+        'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name to get prayer times:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*, *Samarkand*...)_",
         'prompt_c2l': "✍️ Send text in Cyrillic to convert into Latin:",
         'prompt_l2c': "✍️ Send text in Latin to convert into Cyrillic:",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
@@ -510,7 +513,7 @@ TEXTS = {
         'uploading': "📤 Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
         'error_general': "❌ An error occurred. Please try again.",
-        'city_not_found': "❌ City could not be detected. Please try again (e.g. *Tashkent*, *Istanbul*, *London*).",
+        'city_not_found': "❌ City could not be detected. Please try again (e.g. *Kokand*, *Tashkent*, *Istanbul*).",
         'lang_changed': "✅ Language updated successfully!",
     },
     'tr': {
@@ -521,7 +524,7 @@ TEXTS = {
         'btn_c2l': "🔤 Kiril ➔ Latin",
         'btn_l2c': "🔤 Latin ➔ Kiril",
         'btn_lang': "🌐 Dil Seçimi",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehri yazın (örneğin: *İstanbul*, *Ankara*, *Taşkent*, *Bursa*):",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*, *Bursa*...)_",
         'prompt_c2l': "✍️ Latin alfabesine çevirmek istediğiniz Kiril metni gönderin:",
         'prompt_l2c': "✍️ Kiril alfabesine çevirmek istediğiniz Latin metni gönderin:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
@@ -529,7 +532,7 @@ TEXTS = {
         'uploading': "📤 Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
         'error_general': "❌ Bir hata oluştu. Lütfen tekrar deneyin.",
-        'city_not_found': "❌ Şehir bulunamadı. Lütfen tekrar yazın (örneğin: *İstanbul*, *Ankara*, *Taşkent*).",
+        'city_not_found': "❌ Şehir bulunamadı. Lütfen tekrar yazın (Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*).",
         'lang_changed': "✅ Dil başarıyla değiştirildi!",
     }
 }
@@ -558,20 +561,6 @@ def get_language_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
         [InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
-    ])
-
-def get_quick_cities_keyboard():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📍 Toshkent", callback_data="city_Tashkent"),
-            InlineKeyboardButton("📍 Samarqand", callback_data="city_Samarkand"),
-            InlineKeyboardButton("📍 Buxoro", callback_data="city_Bukhara"),
-        ],
-        [
-            InlineKeyboardButton("📍 İstanbul", callback_data="city_Istanbul"),
-            InlineKeyboardButton("📍 Ankara", callback_data="city_Ankara"),
-            InlineKeyboardButton("📍 Moskva", callback_data="city_Moscow"),
-        ]
     ])
 
 # =====================================================================
@@ -678,7 +667,7 @@ async def process_download(status_msg, user_id, chat_id, url, context):
             await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
 
 # =====================================================================
-# TELEGRAM KOMUTLARI VE ETKİLEŞİM
+# TELEGRAM ETKİLEŞİM İŞLEYİCİLERİ
 # =====================================================================
 async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: int, lang: str):
     commands_map = {
@@ -737,6 +726,7 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_lang = get_user_lang(user_id, context)
 
+    # Doğrudan /namaz Kokand veya /namoz Toshkent şeklinde girildiyse
     if context.args:
         city_query = " ".join(context.args)
         prayer_data, resolved_name = await fetch_prayer_times(city_query)
@@ -752,10 +742,10 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
             return
 
+    # Sadece /namoz veya menüden basıldıysa buton olmadan doğrudan şehir sorsun
     context.user_data['mode'] = 'prayer'
     await update.message.reply_text(
         get_text(user_id, 'prompt_prayer', context),
-        reply_markup=get_quick_cities_keyboard(),
         parse_mode="Markdown"
     )
 
@@ -767,7 +757,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # DİL DEĞİŞİMİ
     if data.startswith("lang_"):
-        selected_lang = data.split("_", 1)  # Doğrudan dil kodunu al ('uz', 'tr', 'ru', 'en')
+        selected_lang = data.split("_", 1)  # 'uz', 'tr', 'ru', 'en'
         context.user_data['lang'] = selected_lang
 
         try:
@@ -775,31 +765,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        # Sol alttaki Telegram menüsünü seçilen dilde güncelle
+        # Sol alttaki Telegram Menü komutlarını anında güncelle
         await update_user_bot_commands(context, user_id, selected_lang)
 
-        # Alt klavyeyi anında yeni dilde göndererek Telegram menüsünü yenile
+        # Alt klavye butonlarını anında yeni dilde güncelle
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ {get_text(user_id, 'lang_changed', context)}\n\n{get_text(user_id, 'welcome', context)}",
             reply_markup=get_reply_menu(user_id, context)
         )
-        return
-
-    # HIZLI ŞEHİR SEÇİMİ
-    if data.startswith("city_"):
-        city_target = data.split("_", 1)
-        user_lang = get_user_lang(user_id, context)
-        prayer_data, resolved_name = await fetch_prayer_times(city_target)
-        if prayer_data:
-            disp_name = resolved_name.title() if resolved_name else city_target.title()
-            card = format_nun_prayer_card(disp_name, city_target, prayer_data, user_lang)
-            try:
-                await query.message.reply_text(card, parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(card)
-        else:
-            await query.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
         return
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -825,9 +799,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if raw_text in btn_pry:
         context.user_data['mode'] = 'prayer'
+        # Butonlar kaldırıldı, sadece şehir ismi yazmasını ister
         await update.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
-            reply_markup=get_quick_cities_keyboard(),
             parse_mode="Markdown"
         )
         return
@@ -861,19 +835,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_mode = context.user_data.get('mode', 'auto')
     lower_text = raw_text.lower().strip()
 
-    # Kullanıcı tek başına "namaz" veya "namoz" yazmışsa
+    # Kullanıcı tek başına sadece "namaz" veya "namoz" yazdıysa
     if lower_text in ('namoz', 'namaz', 'prayer', 'vaqt', 'vakit'):
         context.user_data['mode'] = 'prayer'
         await update.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
-            reply_markup=get_quick_cities_keyboard(),
             parse_mode="Markdown"
         )
         return
 
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
-    # 3. Namaz Vakti Modu veya Açıkça Namaz Sorusu
+    # 3. Namaz Vakti Modu veya Açıkça Namaz Sorusu (Örn: "Kokand", "Toshkent", "namoz toshkent")
     if current_mode == 'prayer' or is_prayer_intent:
         prayer_data, resolved_name = await fetch_prayer_times(raw_text)
         if prayer_data:
@@ -901,7 +874,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 6. Otomatik Algılama Modu ('auto'): Kullanıcı butona basmadan direkt şehir adı yazdıysa (1-3 kelime)
+    # 6. Otomatik Algılama: Menüye basmadan sadece bir şehir yazıldıysa (Örn: "Kokand", "Bursa", "Qo'qon")
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
         prayer_data, resolved_name = await fetch_prayer_times(raw_text)

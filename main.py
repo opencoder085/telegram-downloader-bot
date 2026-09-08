@@ -40,7 +40,7 @@ TEXTS = {
         'downloading': "⏳ Yuklab olinmoqda, iltimos kuting...",
         'uploading': "📤 Telegramga yuklanmoqda...",
         'error_size': "⚠️ Video hajmi Telegram cheklovidan (50 MB) katta.",
-        'error_general': "❌ Yuklab olishda xatolik yuz berdi. Havola ochiq/to'g'riligini tekshiring."
+        'error_general': "❌ Yuklab olishda xatolik yuz berdi. Havolani tekshiring."
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать в загрузчик видео.\n\nОтправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
@@ -50,17 +50,17 @@ TEXTS = {
         'downloading': "⏳ Скачивается, пожалуйста подождите...",
         'uploading': "📤 Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
-        'error_general': "❌ Произошла ошибка. Убедитесь, что ссылка правильная и аккаунт открытый."
+        'error_general': "❌ Ошибка загрузки. Проверьте ссылку."
     },
     'en': {
-        'welcome': "Hello! Welcome to the Video Downloader bot.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
+        'welcome': "Hello! Welcome to Video Downloader bot.\n\nSend a link from YouTube, Instagram, TikTok, or Facebook.",
         'choose_format': "Choose download format:",
         'video_btn': "🎬 Video",
         'audio_btn': "🎵 Audio (MP3)",
         'downloading': "⏳ Downloading, please wait...",
         'uploading': "📤 Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
-        'error_general': "❌ Failed to download. Please ensure the link is public and valid."
+        'error_general': "❌ Download failed. Please verify the link."
     },
     'tr': {
         'welcome': "Merhaba! Video İndirme Botuna hoş geldiniz.\n\nYouTube, Instagram, TikTok veya Facebook linki gönderebilirsiniz.",
@@ -70,7 +70,7 @@ TEXTS = {
         'downloading': "⏳ İndiriliyor, lütfen bekleyin...",
         'uploading': "📤 Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya Telegram'ın 50 MB sınırından daha büyük.",
-        'error_general': "❌ İndirme başarısız oldu. Linkin herkese açık ve geçerli olduğundan emin olun."
+        'error_general': "❌ İndirme başarısız oldu. Linki kontrol edin."
     }
 }
 
@@ -104,54 +104,73 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def download_media_sync(url, is_audio, download_dir):
     out_tmpl = os.path.join(download_dir, 'media.%(ext)s')
-    
-    # Instagram, TikTok ve YouTube korumalarını aşmak için tarayıcı kimliği
-    ydl_opts = {
-        'outtmpl': out_tmpl,
-        'quiet': True,
-        'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'http_headers': {
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
-    }
 
-    if is_audio:
-        ydl_opts.update({
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        })
-    else:
-        ydl_opts.update({
-            'format': 'best[ext=mp4][filesize<45M]/best[filesize<45M]/bestvideo[filesize<40M]+bestaudio/best',
-            'merge_output_format': 'mp4',
-        })
+    # YouTube engelini aşan istemci öncelikleri
+    is_youtube = ("youtube.com" in url or "youtu.be" in url)
+    client_configs = [
+        "android,web_embedded",
+        "ios",
+        "tv_embedded",
+        "web"
+    ] if is_youtube else [None]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        title = info.get('title', 'Video')
-        
-        # Klasörde inen dosyayı yakala
-        files = os.listdir(download_dir)
-        if not files:
-            raise FileNotFoundError("Dosya inemedi.")
-        
-        target_file = os.path.join(download_dir, files[0])
-        return target_file, title
+    last_err = None
+
+    for client in client_configs:
+        try:
+            ydl_opts = {
+                'outtmpl': out_tmpl,
+                'quiet': True,
+                'no_warnings': True,
+                'nocheckcertificate': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'socket_timeout': 30,
+            }
+
+            if client:
+                ydl_opts['extractor_args'] = {
+                    'youtube': {
+                        'player_client': [client],
+                        'skip': ['configs', 'webpage']
+                    }
+                }
+
+            if is_audio:
+                ydl_opts.update({
+                    'format': 'bestaudio/best',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }],
+                })
+            else:
+                ydl_opts.update({
+                    'format': 'best[ext=mp4][filesize<45M]/bestvideo[filesize<38M]+bestaudio/best[filesize<45M]/best',
+                    'merge_output_format': 'mp4',
+                })
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = info.get('title', 'Video')
+                
+                files = os.listdir(download_dir)
+                if files:
+                    target_file = os.path.join(download_dir, files[0])
+                    return target_file, title
+        except Exception as e:
+            last_err = e
+            continue
+
+    raise last_err if last_err else RuntimeError("Download failed.")
 
 async def process_download(query, user_id, url, is_audio, context):
     try:
         await query.edit_message_text(get_text(user_id, 'downloading'))
         
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # İşlemi ana akışı tıkamadan arka planda çalıştır
             file_path, title = await asyncio.to_thread(download_media_sync, url, is_audio, tmp_dir)
             
-            # Boyut Kontrolü (50 MB)
             size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if size_mb > 49.5:
                 await query.edit_message_text(get_text(user_id, 'error_size'))
@@ -159,15 +178,14 @@ async def process_download(query, user_id, url, is_audio, context):
 
             await query.edit_message_text(get_text(user_id, 'uploading'))
 
-            # Telegram'a Gönder
             with open(file_path, 'rb') as f:
                 if is_audio:
                     await context.bot.send_audio(
                         chat_id=user_id,
                         audio=f,
                         title=title[:60],
-                        read_timeout=120,
-                        write_timeout=120
+                        read_timeout=180,
+                        write_timeout=180
                     )
                 else:
                     await context.bot.send_video(
@@ -175,8 +193,8 @@ async def process_download(query, user_id, url, is_audio, context):
                         video=f,
                         caption=f"🎬 {title[:60]}",
                         supports_streaming=True,
-                        read_timeout=120,
-                        write_timeout=120
+                        read_timeout=180,
+                        write_timeout=180
                     )
             
             await query.delete_message()
@@ -204,7 +222,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(get_text(user_id, 'error_general'))
             return
         
-        # Görevi arka plana fırlat ve kullanıcıyı bekletme
         asyncio.create_task(process_download(query, user_id, url, data == "dl_audio", context))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

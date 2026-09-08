@@ -1,10 +1,13 @@
 import os
 import re
+import json
 import uuid
 import shutil
 import asyncio
 import tempfile
 import threading
+import urllib.request
+import urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -17,13 +20,13 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 SAĞLIK KONTROL SUNUCUSU ---
+# --- RENDER 7/24 HEALTH CHECK WEB SERVER ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot is alive and running!")
+        self.wfile.write(b"Bot 7/24 Active and Healthy!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -43,7 +46,7 @@ TEXTS = {
         'welcome': "Assalomu alaykum! Video yuklovchi botga xush kelibsiz.\n\nYouTube, Instagram, TikTok yoki Facebook havolasini yuboring.",
         'choose_format': "Qaysi formatda yuklab olmoqchisiz?",
         'video_btn': "🎬 Video",
-        'audio_btn': "🎵 Ovoz (MP3/M4A)",
+        'audio_btn': "🎵 Ovoz (MP3)",
         'downloading': "⏳ Video yuklab olinmoqda, iltimos kuting...",
         'uploading': "📤 Telegramga yuklanmoqda...",
         'error_size': "⚠️ Fayl hajmi Telegram cheklovidan (50 MB) katta.",
@@ -53,7 +56,7 @@ TEXTS = {
         'welcome': "Здравствуйте! Отправьте ссылку из YouTube, Instagram, TikTok или Facebook.",
         'choose_format': "Выберите формат загрузки:",
         'video_btn': "🎬 Видео",
-        'audio_btn': "🎵 Аудио (MP3/M4A)",
+        'audio_btn': "🎵 Аудио (MP3)",
         'downloading': "⏳ Скачивается, пожалуйста подождите...",
         'uploading': "📤 Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
@@ -63,7 +66,7 @@ TEXTS = {
         'welcome': "Hello! Send a link from YouTube, Instagram, TikTok, or Facebook.",
         'choose_format': "Choose download format:",
         'video_btn': "🎬 Video",
-        'audio_btn': "🎵 Audio (MP3/M4A)",
+        'audio_btn': "🎵 Audio (MP3)",
         'downloading': "⏳ Downloading media, please wait...",
         'uploading': "📤 Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
@@ -73,7 +76,7 @@ TEXTS = {
         'welcome': "Merhaba! YouTube, Instagram, TikTok veya Facebook linki gönderebilirsiniz.",
         'choose_format': "Hangi formatta indirmek istersiniz?",
         'video_btn': "🎬 Video",
-        'audio_btn': "🎵 Ses (MP3/M4A)",
+        'audio_btn': "🎵 Ses (MP3)",
         'downloading': "⏳ Medya indiriliyor, lütfen bekleyin...",
         'uploading': "📤 Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
@@ -83,7 +86,7 @@ TEXTS = {
 
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 
-# --- ÇEREZ (COOKIE) VE PROXY AYARLARI ---
+# --- ÇEREZ VE PROXY AYARLARI ---
 COOKIE_FILE_PATH = None
 
 def setup_cookies():
@@ -137,15 +140,6 @@ def is_supported_url(url: str) -> bool:
     ]
     return any(re.search(p, url, re.IGNORECASE) for p in patterns)
 
-def clean_directory(directory: str):
-    for f in os.listdir(directory):
-        p = os.path.join(directory, f)
-        try:
-            if os.path.isfile(p):
-                os.unlink(p)
-        except Exception:
-            pass
-
 def get_downloaded_media_file(directory: str):
     valid_files = []
     for f in os.listdir(directory):
@@ -164,113 +158,146 @@ async def safe_edit_text(msg, text, reply_markup=None):
     except Exception:
         pass
 
-# --- YOUTUBE İÇİN GELİŞMİŞ VE ÇÖKMEZ İNDİRME ÇEKİRDEĞİ ---
-def download_media_sync(url: str, is_audio: bool, download_dir: str):
+# =====================================================================
+# 1. MOTOR: YOUTUBE COBALT API MOTORU (Render IP Engelini Tamamen Aşar)
+# =====================================================================
+def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
+    # En stabil ve güncel açık Cobalt API sunucuları
+    cobalt_instances = [
+        os.environ.get("COBALT_API_URL"),
+        "https://cobalt-api.ayo.tf",
+        "https://cobalt.canine.tools",
+        "https://api.cobalt.tools",
+    ]
+    cobalt_instances = [i.rstrip('/') for i in cobalt_instances if i]
+
+    payload = {
+        "url": url,
+        "videoQuality": "720",
+        "downloadMode": "audio" if is_audio else "auto",
+    }
+    if is_audio:
+        payload["audioFormat"] = "mp3"
+
+    json_data = json.dumps(payload).encode('utf-8')
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+
+    last_exc = None
+    for instance in cobalt_instances:
+        try:
+            req = urllib.request.Request(f"{instance}/", data=json_data, headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res = json.loads(resp.read().decode('utf-8'))
+
+            download_url = None
+            filename = "YouTube_Media.mp3" if is_audio else "YouTube_Media.mp4"
+
+            if res.get("status") in ["stream", "redirect", "tunnel"]:
+                download_url = res.get("url")
+                if res.get("filename"):
+                    filename = res.get("filename")
+            elif res.get("status") == "picker":
+                picker = res.get("picker", [])
+                if picker:
+                    download_url = picker[0].get("url")
+
+            if not download_url:
+                continue
+
+            target_file = os.path.join(download_dir, filename)
+
+            # Dosyayı 50MB sınırına dikkat ederek akış halinde indir
+            dl_req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(dl_req, timeout=60) as stream_resp:
+                total_bytes = 0
+                with open(target_file, 'wb') as out_f:
+                    while True:
+                        chunk = stream_resp.read(64 * 1024)
+                        if not chunk:
+                            break
+                        total_bytes += len(chunk)
+                        if total_bytes > 49.5 * 1024 * 1024:
+                            raise ValueError("FILE_TOO_LARGE")
+                        out_f.write(chunk)
+
+            title = os.path.splitext(filename)[0]
+            return target_file, title
+
+        except ValueError as val_err:
+            raise val_err
+        except Exception as e:
+            last_exc = e
+            continue
+
+    raise last_exc if last_exc else RuntimeError("Cobalt API failed.")
+
+# =====================================================================
+# 2. MOTOR: YT-DLP MOTORU (Instagram, TikTok, Facebook + YouTube Yedek)
+# =====================================================================
+def download_via_ytdlp(url: str, is_audio: bool, download_dir: str):
     is_yt = is_youtube_url(url)
     has_ffmpeg = shutil.which('ffmpeg') is not None
     proxy = os.environ.get("PROXY_URL") or os.environ.get("HTTP_PROXY")
 
-    # Ortak temel ayarlar
-    base_opts = {
+    opts = {
         'outtmpl': os.path.join(download_dir, 'media_%(id)s.%(ext)s'),
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'socket_timeout': 30,
         'retries': 5,
-        'fragment_retries': 5,
     }
 
     if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
-        base_opts['cookiefile'] = COOKIE_FILE_PATH
+        opts['cookiefile'] = COOKIE_FILE_PATH
 
     if proxy:
-        base_opts['proxy'] = proxy
+        opts['proxy'] = proxy
 
-    # 1. YOUTUBE DIŞINDAKİ PLATFORMLAR (Instagram, Facebook, TikTok)
-    if not is_yt:
-        opts = dict(base_opts)
+    if is_yt:
+        if has_ffmpeg:
+            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            if not is_audio:
+                opts['merge_output_format'] = 'mp4'
+        else:
+            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else 'best[ext=mp4]/best/18/22'
+
+        opts['extractor_args'] = {'youtube': {'player_client': ['ios', 'web_embedded', 'mweb']}}
+    else:
         opts['http_headers'] = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         }
         opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/best'
 
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'Media') if info else 'Media'
-            final_file = get_downloaded_media_file(download_dir)
-            if not final_file:
-                raise RuntimeError("Instagram/Facebook file not found.")
-            return final_file, title
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = info.get('title', 'Media') if info else 'Media'
+        final_file = get_downloaded_media_file(download_dir)
+        if not final_file:
+            raise RuntimeError("Media file not found.")
+        return final_file, title
 
-    # 2. YOUTUBE İNDİRME STRATEJİSİ (Çok Katmanlı Fallback Sistemi)
-    # Format belirleme: FFmpeg varsa yüksek kalite birleştirme, yoksa tek parça MP4
-    if has_ffmpeg:
-        if is_audio:
-            yt_format = 'bestaudio[ext=m4a]/bestaudio/best'
-        else:
-            yt_format = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best'
-    else:
-        # FFmpeg yoksa asla format birleştirme isteme, tek parça progressive mp4 iste
-        if is_audio:
-            yt_format = 'bestaudio[ext=m4a]/bestaudio/best'
-        else:
-            yt_format = 'best[ext=mp4]/best/18/22'
+# --- ÇİFT MOTORLU İNDİRME KÖPRÜSÜ ---
+def download_media_sync(url: str, is_audio: bool, download_dir: str):
+    # Instagram, Facebook, TikTok -> Doğrudan yt-dlp ile sorunsuz indir
+    if not is_youtube_url(url):
+        return download_via_ytdlp(url, is_audio, download_dir)
 
-    # Sunucu IP engellerini aşmak için denenecek bağımsız istemci sıralaması
-    client_strategies = [
-        ['ios'],                   # Bot tespiti en az olan istemci (PO token istemez)
-        ['web_embedded'],          # Gömülü web oynatıcı (Oturum açma şartı aramaz)
-        ['mweb'],                  # Mobil web oynatıcı
-        ['tv_simply'],             # TV istemcisi
-        ['android'],               # Android istemcisi
-        ['web'],                   # Standart web
-    ]
-
-    last_error = None
-
-    for client in client_strategies:
-        clean_directory(download_dir)
-        try:
-            ydl_opts = dict(base_opts)
-            ydl_opts['format'] = yt_format
-            if has_ffmpeg and not is_audio:
-                ydl_opts['merge_output_format'] = 'mp4'
-
-            # User-Agent'ı sabit vermiyoruz; yt-dlp seçilen istemciye (iOS/Android) uygun UA'yı kendisi belirler
-            ydl_opts['extractor_args'] = {
-                'youtube': {
-                    'player_client': client,
-                }
-            }
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                title = info.get('title', 'Media') if info else 'Media'
-                final_file = get_downloaded_media_file(download_dir)
-                if final_file:
-                    return final_file, title
-
-        except Exception as err:
-            last_error = err
-            continue
-
-    # Eğer tüm özel istemciler denenip başarısız olduysa varsayılan ayarla son bir deneme yap
-    clean_directory(download_dir)
+    # YouTube -> Önce Render engeli olmayan Cobalt motorunu dene
     try:
-        ydl_opts = dict(base_opts)
-        ydl_opts['format'] = yt_format
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'Media') if info else 'Media'
-            final_file = get_downloaded_media_file(download_dir)
-            if final_file:
-                return final_file, title
-    except Exception as final_err:
-        last_error = final_err
+        return download_via_cobalt(url, is_audio, download_dir)
+    except ValueError as v_err:
+        raise v_err
+    except Exception as cobalt_err:
+        print(f"Cobalt denemesi basarisiz: {cobalt_err}. yt-dlp deneniyor...")
 
-    raise last_error if last_error else RuntimeError("YouTube download failed.")
+    # Cobalt başarısız olursa yedek yt-dlp motorunu dene
+    return download_via_ytdlp(url, is_audio, download_dir)
 
 # --- İNDİRME VE GÖNDERME İŞLEYİCİSİ ---
 async def process_download(status_msg, user_id, chat_id, url, is_audio, context):
@@ -327,11 +354,16 @@ async def process_download(status_msg, user_id, chat_id, url, is_audio, context)
                 except Exception:
                     pass
 
+        except ValueError as v:
+            if str(v) == "FILE_TOO_LARGE":
+                await safe_edit_text(status_msg, get_text(user_id, 'error_size', context))
+            else:
+                await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
         except Exception as e:
-            print(f"Hata Detayı [{url}]: {e}")
+            print(f"Genel Hata [{url}]: {e}")
             await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
 
-# --- TELEGRAM ETKİLEŞİM HANDLERS ---
+# --- TELEGRAM ETKİLEŞİMLERİ ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'tr'
     if user_lang.startswith('uz'):
@@ -387,7 +419,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = url_match.group(0)
-
     if not is_supported_url(url):
         await update.message.reply_text(get_text(user_id, 'welcome', context))
         return
@@ -409,7 +440,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     token = os.environ.get("BOT_TOKEN")
     if not token:
-        raise ValueError("BOT_TOKEN eksik!")
+        raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
 
     threading.Thread(target=run_health_server, daemon=True).start()
 
@@ -418,7 +449,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot sorunsuz başlatıldı...")
+    print("Bot 7/24 kesintisiz calisiyor...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

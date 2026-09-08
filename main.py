@@ -20,13 +20,22 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 HEALTH CHECK WEB SERVER ---
+# Pytubefix desteği (Bulduğunuz kodun güncel ve çalışan versiyonu)
+try:
+    from pytubefix import YouTube as PytubeFix
+except ImportError:
+    try:
+        from pytube import YouTube as PytubeFix
+    except ImportError:
+        PytubeFix = None
+
+# --- RENDER 7/24 SAĞLIK KONTROLÜ (PORT BINDING) ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot 7/24 Active and Healthy!")
+        self.wfile.write(b"Bot 7/24 Active and Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -86,25 +95,6 @@ TEXTS = {
 
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 
-# --- ÇEREZ VE PROXY AYARLARI ---
-COOKIE_FILE_PATH = None
-
-def setup_cookies():
-    global COOKIE_FILE_PATH
-    env_file = os.environ.get("COOKIES_FILE")
-    if env_file and os.path.exists(env_file):
-        COOKIE_FILE_PATH = env_file
-        return
-
-    cookies_text = os.environ.get("COOKIES_TEXT")
-    if cookies_text:
-        path = os.path.join(tempfile.gettempdir(), "cookies.txt")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(cookies_text.strip())
-        COOKIE_FILE_PATH = path
-
-setup_cookies()
-
 def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data and 'lang' in context.user_data:
         return context.user_data['lang']
@@ -159,10 +149,46 @@ async def safe_edit_text(msg, text, reply_markup=None):
         pass
 
 # =====================================================================
-# 1. MOTOR: YOUTUBE COBALT API MOTORU (Render IP Engelini Tamamen Aşar)
+# MOTOR 1: PYTUBEFIX PROGRESSIVE MOTORU (Bulduğunuz Kodun Modern Hali)
+# =====================================================================
+def download_via_pytubefix(url: str, is_audio: bool, download_dir: str):
+    if not PytubeFix:
+        raise ImportError("pytubefix yüklü değil!")
+
+    # Android ve Mobil Web istemcileri bot denetimlerine takılmaz
+    clients_to_try = ['ANDROID', 'MWEB', 'WEB']
+    last_err = None
+
+    for client in clients_to_try:
+        try:
+            yt = PytubeFix(url, client=client)
+            title = yt.title or "YouTube_Media"
+
+            if is_audio:
+                stream = yt.streams.get_audio_only()
+                if not stream:
+                    stream = yt.streams.filter(only_audio=True).first()
+            else:
+                # Progressive: Ses ve görüntü birleşik MP4 (FFmpeg gerektirmez)
+                stream = yt.streams.filter(progressive=True).order_by('resolution').desc().first()
+                if not stream:
+                    stream = yt.streams.get_highest_resolution()
+
+            if not stream:
+                continue
+
+            target_file = stream.download(output_path=download_dir)
+            return target_file, title
+        except Exception as e:
+            last_err = e
+            continue
+
+    raise last_err if last_err else RuntimeError("pytubefix indirmesi başarısız.")
+
+# =====================================================================
+# MOTOR 2: COBALT API MOTORU (Render IP Kısıtlamasını Tamamen Aşar)
 # =====================================================================
 def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
-    # En stabil ve güncel açık Cobalt API sunucuları
     cobalt_instances = [
         os.environ.get("COBALT_API_URL"),
         "https://cobalt-api.ayo.tf",
@@ -183,7 +209,7 @@ def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
     headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
     }
 
     last_exc = None
@@ -210,7 +236,6 @@ def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
 
             target_file = os.path.join(download_dir, filename)
 
-            # Dosyayı 50MB sınırına dikkat ederek akış halinde indir
             dl_req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(dl_req, timeout=60) as stream_resp:
                 total_bytes = 0
@@ -236,13 +261,10 @@ def download_via_cobalt(url: str, is_audio: bool, download_dir: str):
     raise last_exc if last_exc else RuntimeError("Cobalt API failed.")
 
 # =====================================================================
-# 2. MOTOR: YT-DLP MOTORU (Instagram, TikTok, Facebook + YouTube Yedek)
+# MOTOR 3: YT-DLP MOTORU (Instagram, TikTok, Facebook + Son YouTube Yedeği)
 # =====================================================================
 def download_via_ytdlp(url: str, is_audio: bool, download_dir: str):
     is_yt = is_youtube_url(url)
-    has_ffmpeg = shutil.which('ffmpeg') is not None
-    proxy = os.environ.get("PROXY_URL") or os.environ.get("HTTP_PROXY")
-
     opts = {
         'outtmpl': os.path.join(download_dir, 'media_%(id)s.%(ext)s'),
         'quiet': True,
@@ -252,24 +274,12 @@ def download_via_ytdlp(url: str, is_audio: bool, download_dir: str):
         'retries': 5,
     }
 
-    if COOKIE_FILE_PATH and os.path.exists(COOKIE_FILE_PATH):
-        opts['cookiefile'] = COOKIE_FILE_PATH
-
-    if proxy:
-        opts['proxy'] = proxy
-
     if is_yt:
-        if has_ffmpeg:
-            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-            if not is_audio:
-                opts['merge_output_format'] = 'mp4'
-        else:
-            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else 'best[ext=mp4]/best/18/22'
-
+        opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/best/18/22'
         opts['extractor_args'] = {'youtube': {'player_client': ['ios', 'web_embedded', 'mweb']}}
     else:
         opts['http_headers'] = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         }
         opts['format'] = 'bestaudio/best' if is_audio else 'best[ext=mp4]/best'
@@ -279,27 +289,33 @@ def download_via_ytdlp(url: str, is_audio: bool, download_dir: str):
         title = info.get('title', 'Media') if info else 'Media'
         final_file = get_downloaded_media_file(download_dir)
         if not final_file:
-            raise RuntimeError("Media file not found.")
+            raise RuntimeError("Medya dosyası bulunamadı.")
         return final_file, title
 
-# --- ÇİFT MOTORLU İNDİRME KÖPRÜSÜ ---
+# --- ÇOK KADEMELİ AKILLI İNDİRİCİ ---
 def download_media_sync(url: str, is_audio: bool, download_dir: str):
-    # Instagram, Facebook, TikTok -> Doğrudan yt-dlp ile sorunsuz indir
+    # Instagram, Facebook ve TikTok -> Doğrudan yt-dlp ile kayıpsız
     if not is_youtube_url(url):
         return download_via_ytdlp(url, is_audio, download_dir)
 
-    # YouTube -> Önce Render engeli olmayan Cobalt motorunu dene
+    # 1. Aşama: Pytubefix (Bulduğunuz mantık - Progressive Android akışı)
+    try:
+        return download_via_pytubefix(url, is_audio, download_dir)
+    except Exception as e:
+        print(f"Pytubefix denemesi başarısız: {e}. Cobalt API deneniyor...")
+
+    # 2. Aşama: Cobalt API (Render IP bloklarını aşan CDN tüneli)
     try:
         return download_via_cobalt(url, is_audio, download_dir)
     except ValueError as v_err:
         raise v_err
-    except Exception as cobalt_err:
-        print(f"Cobalt denemesi basarisiz: {cobalt_err}. yt-dlp deneniyor...")
+    except Exception as e:
+        print(f"Cobalt denemesi başarısız: {e}. yt-dlp deneniyor...")
 
-    # Cobalt başarısız olursa yedek yt-dlp motorunu dene
+    # 3. Aşama: yt-dlp son kademe yedek
     return download_via_ytdlp(url, is_audio, download_dir)
 
-# --- İNDİRME VE GÖNDERME İŞLEYİCİSİ ---
+# --- TELEGRAM GÖNDERİM İŞLEYİCİSİ ---
 async def process_download(status_msg, user_id, chat_id, url, is_audio, context):
     async with DOWNLOAD_SEMAPHORE:
         try:
@@ -363,7 +379,7 @@ async def process_download(status_msg, user_id, chat_id, url, is_audio, context)
             print(f"Genel Hata [{url}]: {e}")
             await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
 
-# --- TELEGRAM ETKİLEŞİMLERİ ---
+# --- TELEGRAM HANDLERS ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'tr'
     if user_lang.startswith('uz'):
@@ -449,7 +465,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot 7/24 kesintisiz calisiyor...")
+    print("Bot 7/24 kesintisiz çalışıyor...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

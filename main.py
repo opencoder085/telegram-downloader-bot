@@ -255,43 +255,46 @@ def is_mostly_cyrillic(text: str) -> bool:
     return cyr_count >= lat_count
 
 # =====================================================================
-# ÖZBEKİSTAN RESMİ BÖLGE SLUG HARİTASI (namoz-vaqti.uz)
+# ŞEHİR ADI NORMALİZASYONU VE VARYANT HARİTASI
 # =====================================================================
-UZ_OFFICIAL_REGIONS = {
-    "toshkent": "toshkent", "tashkent": "toshkent", "тошкент": "toshkent", "ташкент": "toshkent",
-    "qoqon": "qoqon-shahri", "qo'qon": "qoqon-shahri", "qoʻqon": "qoqon-shahri", "kokand": "qoqon-shahri", "коканд": "qoqon-shahri",
-    "samarqand": "samarqand-shahri", "samarkand": "samarqand-shahri", "самарқанд": "samarqand-shahri",
-    "buxoro": "buxoro-shahri", "bukhara": "buxoro-shahri", "бухоро": "buxoro-shahri",
-    "andijon": "andijon-shahri", "andijan": "andijon-shahri", "андижон": "andijon-shahri",
-    "namangan": "namangan-shahri", "наманган": "namangan-shahri",
-    "fargona": "fargona-shahri", "farg'ona": "fargona-shahri", "fargʻona": "fargona-shahri", "fergana": "fargona-shahri", "фарғона": "fargona-shahri",
-    "margilon": "marghilon-shahri", "marg'ilon": "marghilon-shahri", "марғилон": "marghilon-shahri", "marghilon": "marghilon-shahri",
-    "urganch": "urganch-shahri", "urgench": "urgench-shahri", "урганч": "urgench-shahri",
-    "xiva": "xiva-shahri", "khiva": "xiva-shahri", "хива": "xiva-shahri",
-    "nukus": "nukus-shahri", "нукус": "nukus-shahri",
-    "qarshi": "qarshi-shahri", "karshi": "qarshi-shahri", "қарши": "qarshi-shahri",
-    "navoiy": "navoiy-shahri", "navoi": "navoiy-shahri", "навоий": "navoiy-shahri",
-    "termiz": "termiz-shahri", "termez": "termiz-shahri", "термиз": "termiz-shahri",
-    "denov": "denov", "denau": "denov", "денов": "denov",
-    "guliston": "guliston-shahri", "гулистон": "guliston-shahri",
-    "jizzax": "jizzax-shahri", "jizzakh": "jizzax-shahri", "жиззах": "jizzax-shahri",
-    "shahrisabz": "shahrisabz", "шаҳрисабз": "shahrisabz",
-    "angren": "angren", "ангрен": "angren",
-    "chirchiq": "chirchiq", "чирчиқ": "chirchiq",
-    "zarafshon": "zarafshon", "зарафшон": "zarafshon",
-}
+CITY_ALIASES = {
+    # Özbekistan
+    "kokand": "Kokand", "qoqon": "Kokand", "qo'qon": "Kokand", "qoʻqon": "Kokand", "коканд": "Kokand",
+    "toshkent": "Tashkent", "toskent": "Tashkent", "toshken": "Tashkent", "тошкент": "Tashkent", "ташкент": "Tashkent", "tashkent": "Tashkent",
+    "samarqand": "Samarkand", "samarkant": "Samarkand", "самарқанд": "Samarkand", "самарканд": "Samarkand", "samarkand": "Samarkand",
+    "buxoro": "Bukhara", "buhara": "Bukhara", "бухоро": "Bukhara", "bukhara": "Bukhara",
+    "andijon": "Andijan", "andjan": "Andijan", "андижон": "Andijan", "andijan": "Andijan",
+    "fargona": "Fergana", "farg'ona": "Fergana", "fargʻona": "Fergana", "фарғона": "Fergana", "фергана": "Fergana", "fergana": "Fergana",
+    "margilon": "Margilan", "marg'ilon": "Margilan", "марғилон": "Margilan", "margilan": "Margilan",
+    "urganch": "Urgench", "урганч": "Urgench", "urgench": "Urgench",
+    "xiva": "Khiva", "khiva": "Khiva", "хива": "Khiva",
+    "nukus": "Nukus", "нукус": "Nukus",
+    "jizzax": "Jizzakh", "жиззах": "Jizzakh", "jizzakh": "Jizzakh",
+    "navoiy": "Navoiy", "навоий": "Navoiy", "navoi": "Navoiy",
+    "termiz": "Termez", "термиз": "Termez", "termez": "Termez",
+    "denov": "Denau", "денов": "Denau", "denau": "Denau",
+    "qarshi": "Qarshi", "қарши": "Qarshi",
+    "guliston": "Gulistan", "гулистон": "Gulistan",
+    "shahrisabz": "Shahrisabz", "шаҳрисабз": "Shahrisabz",
+    "angren": "Angren", "ангрен": "Angren",
+    "chirchiq": "Chirchiq", "чирчиқ": "Chirchiq",
+    "zarafshon": "Zarafshan", "зарафшон": "Zarafshan",
 
-# Genel Dünya Şehirleri Haritası
-GLOBAL_CITY_ALIASES = {
+    # Türkiye
     "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul", "stambul": "Istanbul", "истанбул": "Istanbul", "стамбул": "Istanbul",
     "ankara": "Ankara", "анкара": "Ankara",
     "izmir": "Izmir", "измир": "Izmir",
     "bursa": "Bursa", "бурса": "Bursa",
     "antalya": "Antalya", "анталья": "Antalya",
-    "adana": "Adana", "konya": "Konya", "gaziantep": "Gaziantep",
-    "sanliurfa": "Sanliurfa", "urfa": "Sanliurfa", "kayseri": "Kayseri",
-    "eskisehir": "Eskisehir", "samsun": "Samsun", "trabzon": "Trabzon",
-    "mersin": "Mersin", "malatya": "Malatya", "sivas": "Sivas", "erzurum": "Erzurum", "denizli": "Denizli",
+    "adana": "Adana", "адана": "Adana",
+    "konya": "Konya",
+    "gaziantep": "Gaziantep", "antep": "Gaziantep",
+    "sanliurfa": "Sanliurfa", "urfa": "Sanliurfa",
+    "kayseri": "Kayseri", "eskisehir": "Eskisehir", "samsun": "Samsun",
+    "trabzon": "Trabzon", "mersin": "Mersin", "malatya": "Malatya",
+    "sivas": "Sivas", "erzurum": "Erzurum", "denizli": "Denizli",
+
+    # Dünya
     "moskva": "Moscow", "moscow": "Moscow", "москва": "Moscow",
     "almaty": "Almaty", "olmaota": "Almaty", "алматы": "Almaty",
     "astana": "Astana", "ostona": "Astana", "астана": "Astana",
@@ -302,7 +305,8 @@ GLOBAL_CITY_ALIASES = {
     "madina": "Medina", "medine": "Medina",
     "dubai": "Dubai", "dubay": "Dubai",
     "london": "London", "лондон": "London",
-    "berlin": "Berlin", "paris": "Paris", "parij": "Paris",
+    "berlin": "Berlin",
+    "paris": "Paris", "parij": "Paris",
     "reykjavik": "Reykjavik", "reykyavik": "Reykjavik", "рейкьявик": "Reykjavik", "рейкявик": "Reykjavik",
 }
 
@@ -324,14 +328,34 @@ def clean_prayer_query(raw_text: str) -> str:
     return cleaned if cleaned else text
 
 # =====================================================================
-# GÜNCEL & RESMİ NAMAZ VAKTİ MOTORU
+# ÇİFT KATMANLI KESİNTİSİZ NAMAZ VAKTİ MOTORU
 # =====================================================================
 async def fetch_prayer_times(city_input: str):
     city_clean = clean_prayer_query(city_input)
     if not city_clean:
-        return None, None, None, None, None
+        return None, None
 
     norm = normalize_key(city_clean)
+    mapped = CITY_ALIASES.get(norm)
+
+    # Benzerlik algoritması (Yazım hatalarını düzeltir: örn. reykyavik -> Reykjavik)
+    if not mapped:
+        matches = difflib.get_close_matches(norm, list(CITY_ALIASES.keys()), n=1, cutoff=0.7)
+        if matches:
+            mapped = CITY_ALIASES[matches[0]]
+
+    candidates = []
+    if mapped:
+        candidates.append(mapped)
+    candidates.append(city_clean)
+    if not any(c in norm for c in ('uzbekistan', 'turkey', 'turkiya', 'kazakhstan', 'russia')):
+        candidates.append(f"{city_clean} Uzbekistan")
+        candidates.append(f"{city_clean} Turkey")
+
+    unique_candidates = []
+    for c in candidates:
+        if c.lower() not in [x.lower() for x in unique_candidates]:
+            unique_candidates.append(c)
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -339,116 +363,51 @@ async def fetch_prayer_times(city_input: str):
     }
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        # 1. ÖNCELİK: ÖZBEKİSTAN RESMİ PORTALI (namoz-vaqti.uz - Din ishlari bo'yicha qo'mita)
-        uz_slug = UZ_OFFICIAL_REGIONS.get(norm)
-        if not uz_slug:
-            matches = difflib.get_close_matches(norm, list(UZ_OFFICIAL_REGIONS.keys()), n=1, cutoff=0.7)
-            if matches:
-                uz_slug = UZ_OFFICIAL_REGIONS[matches[0]]
-
-        if uz_slug:
-            try:
-                uz_url = f"https://namoz-vaqti.uz/index.php?format=json&region={uz_slug}"
-                resp = await client.get(uz_url, headers=headers)
-                if resp.status_code == 200:
-                    uz_json = resp.json()
-                    times = uz_json.get("today", {}).get("times")
-                    if times:
-                        timings = {
-                            "Fajr": times.get("bomdod", "--:--"),
-                            "Sunrise": times.get("quyosh", "--:--"),
-                            "Dhuhr": times.get("peshin", "--:--"),
-                            "Asr": times.get("asr", "--:--"),
-                            "Maghrib": times.get("shom", "--:--"),
-                            "Isha": times.get("xufton", "--:--"),
-                        }
-                        meta = uz_json.get("meta", {})
-                        city_disp = meta.get("region", {}).get("name", city_clean.title())
-                        date_str = meta.get("date", "")
-                        return timings, city_disp, date_str, "", "Oʻzbekiston Din ishlari boʻyicha qoʻmitasi (Rasmiy)"
-            except Exception:
-                pass
-
-        # 2. ÖNCELİK: TÜRKİYE VE DÜNYA (Aladhan Diyanet method=13 & Hanefi school=1)
-        mapped_city = GLOBAL_CITY_ALIASES.get(norm)
-        if not mapped_city:
-            matches = difflib.get_close_matches(norm, list(GLOBAL_CITY_ALIASES.keys()), n=1, cutoff=0.7)
-            if matches:
-                mapped_city = GLOBAL_CITY_ALIASES[matches[0]]
-
-        cand_list = []
-        if mapped_city:
-            cand_list.append(mapped_city)
-        cand_list.append(city_clean)
-
-        for cand in cand_list:
-            url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}&method=13&school=1"
+        # 1. Aşama: Nun.html standart timingsByAddress servisi
+        for cand in unique_candidates:
+            url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
             try:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("code") == 200 and "data" in data and "timings" in data["data"]:
-                        t = data["data"]["timings"]
-                        d = data["data"].get("date", {})
-                        g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
-                        hijri = d.get("hijri", {})
-                        h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-                        return t, cand, g_date, h_str, "Diyanet İşleri Başkanlığı (Canlı Senkron)"
+                        return data["data"], cand
             except Exception:
                 pass
 
-        # 3. ÖNCELİK: KOORDİNAT DESTEKLİ DİYANET API (İlçeler ve Küçük Yerleşimler)
-        for cand in cand_list:
+        # 2. Aşama: Koordinat Destekli Arama (Geocoding -> Aladhan Koordinat API)
+        for cand in unique_candidates:
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cand)}&count=1&language=en&format=json"
             try:
                 geo_resp = await client.get(geo_url, headers=headers)
                 if geo_resp.status_code == 200:
-                    results = geo_resp.json().get("results")
+                    geo_json = geo_resp.json()
+                    results = geo_json.get("results")
                     if results and len(results) > 0:
-                        lat = results[0].get("latitude")
-                        lon = results[0].get("longitude")
-                        found_name = results[0].get("name", cand)
+                        first = results[0]
+                        lat = first.get("latitude")
+                        lon = first.get("longitude")
+                        found_name = first.get("name", cand)
 
-                        coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}&method=13&school=1"
+                        coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}"
                         coord_resp = await client.get(coord_url, headers=headers)
                         if coord_resp.status_code == 200:
                             c_json = coord_resp.json()
                             if c_json.get("code") == 200 and "data" in c_json and "timings" in c_json["data"]:
-                                t = c_json["data"]["timings"]
-                                d = c_json["data"].get("date", {})
-                                g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
-                                hijri = d.get("hijri", {})
-                                h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-                                return t, found_name, g_date, h_str, "Diyanet & Astronomik Koordinat Servisi"
+                                return c_json["data"], found_name
             except Exception:
                 pass
 
-        # 4. ÖNCELİK: PRAY.ZONE AÇIK KÜRESEL SERVİS (Yedek)
-        for cand in cand_list:
-            pz_url = f"https://api.pray.zone/v2/times/today.json?city={urllib.parse.quote(cand)}"
-            try:
-                pz_resp = await client.get(pz_url, headers=headers)
-                if pz_resp.status_code == 200:
-                    datetime_arr = pz_resp.json().get("results", {}).get("datetime", [])
-                    if datetime_arr and len(datetime_arr) > 0:
-                        pz_times = datetime_arr[0].get("times", {})
-                        if pz_times:
-                            timings = {
-                                "Fajr": pz_times.get("Fajr", "--:--"),
-                                "Sunrise": pz_times.get("Sunrise", "--:--"),
-                                "Dhuhr": pz_times.get("Dhuhr", "--:--"),
-                                "Asr": pz_times.get("Asr", "--:--"),
-                                "Maghrib": pz_times.get("Maghrib", "--:--"),
-                                "Isha": pz_times.get("Isha", "--:--"),
-                            }
-                            g_date = datetime_arr[0].get("date", {}).get("gregorian", "")
-                            return timings, cand, g_date, "", "Pray.Zone Küresel API"
-            except Exception:
-                pass
+    return None, None
 
-    return None, None, None, None, None
+def format_nun_prayer_card(display_name: str, user_input: str, data: dict, lang: str = 'uz') -> str:
+    timings = data.get("timings", {})
+    date_info = data.get("date", {})
+    readable_date = date_info.get("readable", "")
+    greg_date = date_info.get("gregorian", {}).get("date", readable_date)
+    hijri = date_info.get("hijri", {})
+    hijri_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
 
-def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, greg_date: str, hijri_str: str, source_note: str, lang: str = 'uz') -> str:
     t_fajr = timings.get("Fajr", "--:--").split()[0]
     t_sunrise = timings.get("Sunrise", "--:--").split()[0]
     t_dhuhr = timings.get("Dhuhr", "--:--").split()[0]
@@ -463,35 +422,30 @@ def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, gr
     if lang == 'tr':
         header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
         labels = ["İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI"]
-        footer = f"_Sistem: {source_note}_"
+        footer = "_Sistem: Canlı AlAdhan API senkronizasyonu_"
         fuzzy_note = f"\n_🎯 Arama: \"{clean_inp}\" ➔ *{clean_disp}* olarak belirlendi._\n" if is_fuzzy else ""
     elif lang == 'ru':
         header = "*NUN PROJECT // ВРЕМЯ НАМАЗА*"
         labels = ["ФАДЖР", "ВОСХОД", "ЗУХР", "АСР", "МАГРИБ", "ИША"]
-        footer = f"_Система: {source_note}_"
+        footer = "_Система: Данные AlAdhan API онлайн_"
         fuzzy_note = f"\n_🎯 Поиск: \"{clean_inp}\" ➔ *{clean_disp}* определено._\n" if is_fuzzy else ""
     elif lang == 'en':
         header = "*NUN PROJECT // PRAYER TIMES*"
         labels = ["FAJR", "SUNRISE", "DHUHR", "ASR", "MAGHRIB", "ISHA"]
-        footer = f"_System: {source_note}_"
+        footer = "_System: Live AlAdhan API sync_"
         fuzzy_note = f"\n_🎯 Search: \"{clean_inp}\" ➔ Predicted as *{clean_disp}*._\n" if is_fuzzy else ""
     else:  # 'uz'
         header = "*NUN PROJECT // NAMOZ VAQTLARI*"
         labels = ["BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON"]
-        footer = f"_Tizim holati: {source_note}_"
+        footer = "_Tizim holati: Jonli AlAdhan API orqali olindi_"
         fuzzy_note = f"\n_🎯 Qidiruv: \"{clean_inp}\" ➔ *{clean_disp}* deb aniqlandi._\n" if is_fuzzy else ""
 
-    date_line = f"📅 `{greg_date}`" if greg_date else ""
+    date_line = f"📅 `{greg_date}`"
     if hijri_str:
-        date_line += f"  •  🌙 `{hijri_str}`" if date_line else f"🌙 `{hijri_str}`"
+        date_line += f"  •  🌙 `{hijri_str}`"
 
-    # Her satıra tekil etiket bağlanır
-    lbl_fajr = labels[0]
-    lbl_sunrise = labels
-    lbl_dhuhr = labels
-    lbl_asr = labels
-    lbl_maghrib = labels
-    lbl_isha = labels
+    # Her satır için tekil değişkenler atanarak liste parantezleri kesin olarak engellenir
+    lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = labels
 
     card = (
         f"{header}\n"
@@ -522,7 +476,7 @@ TEXTS = {
         'btn_c2l': "🔤 Krill ➔ Lotin",
         'btn_l2c': "🔤 Lotin ➔ Krill",
         'btn_lang': "🌐 Tilni tanlash",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Buxoro*...)_",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*, *Reykjavik*...)_",
         'prompt_c2l': "✍️ Kirill alifbosidagi matnni yuboring, uni Lotin alifbosiga oʻgirib beraman:",
         'prompt_l2c': "✍️ Lotin alifbosidagi matnni yuboring, uni Kirill alifbosiga oʻgirib beraman:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
@@ -784,10 +738,10 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Doğrudan /namaz Kokand veya /namoz Toshkent şeklinde girildiyse
     if context.args:
         city_query = " ".join(context.args)
-        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(city_query)
-        if timings:
+        prayer_data, resolved_name = await fetch_prayer_times(city_query)
+        if prayer_data:
             disp_name = resolved_name.title() if resolved_name else city_query.title()
-            card = format_nun_prayer_card(disp_name, city_query, timings, g_date, h_str, source_note, user_lang)
+            card = format_nun_prayer_card(disp_name, city_query, prayer_data, user_lang)
             try:
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
@@ -798,7 +752,7 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
             return
 
-    # Sadece /namoz yazıldıysa doğrudan şehir sorulur
+    # Sadece /namoz yazıldıysa veya menüden basıldıysa buton olmadan şehir sorulur
     context.user_data['mode'] = 'prayer'
     await update.message.reply_text(
         get_text(user_id, 'prompt_prayer', context),
@@ -902,12 +856,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
     # 3. Namaz Vakti Modu veya Açıkça Namaz Sorusu (Örn: "Kokand", "Toshkent", "namoz toshkent")
-    # Kullanıcı namaz modundayken ASLA çeviriye DÜŞMEZ, modunu korur!
+    # Kullanıcı namaz modundayken kesinlikle çeviriye DÜŞMEZ, modunu korur!
     if current_mode == 'prayer' or is_prayer_intent:
-        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
-        if timings:
+        prayer_data, resolved_name = await fetch_prayer_times(raw_text)
+        if prayer_data:
             disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
-            card = format_nun_prayer_card(disp_name, raw_text, timings, g_date, h_str, source_note, user_lang)
+            card = format_nun_prayer_card(disp_name, raw_text, prayer_data, user_lang)
             try:
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
@@ -921,13 +875,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 4. Kiril -> Latin Modu (Yalnızca kullanıcı butondan bastıysa)
+    # 4. Kiril -> Latin Modu
     if current_mode == 'c2l':
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 5. Latin -> Kiril Modu (Yalnızca kullanıcı butondan bastıysa)
+    # 5. Latin -> Kiril Modu
     if current_mode == 'l2c':
         converted = latin_to_cyrillic(raw_text)
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
@@ -936,10 +890,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 6. Otomatik Algılama: Menüye basmadan sadece bir şehir yazıldıysa
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
-        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
-        if timings:
+        prayer_data, resolved_name = await fetch_prayer_times(raw_text)
+        if prayer_data:
             disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
-            card = format_nun_prayer_card(disp_name, raw_text, timings, g_date, h_str, source_note, user_lang)
+            card = format_nun_prayer_card(disp_name, raw_text, prayer_data, user_lang)
             try:
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
@@ -947,7 +901,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Uzun cümle halindeki metinler için)
+    # 7. Sadece kullanıcı açıkça metin çevirisi istiyorsa (Cümle halindeki metinler için)
     if is_mostly_cyrillic(raw_text):
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")

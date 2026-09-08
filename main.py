@@ -236,9 +236,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'welcome'))
 
 def main():
+    import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running 7/24!")
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', 8080), HealthCheckHandler)
+    server.serve_forever()
+
+def main():
     token = os.environ.get("BOT_TOKEN")
     if not token:
         raise ValueError("BOT_TOKEN ortam değişkeni ayarlanmadı!")
+
+    # Render'ın ücretsiz web sunucusu şartını sağlayan arka plan sinyali
+    threading.Thread(target=run_health_server, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
 
@@ -249,6 +266,3 @@ def main():
 
     print("Bot basariyla calisiyor...")
     app.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    main()

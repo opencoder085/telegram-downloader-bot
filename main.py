@@ -1,9 +1,13 @@
 import os
 import re
+import json
 import shutil
 import asyncio
 import tempfile
 import threading
+import urllib.request
+import urllib.error
+import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import (
     Update,
@@ -22,13 +26,13 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 SAĞLIK KONTROL SUNUCUSU (PORT BINDING) ---
+# --- RENDER 7/24 SAĞLIK KONTROL SUNUCUSU ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot 7/24 Aktif ve Calisiyor!")
+        self.wfile.write(b"Bot 7/24 Aktif!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -43,61 +47,38 @@ def run_health_server():
     server.serve_forever()
 
 # =====================================================================
-# ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU (Tam İmla Kuralları)
+# ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
 # =====================================================================
 APOSTROPHES = set(["'", "\u2019", "\u2018", "`", "\u02bb", "\u02bc"])
 VOWELS_CYR = set("аоуиэеёюяўАОУИЭЕЁЮЯЎ")
 
 MAP_CYR_TO_LAT = {
-    '\u0410': 'A', '\u0430': 'a',
-    '\u0411': 'B', '\u0431': 'b',
-    '\u0412': 'V', '\u0432': 'v',
-    '\u0413': 'G', '\u0433': 'g',
-    '\u0414': 'D', '\u0434': 'd',
-    '\u0416': 'J', '\u0436': 'j',
-    '\u0417': 'Z', '\u0437': 'z',
-    '\u0418': 'I', '\u0438': 'i',
-    '\u0419': 'Y', '\u0439': 'y',
-    '\u041a': 'K', '\u043a': 'k',
-    '\u049a': 'Q', '\u049b': 'q',
-    '\u041b': 'L', '\u043b': 'l',
-    '\u041c': 'M', '\u043c': 'm',
-    '\u041d': 'N', '\u043d': 'n',
-    '\u041e': 'O', '\u043e': 'o',
-    '\u041f': 'P', '\u043f': 'p',
-    '\u0420': 'R', '\u0440': 'r',
-    '\u0421': 'S', '\u0441': 's',
-    '\u0422': 'T', '\u0442': 't',
-    '\u0423': 'U', '\u0443': 'u',
-    '\u0424': 'F', '\u0444': 'f',
-    '\u0425': 'X', '\u0445': 'x',
-    '\u04b2': 'H', '\u04b3': 'h',
-    '\u042d': 'E', '\u044d': 'e',
+    '\u0410': 'A', '\u0430': 'a', '\u0411': 'B', '\u0431': 'b',
+    '\u0412': 'V', '\u0432': 'v', '\u0413': 'G', '\u0433': 'g',
+    '\u0414': 'D', '\u0434': 'd', '\u0416': 'J', '\u0436': 'j',
+    '\u0417': 'Z', '\u0437': 'z', '\u0418': 'I', '\u0438': 'i',
+    '\u0419': 'Y', '\u0439': 'y', '\u041a': 'K', '\u043a': 'k',
+    '\u049a': 'Q', '\u049b': 'q', '\u041b': 'L', '\u043b': 'l',
+    '\u041c': 'M', '\u043c': 'm', '\u041d': 'N', '\u043d': 'n',
+    '\u041e': 'O', '\u043e': 'o', '\u041f': 'P', '\u043f': 'p',
+    '\u0420': 'R', '\u0440': 'r', '\u0421': 'S', '\u0441': 's',
+    '\u0422': 'T', '\u0442': 't', '\u0423': 'U', '\u0443': 'u',
+    '\u0424': 'F', '\u0444': 'f', '\u0425': 'X', '\u0445': 'x',
+    '\u04b2': 'H', '\u04b3': 'h', '\u042d': 'E', '\u044d': 'e',
 }
 
 MAP_LAT_TO_CYR = {
-    'A': '\u0410', 'a': '\u0430',
-    'B': '\u0411', 'b': '\u0431',
-    'V': '\u0412', 'v': '\u0432',
-    'G': '\u0413', 'g': '\u0433',
-    'D': '\u0414', 'd': '\u0434',
-    'J': '\u0416', 'j': '\u0436',
-    'Z': '\u0417', 'z': '\u0437',
-    'I': '\u0418', 'i': '\u0438',
-    'Y': '\u0419', 'y': '\u0439',
-    'K': '\u041a', 'k': '\u043a',
-    'Q': '\u049a', 'q': '\u049b',
-    'L': '\u041b', 'l': '\u043b',
-    'M': '\u041c', 'm': '\u043c',
-    'N': '\u041d', 'n': '\u043d',
-    'O': '\u041e', 'o': '\u043e',
-    'P': '\u041f', 'p': '\u043f',
-    'R': '\u0420', 'r': '\u0440',
-    'S': '\u0421', 's': '\u0441',
-    'T': '\u0422', 't': '\u0442',
-    'U': '\u0423', 'u': '\u0443',
-    'F': '\u0424', 'f': '\u0444',
-    'X': '\u0425', 'x': '\u0445',
+    'A': '\u0410', 'a': '\u0430', 'B': '\u0411', 'b': '\u0431',
+    'V': '\u0412', 'v': '\u0432', 'G': '\u0413', 'g': '\u0433',
+    'D': '\u0414', 'd': '\u0434', 'J': '\u0416', 'j': '\u0436',
+    'Z': '\u0417', 'z': '\u0437', 'I': '\u0418', 'i': '\u0438',
+    'Y': '\u0419', 'y': '\u0439', 'K': '\u041a', 'k': '\u043a',
+    'Q': '\u049a', 'q': '\u049b', 'L': '\u041b', 'l': '\u043b',
+    'M': '\u041c', 'm': '\u043c', 'N': '\u041d', 'n': '\u043d',
+    'O': '\u041e', 'o': '\u043e', 'P': '\u041f', 'p': '\u043f',
+    'R': '\u0420', 'r': '\u0440', 'S': '\u0421', 's': '\u0441',
+    'T': '\u0422', 't': '\u0442', 'U': '\u0423', 'u': '\u0443',
+    'F': '\u0424', 'f': '\u0444', 'X': '\u0425', 'x': '\u0445',
     'H': '\u04b2', 'h': '\u04b3',
 }
 
@@ -105,23 +86,19 @@ def cyrillic_to_latin(text: str) -> str:
     result = []
     i = 0
     n = len(text)
-
     while i < n:
         c = text[i]
         prev_char = text[i-1] if i > 0 else " "
         next_char = text[i+1] if i+1 < n else ""
-
         is_upper = c.isupper()
         next_is_upper = next_char.isupper()
 
-        # Сҳ, сҳ ➔ s'h (sh ile karışmaması için tutuk işareti)
         if c in ('С', 'с') and next_char in ('Ҳ', 'ҳ'):
             res = ("S'H" if next_is_upper else "S'h") if is_upper else "s'h"
             result.append(res)
             i += 2
             continue
 
-        # Е, е ➔ Kelime başı / sesli harften sonra Ye, sessizden sonra E
         if c in ('Е', 'е'):
             is_word_start = (i == 0 or not prev_char.isalpha())
             after_vowel = (prev_char in VOWELS_CYR or prev_char in 'ъЪьЬ')
@@ -134,41 +111,29 @@ def cyrillic_to_latin(text: str) -> str:
             continue
 
         if c in ('Ё', 'ё'):
-            res = ("YO" if next_is_upper else "Yo") if is_upper else "yo"
-            result.append(res)
+            result.append(("YO" if next_is_upper else "Yo") if is_upper else "yo")
             i += 1
             continue
-
         if c in ('Ю', 'ю'):
-            res = ("YU" if next_is_upper else "Yu") if is_upper else "yu"
-            result.append(res)
+            result.append(("YU" if next_is_upper else "Yu") if is_upper else "yu")
             i += 1
             continue
-
         if c in ('Я', 'я'):
-            res = ("YA" if next_is_upper else "Ya") if is_upper else "ya"
-            result.append(res)
+            result.append(("YA" if next_is_upper else "Ya") if is_upper else "ya")
             i += 1
             continue
-
         if c in ('Ч', 'ч'):
-            res = ("CH" if next_is_upper else "Ch") if is_upper else "ch"
-            result.append(res)
+            result.append(("CH" if next_is_upper else "Ch") if is_upper else "ch")
             i += 1
             continue
-
         if c in ('Ш', 'ш') or c in ('Щ', 'щ'):
-            res = ("SH" if next_is_upper else "Sh") if is_upper else "sh"
-            result.append(res)
+            result.append(("SH" if next_is_upper else "Sh") if is_upper else "sh")
             i += 1
             continue
-
         if c in ('Ц', 'ц'):
-            res = ("TS" if next_is_upper else "Ts") if is_upper else "ts"
-            result.append(res)
+            result.append(("TS" if next_is_upper else "Ts") if is_upper else "ts")
             i += 1
             continue
-
         if c == 'Ў':
             result.append("Oʻ")
             i += 1
@@ -177,7 +142,6 @@ def cyrillic_to_latin(text: str) -> str:
             result.append("oʻ")
             i += 1
             continue
-
         if c == 'Ғ':
             result.append("Gʻ")
             i += 1
@@ -186,94 +150,79 @@ def cyrillic_to_latin(text: str) -> str:
             result.append("gʻ")
             i += 1
             continue
-
         if c in ('Ъ', 'ъ'):
             result.append("'")
             i += 1
             continue
-
         if c in ('Ь', 'ь'):
             i += 1
             continue
 
         result.append(MAP_CYR_TO_LAT.get(c, c))
         i += 1
-
     return "".join(result)
 
 def latin_to_cyrillic(text: str) -> str:
     result = []
     i = 0
     n = len(text)
-
     while i < n:
         c = text[i]
         c_next = text[i+1] if i+1 < n else ""
         c_next2 = text[i+2] if i+2 < n else ""
         prev_char = text[i-1] if i > 0 else " "
 
-        # s'h ➔ сҳ
         if c in ('s', 'S') and c_next in APOSTROPHES and c_next2 in ('h', 'H'):
             res = ("СҲ" if c_next2.isupper() else "Сҳ") if c == 'S' else "сҳ"
             result.append(res)
             i += 3
             continue
 
-        # oʻ, o' ➔ ў
         if c in ('o', 'O') and c_next and c_next in APOSTROPHES:
             result.append("Ў" if c == 'O' else "ў")
             i += 2
             continue
 
-        # gʻ, g' ➔ ғ
         if c in ('g', 'G') and c_next and c_next in APOSTROPHES:
             result.append("Ғ" if c == 'G' else "ғ")
             i += 2
             continue
 
-        # sh ➔ ш
         if c in ('s', 'S') and c_next in ('h', 'H'):
             result.append("Ш" if c.isupper() else "ш")
             i += 2
             continue
 
-        # ch ➔ ч
         if c in ('c', 'C') and c_next in ('h', 'H'):
             result.append("Ч" if c.isupper() else "ч")
             i += 2
             continue
 
-        # ts ➔ ц
         if c in ('t', 'T') and c_next in ('s', 'S'):
             result.append("Ц" if c.isupper() else "ц")
             i += 2
             continue
 
-        # yo ➔ ё
         if c in ('y', 'Y') and c_next in ('o', 'O'):
             result.append("Ё" if c.isupper() else "ё")
             i += 2
             continue
 
-        # yu ➔ ю
         if c in ('y', 'Y') and c_next in ('u', 'U'):
             result.append("Ю" if c.isupper() else "ю")
             i += 2
             continue
 
-        # ya ➔ я
         if c in ('y', 'Y') and c_next in ('a', 'A'):
             result.append("Я" if c.isupper() else "я")
             i += 2
             continue
 
-        # ye ➔ е
         if c in ('y', 'Y') and c_next in ('e', 'E'):
             result.append("Е" if c.isupper() else "е")
             i += 2
             continue
 
-        # E / e ➔ Kelime başı/sesliden sonra Э, sessizden sonra Е
         if c in ('e', 'E'):
             is_word_start = (i == 0 or not prev_char.isalpha())
             after_vowel = (prev_char.lower() in 'aouie')
@@ -284,7 +233,6 @@ def latin_to_cyrillic(text: str) -> str:
             i += 1
             continue
 
-        # Tutuk işareti (ъ)
         if c in APOSTROPHES:
             if prev_char.isalpha():
                 result.append("ъ")
@@ -295,7 +243,6 @@ def latin_to_cyrillic(text: str) -> str:
 
         result.append(MAP_LAT_TO_CYR.get(c, c))
         i += 1
-
     return "".join(result)
 
 def is_mostly_cyrillic(text: str) -> bool:
@@ -304,16 +251,135 @@ def is_mostly_cyrillic(text: str) -> bool:
     return cyr_count >= lat_count
 
 # =====================================================================
-# ÇOK DİLLİ METİNLER VE MENÜ ARAYÜZÜ
+# NAMAZ VAKİTLERİ MOTORU & MİNİMALİST KART TASARIMI
+# =====================================================================
+CITY_ALIASES = {
+    'toshkent': 'Tashkent, Uzbekistan', 'тошкент': 'Tashkent, Uzbekistan',
+    'samarqand': 'Samarkand, Uzbekistan', 'самарқанд': 'Samarkand, Uzbekistan',
+    'buxoro': 'Bukhara, Uzbekistan', 'бухоро': 'Bukhara, Uzbekistan',
+    'andijon': 'Andijan, Uzbekistan', 'андижон': 'Andijan, Uzbekistan',
+    'namangan': 'Namangan, Uzbekistan', 'наманган': 'Namangan, Uzbekistan',
+    'fargona': 'Fergana, Uzbekistan', 'фаргона': 'Fergana, Uzbekistan',
+    'qarshi': 'Qarshi, Uzbekistan', 'қарши': 'Qarshi, Uzbekistan',
+    'nukus': 'Nukus, Uzbekistan', 'нукус': 'Nukus, Uzbekistan',
+    'urganch': 'Urgench, Uzbekistan', 'урганч': 'Urgench, Uzbekistan',
+    'jizzax': 'Jizzakh, Uzbekistan', 'жиззах': 'Jizzakh, Uzbekistan',
+    'navoiy': 'Navoiy, Uzbekistan', 'навоий': 'Navoiy, Uzbekistan',
+    'termiz': 'Termez, Uzbekistan', 'термиз': 'Termez, Uzbekistan',
+    'istanbul': 'Istanbul, Turkey', 'истанбул': 'Istanbul, Turkey',
+    'ankara': 'Ankara, Turkey', 'анкара': 'Ankara, Turkey',
+    'izmir': 'Izmir, Turkey', 'измир': 'Izmir, Turkey',
+    'bursa': 'Bursa, Turkey', 'бурса': 'Bursa, Turkey',
+    'moskva': 'Moscow, Russia', 'москва': 'Moscow, Russia',
+}
+
+def normalize_city_name(city_str: str) -> str:
+    cleaned = city_str.strip().replace('İ', 'i').replace('ı', 'i').lower()
+    cleaned = re.sub(r"['’`ʻʼ]", "", cleaned)
+    return CITY_ALIASES.get(cleaned, city_str.strip())
+
+def fetch_prayer_times(city_input: str):
+    normalized = normalize_city_name(city_input)
+    encoded = urllib.parse.quote(normalized)
+    url = f"https://api.aladhan.com/v1/timingsByAddress?address={encoded}"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            if data.get("code") == 200 and "data" in data:
+                return data["data"]
+    except Exception as e:
+        print(f"Namaz API Hatasi [{city_input}]: {e}")
+    return None
+
+def clean_time(time_str: str) -> str:
+    return time_str.split()[0] if time_str else "--:--"
+
+def format_prayer_card(city_name: str, data: dict, lang: str = 'uz') -> str:
+    timings = data.get("timings", {})
+    date_info = data.get("date", {})
+    greg_date = date_info.get("gregorian", {}).get("date", date_info.get("readable", ""))
+    hijri = date_info.get("hijri", {})
+    hijri_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}"
+    city = city_name.strip().title()
+
+    fajr = clean_time(timings.get("Fajr"))
+    sunrise = clean_time(timings.get("Sunrise"))
+    dhuhr = clean_time(timings.get("Dhuhr"))
+    asr = clean_time(timings.get("Asr"))
+    maghrib = clean_time(timings.get("Maghrib"))
+    isha = clean_time(timings.get("Isha"))
+
+    if lang == 'tr':
+        return (
+            f"🕌 *NAMAZ VAKİTLERİ* — *{city}*\n"
+            f"🗓 `{greg_date}`  •  🌙 `{hijri_str}`\n\n"
+            f"┌─────────────────────────┐\n"
+            f"  ▫️ *İmsak:*         `{fajr}`\n"
+            f"  ▫️ *Güneş:*         `{sunrise}`\n"
+            f"  ▫️ *Öğle:*          `{dhuhr}`\n"
+            f"  ▫️ *İkindi:*        `{asr}`\n"
+            f"  ▫️ *Akşam:*         `{maghrib}`\n"
+            f"  ▫️ *Yatsı:*         `{isha}`\n"
+            f"└─────────────────────────┘\n"
+            f"_Güncel astronomik hesaplama ile alınmıştır._"
+        )
+    elif lang == 'ru':
+        return (
+            f"🕌 *ВРЕМЯ НАМАЗА* — *{city}*\n"
+            f"🗓 `{greg_date}`  •  🌙 `{hijri_str}`\n\n"
+            f"┌─────────────────────────┐\n"
+            f"  ▫️ *Фаджр (Утро):*    `{fajr}`\n"
+            f"  ▫️ *Восход:*         `{sunrise}`\n"
+            f"  ▫️ *Зухр (Обед):*     `{dhuhr}`\n"
+            f"  ▫️ *Аср:*            `{asr}`\n"
+            f"  ▫️ *Магриб:*         `{maghrib}`\n"
+            f"  ▫️ *Иша (Ночь):*      `{isha}`\n"
+            f"└─────────────────────────┘\n"
+            f"_Точные астрономические данные._"
+        )
+    elif lang == 'en':
+        return (
+            f"🕌 *PRAYER TIMES* — *{city}*\n"
+            f"🗓 `{greg_date}`  •  🌙 `{hijri_str}`\n\n"
+            f"┌─────────────────────────┐\n"
+            f"  ▫️ *Fajr:*           `{fajr}`\n"
+            f"  ▫️ *Sunrise:*        `{sunrise}`\n"
+            f"  ▫️ *Dhuhr:*          `{dhuhr}`\n"
+            f"  ▫️ *Asr:*            `{asr}`\n"
+            f"  ▫️ *Maghrib:*        `{maghrib}`\n"
+            f"  ▫️ *Isha:*           `{isha}`\n"
+            f"└─────────────────────────┘\n"
+            f"_Times calculated via accurate astronomical models._"
+        )
+    else:  # 'uz'
+        return (
+            f"🕌 *NAMOZ VAQTLARI* — *{city}*\n"
+            f"🗓 `{greg_date}`  •  🌙 `{hijri_str}`\n\n"
+            f"┌─────────────────────────┐\n"
+            f"  ▫️ *Bomdod (Tong):*   `{fajr}`\n"
+            f"  ▫️ *Quyosh:*         `{sunrise}`\n"
+            f"  ▫️ *Peshin:*         `{dhuhr}`\n"
+            f"  ▫️ *Asr:*            `{asr}`\n"
+            f"  ▫️ *Shom:*           `{maghrib}`\n"
+            f"  ▫️ *Xufton:*         `{isha}`\n"
+            f"└─────────────────────────┘\n"
+            f"_Aniq astronomik hisob-kitoblar asosida._"
+        )
+
+# =====================================================================
+# METİNLER & MENÜ KLAVYELERİ
 # =====================================================================
 TEXTS = {
     'uz': {
-        'welcome': "Assalomu alaykum! Botga xush kelibsiz.\n\nQuyidagi amallardan birini tanlang yoki toʻgʻridan-toʻgʻri havola/matn yuboring:",
+        'welcome': "Assalomu alaykum! Botga xush kelibsiz.\n\nQuyidagi menyudan kerakli boʻlimni tanlang yoki havola/matn yuboring:",
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
+        'btn_prayer': "🕌 Namoz vaqtlari",
         'btn_c2l': "🔤 Krill ➔ Lotin",
         'btn_l2c': "🔤 Lotin ➔ Krill",
         'btn_lang': "🌐 Tilni tanlash",
+        'prompt_prayer': "🕌 *Namoz vaqtlari*\n\nQaysi shahar uchun namoz vaqtlarini bilmoqchisiz?\nQuyidagi tugmalardan birini bosing yoki shahar nomini yozib yuboring (masalan: *Toshkent*, *Samarqand*, *Istanbul*):",
         'prompt_c2l': "✍️ Kirill alifbosidagi matnni yuboring, uni Lotin alifbosiga oʻgirib beraman:",
         'prompt_l2c': "✍️ Lotin alifbosidagi matnni yuboring, uni Kirill alifbosiga oʻgirib beraman:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
@@ -321,51 +387,61 @@ TEXTS = {
         'uploading': "📤 Telegramga yuklanmoqda...",
         'error_size': "⚠️ Fayl hajmi Telegram cheklovidan (50 MB) katta.",
         'error_general': "❌ Xatolik yuz berdi. Qaytadan urinib koʻring.",
+        'city_not_found': "❌ Shahar topilmadi. Iltimos, nomini toʻgʻri yozing (masalan: *Toshkent*, *Istanbul*, *Moskva*).",
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать.\n\nВыберите действие в меню или отправьте ссылку/текст:",
         'menu_title': "📋 Главное меню:",
         'btn_video': "🎬 Скачать видео",
+        'btn_prayer': "🕌 Время намаза",
         'btn_c2l': "🔤 Кириллица ➔ Латиница",
         'btn_l2c': "🔤 Латиница ➔ Кириллица",
         'btn_lang': "🌐 Сменить язык",
-        'prompt_c2l': "✍️ Отправьте узбекский текст на кириллице для перевода в латиницу:",
-        'prompt_l2c': "✍️ Отправьте узбекский текст на латинице для перевода в кириллицу:",
+        'prompt_prayer': "🕌 *Время намаза*\n\nДля какого города вы хотите узнать время намаза?\nНажмите кнопку ниже или напишите название города (например: *Ташкент*, *Самарканд*, *Москва*, *Стамбул*):",
+        'prompt_c2l': "✍️ Отправьте текст на кириллице для перевода в латиницу:",
+        'prompt_l2c': "✍️ Отправьте текст на латинице для перевода в кириллицу:",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
         'downloading': "⏳ Скачивается, пожалуйста подождите...",
         'uploading': "📤 Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
         'error_general': "❌ Произошла ошибка. Попробуйте снова.",
+        'city_not_found': "❌ Город не найден. Пожалуйста, напишите правильное название (например: *Ташкент*, *Москва*, *Стамбул*).",
     },
     'en': {
         'welcome': "Hello! Welcome to the bot.\n\nChoose an action from the menu or send a link/text:",
         'menu_title': "📋 Main Menu:",
         'btn_video': "🎬 Download Video",
+        'btn_prayer': "🕌 Prayer Times",
         'btn_c2l': "🔤 Cyrillic ➔ Latin",
         'btn_l2c': "🔤 Latin ➔ Cyrillic",
         'btn_lang': "🌐 Change Language",
-        'prompt_c2l': "✍️ Send Uzbek text in Cyrillic to convert into Latin:",
-        'prompt_l2c': "✍️ Send Uzbek text in Latin to convert into Cyrillic:",
+        'prompt_prayer': "🕌 *Prayer Times*\n\nWhich city do you want to get prayer times for?\nTap a button below or type a city name (e.g. *Tashkent*, *Istanbul*, *London*):",
+        'prompt_c2l': "✍️ Send text in Cyrillic to convert into Latin:",
+        'prompt_l2c': "✍️ Send text in Latin to convert into Cyrillic:",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
         'downloading': "⏳ Downloading media, please wait...",
         'uploading': "📤 Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
         'error_general': "❌ An error occurred. Please try again.",
+        'city_not_found': "❌ City not found. Please enter a valid city name (e.g. *Tashkent*, *Istanbul*, *London*).",
     },
     'tr': {
         'welcome': "Merhaba! Bota hoş geldiniz.\n\nAşağıdaki menüden işlem seçebilir veya doğrudan link/metin gönderebilirsiniz:",
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
+        'btn_prayer': "🕌 Namaz Vakitleri",
         'btn_c2l': "🔤 Kiril ➔ Latin",
         'btn_l2c': "🔤 Latin ➔ Kiril",
         'btn_lang': "🌐 Dil Seçimi",
-        'prompt_c2l': "✍️ Latin alfabesine çevirmek istediğiniz Özbekçe Kiril metni gönderin:",
-        'prompt_l2c': "✍️ Kiril alfabesine çevirmek istediğiniz Özbekçe Latin metni gönderin:",
+        'prompt_prayer': "🕌 *Namaz Vakitleri*\n\nHangi şehrin namaz vakitlerini öğrenmek istiyorsunuz?\nAşağıdaki butonlardan birine dokunun veya şehir adı yazın (örneğin: *İstanbul*, *Ankara*, *Taşkent*):",
+        'prompt_c2l': "✍️ Latin alfabesine çevirmek istediğiniz Kiril metni gönderin:",
+        'prompt_l2c': "✍️ Kiril alfabesine çevirmek istediğiniz Latin metni gönderin:",
         'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
         'downloading': "⏳ Medya indiriliyor, lütfen bekleyin...",
         'uploading': "📤 Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
         'error_general': "❌ Bir hata oluştu. Lütfen tekrar deneyin.",
+        'city_not_found': "❌ Şehir bulunamadı. Lütfen geçerli bir şehir adı girin (örneğin: *İstanbul*, *Ankara*, *Taşkent*).",
     }
 }
 
@@ -383,20 +459,35 @@ def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE):
 # Kalıcı Alt Menü (Reply Keyboard)
 def get_reply_menu(user_id, context):
     return ReplyKeyboardMarkup([
-        [KeyboardButton(get_text(user_id, 'btn_video', context))],
+        [KeyboardButton(get_text(user_id, 'btn_video', context)), KeyboardButton(get_text(user_id, 'btn_prayer', context))],
         [KeyboardButton(get_text(user_id, 'btn_c2l', context)), KeyboardButton(get_text(user_id, 'btn_l2c', context))],
         [KeyboardButton(get_text(user_id, 'btn_lang', context))]
     ], resize_keyboard=True)
 
-# Dil Seçim Butonları (Inline Keyboard)
+# Dil Seçim Butonları
 def get_language_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
         [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")]
     ])
 
+# Hızlı Şehir Seçim Butonları
+def get_quick_cities_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📍 Toshkent", callback_data="city_Tashkent"),
+            InlineKeyboardButton("📍 Samarqand", callback_data="city_Samarkand"),
+            InlineKeyboardButton("📍 Buxoro", callback_data="city_Bukhara"),
+        ],
+        [
+            InlineKeyboardButton("📍 İstanbul", callback_data="city_Istanbul"),
+            InlineKeyboardButton("📍 Ankara", callback_data="city_Ankara"),
+            InlineKeyboardButton("📍 Moskva", callback_data="city_Moscow"),
+        ]
+    ])
+
 # =====================================================================
-# VİDEO İNDİRME MOTORU (Instagram, TikTok, Facebook, X)
+# VİDEO İNDİRME MOTORU
 # =====================================================================
 SUPPORTED_PLATFORMS = [
     r'(?:instagram\.com)',
@@ -499,7 +590,7 @@ async def process_download(status_msg, user_id, chat_id, url, context):
             await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
 
 # =====================================================================
-# TELEGRAM KOMUTLARI VE MESAJ İŞLEYİCİSİ
+# TELEGRAM HANDLERS
 # =====================================================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = update.effective_user.language_code or 'tr'
@@ -512,7 +603,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         context.user_data['lang'] = 'tr'
 
-    user_id = update.effective_user.id
     await update.message.reply_text(
         "Tilni tanlang / Выберите язык / Select language / Lütfen dil seçin:",
         reply_markup=get_language_keyboard()
@@ -525,12 +615,37 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_reply_menu(user_id, context)
     )
 
+async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_lang = get_user_lang(user_id, context)
+
+    # Eğer /namaz İstanbul veya /namoz Toshkent gibi argüman yazılmışsa
+    if context.args:
+        city_query = " ".join(context.args)
+        data = await asyncio.to_thread(fetch_prayer_times, city_query)
+        if data:
+            card = format_prayer_card(city_query, data, user_lang)
+            await update.message.reply_text(card, parse_mode="Markdown")
+            return
+        else:
+            await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
+            return
+
+    # Argümansız çağrıldıysa hızlı seçim menüsü aç
+    context.user_data['mode'] = 'prayer'
+    await update.message.reply_text(
+        get_text(user_id, 'prompt_prayer', context),
+        reply_markup=get_quick_cities_keyboard(),
+        parse_mode="Markdown"
+    )
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     data = query.data
 
+    # Dil seçimi
     if data.startswith("lang_"):
         selected_lang = data.split("_")[1]
         context.user_data['lang'] = selected_lang
@@ -540,6 +655,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"✅ {get_text(user_id, 'welcome', context)}",
             reply_markup=get_reply_menu(user_id, context)
         )
+        return
+
+    # Hızlı Şehir Butonuna Dokunulduğunda
+    if data.startswith("city_"):
+        city_name = data.split("_")[1]
+        user_lang = get_user_lang(user_id, context)
+        prayer_data = await asyncio.to_thread(fetch_prayer_times, city_name)
+        if prayer_data:
+            card = format_prayer_card(city_name, prayer_data, user_lang)
+            await query.message.reply_text(card, parse_mode="Markdown")
+        else:
+            await query.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
+        return
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -548,9 +676,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.message.chat_id
     text = update.message.text.strip()
+    user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonlarına Basıldığında Mod Değiştirme
+    # 1. Menü Buton Kontrolleri
     btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
+    btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
     btn_c2l = [TEXTS[l]['btn_c2l'] for l in TEXTS]
     btn_l2c = [TEXTS[l]['btn_l2c'] for l in TEXTS]
     btn_lng = [TEXTS[l]['btn_lang'] for l in TEXTS]
@@ -558,6 +688,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in btn_vid:
         context.user_data['mode'] = 'video'
         await update.message.reply_text(get_text(user_id, 'prompt_video', context))
+        return
+
+    if text in btn_pry:
+        context.user_data['mode'] = 'prayer'
+        await update.message.reply_text(
+            get_text(user_id, 'prompt_prayer', context),
+            reply_markup=get_quick_cities_keyboard(),
+            parse_mode="Markdown"
+        )
         return
 
     if text in btn_c2l:
@@ -577,7 +716,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 2. Link Kontrolü (Herhangi bir anda link gelirse doğrudan video indirir)
+    # 2. Link Kontrolü (Herhangi bir anda link gelirse doğrudan video indir)
     url_match = re.search(r'https?://[^\s]+', text)
     if url_match:
         url = url_match.group(0)
@@ -586,30 +725,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             asyncio.create_task(process_download(status_msg, user_id, chat_id, url, context))
             return
 
-    # 3. Metin Çevirisi (Kiril ➔ Latin veya Latin ➔ Kiril)
     current_mode = context.user_data.get('mode', 'auto')
 
+    # 3. Namaz Vakti Modu (Kullanıcı şehir adı yazarsa)
+    if current_mode == 'prayer':
+        prayer_data = await asyncio.to_thread(fetch_prayer_times, text)
+        if prayer_data:
+            card = format_prayer_card(text, prayer_data, user_lang)
+            await update.message.reply_text(card, parse_mode="Markdown")
+            context.user_data['mode'] = 'auto'
+            return
+        else:
+            await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
+            return
+
+    # 4. Kiril -> Latin Modu
     if current_mode == 'c2l':
-        # Zorunlu Kiril -> Latin modu
         converted = cyrillic_to_latin(text)
-        await update.message.reply_text(f"🔤 Lotin:\n\n{converted}")
+        await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
         return
 
+    # 5. Latin -> Kiril Modu
     if current_mode == 'l2c':
-        # Zorunlu Latin -> Kiril modu
         converted = latin_to_cyrillic(text)
-        await update.message.reply_text(f"🔤 Кирилл:\n\n{converted}")
+        await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 4. Otomatik Algılama Modu (Kullanıcı doğrudan metin yazarsa)
+    # 6. Otomatik Akıllı Algılama
+    # Eğer tek kelimelik bilinen bir şehir adı yazılmışsa namaz vaktini ver
+    norm_city = normalize_city_name(text)
+    if norm_city != text or text.lower() in ['istanbul', 'toshkent', 'ankara', 'bursa', 'izmir', 'samarqand', 'buxoro', 'moskva']:
+        data = await asyncio.to_thread(fetch_prayer_times, text)
+        if data:
+            card = format_prayer_card(text, data, user_lang)
+            await update.message.reply_text(card, parse_mode="Markdown")
+            return
+
+    # Aksi halde harf çevirisi yap
     if is_mostly_cyrillic(text):
-        # Kiril yazıldıysa Latinceye çevir
         converted = cyrillic_to_latin(text)
-        await update.message.reply_text(f"🔤 Lotin:\n\n{converted}")
+        await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
     else:
-        # Latin yazıldıysa Kirile çevir
         converted = latin_to_cyrillic(text)
-        await update.message.reply_text(f"🔤 Кирилл:\n\n{converted}")
+        await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
 
 def main():
     token = os.environ.get("BOT_TOKEN")
@@ -621,10 +779,12 @@ def main():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
+    app.add_handler(CommandHandler("namoz", prayer_command))
+    app.add_handler(CommandHandler("namaz", prayer_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot 7/24 aktif; Video İndirme ve Özbekçe Çeviri hazır!")
+    print("Bot 7/24 aktif; Video, Namaz Vakitleri ve Özbekçe Çeviri hazır!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

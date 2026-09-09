@@ -54,22 +54,14 @@ def run_health_server():
     server.serve_forever()
 
 def run_keep_alive_pinger():
-    """
-    Render'ın 15 dakikalık boşta kalma uyku modunu engellemek için
-    her 9-10 dakikada bir botun kendi Render URL'sine istek gönderir.
-    """
     target_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL")
     if not target_url:
-        print("[Keep-Alive] RENDER_EXTERNAL_URL veya APP_URL bulunamadı. Lütfen Render Environment kısmından genel URL'nizi ekleyin.")
         return
 
     if not target_url.startswith("http"):
         target_url = f"https://{target_url}"
 
-    print(f"[Keep-Alive] 7/24 Uyanık Tutma Servisi Aktif: {target_url}")
-
     while True:
-        # Render 15 dakikada uyutur; 540 saniye (9 dakika) en güvenli süredir
         time.sleep(540)
         try:
             req = urllib.request.Request(
@@ -77,10 +69,9 @@ def run_keep_alive_pinger():
                 headers={'User-Agent': 'NunBot-KeepAlive/1.0'}
             )
             with urllib.request.urlopen(req, timeout=20) as resp:
-                if resp.status == 200:
-                    print(f"[Keep-Alive] Uyandırma sinyali gönderildi ({time.strftime('%H:%M:%S')}) -> Başarılı: 200 OK")
-        except Exception as e:
-            print(f"[Keep-Alive] Sinyal gönderilirken geçici hata: {e}")
+                pass
+        except Exception:
+            pass
 
 # =====================================================================
 # KALICI DİL YÖNETİM SİSTEMİ (DATABASE & MEMORY)
@@ -116,8 +107,8 @@ def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
         l = context.user_data['lang']
         if isinstance(l, str) and l in TEXTS:
             return l
-        if isinstance(l, list) and len(l) > 1 and l[1] in TEXTS:
-            return l[1]
+        if isinstance(l, list) and len(l) > 1 and l in TEXTS:
+            return l
 
     return 'uz'
 
@@ -506,37 +497,51 @@ def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, gr
     clean_inp = re.sub(r"[*_`\[\]]", "", clean_prayer_query(user_input))
     is_fuzzy = clean_inp.lower() != clean_disp.lower() and bool(clean_inp)
 
+    # DİKKAT: İsimler doğrudan bağımsız değişken olarak atanır; liste indeksleme hatası imkansız kılınmıştır!
     if lang == 'tr':
         header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
-        labels = ["İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI"]
+        lbl_fajr = "İMSAK"
+        lbl_sunrise = "GÜNEŞ"
+        lbl_dhuhr = "ÖĞLE"
+        lbl_asr = "İKİNDİ"
+        lbl_maghrib = "AKŞAM"
+        lbl_isha = "YATSI"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Arama: \"{clean_inp}\" ➔ *{clean_disp}* olarak belirlendi._\n" if is_fuzzy else ""
     elif lang == 'ru':
         header = "*NUN PROJECT // ВРЕМЯ НАМАЗА*"
-        labels = ["ФАДЖР", "ВОСХОД", "ЗУХР", "АСР", "МАГРИБ", "ИША"]
+        lbl_fajr = "ФАДЖР"
+        lbl_sunrise = "ВОСХОД"
+        lbl_dhuhr = "ЗУХР"
+        lbl_asr = "АСР"
+        lbl_maghrib = "МАГРИБ"
+        lbl_isha = "ИША"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Поиск: \"{clean_inp}\" ➔ *{clean_disp}* определено._\n" if is_fuzzy else ""
     elif lang == 'en':
         header = "*NUN PROJECT // PRAYER TIMES*"
-        labels = ["FAJR", "SUNRISE", "DHUHR", "ASR", "MAGHRIB", "ISHA"]
+        lbl_fajr = "FAJR"
+        lbl_sunrise = "SUNRISE"
+        lbl_dhuhr = "DHUHR"
+        lbl_asr = "ASR"
+        lbl_maghrib = "MAGHRIB"
+        lbl_isha = "ISHA"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Search: \"{clean_inp}\" ➔ Predicted as *{clean_disp}*._\n" if is_fuzzy else ""
     else:  # 'uz'
         header = "*NUN PROJECT // NAMOZ VAQTLARI*"
-        labels = ["BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON"]
+        lbl_fajr = "BOMDOD"
+        lbl_sunrise = "QUYOSH"
+        lbl_dhuhr = "PESHIN"
+        lbl_asr = "ASR"
+        lbl_maghrib = "SHOM"
+        lbl_isha = "XUFTON"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Qidiruv: \"{clean_inp}\" ➔ *{clean_disp}* deb aniqlandi._\n" if is_fuzzy else ""
 
     date_line = f"📅 `{greg_date}`" if greg_date else ""
     if hijri_str:
         date_line += f"  •  🌙 `{hijri_str}`" if date_line else f"🌙 `{hijri_str}`"
-
-    lbl_fajr = labels[0]
-    lbl_sunrise = labels
-    lbl_dhuhr = labels
-    lbl_asr = labels
-    lbl_maghrib = labels
-    lbl_isha = labels
 
     card = (
         f"{header}\n"
@@ -790,7 +795,6 @@ TEXTS = {
     }
 }
 
-# 512MB RAM sınırını korumak için eşzamanlı video indirme limiti 1 olarak tutulur
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(1)
 
 def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE = None) -> str:
@@ -1030,7 +1034,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
 
-    # KESİN DİL DEĞİŞİMİ: data.replace ile string ('uz', 'tr', 'ru', 'en') alınır
     if data.startswith("lang_"):
         selected_lang = data.replace("lang_", "").strip()
         if selected_lang not in TEXTS:
@@ -1058,7 +1061,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ZİKİR SEÇİMİ (SABAH / AKŞAM)
     if data in ("adhkar_morning", "adhkar_evening"):
         period = "morning" if data == "adhkar_morning" else "evening"
         user_lang = get_user_lang(user_id, context)
@@ -1131,7 +1133,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Medya Linki Kontrolü
     url_match = re.search(r'https?://[^\s]+', raw_text)
     if url_match:
         url = url_match.group(0)
@@ -1214,10 +1215,7 @@ def main():
 
     load_user_langs()
 
-    # 1. Port dinleyen sağlık sunucusunu arka planda başlat
     threading.Thread(target=run_health_server, daemon=True).start()
-
-    # 2. Render'ı uyutmayan 7/24 Self-Ping iş parçacığını başlat
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
@@ -1229,7 +1227,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot 7/24 aktif; Sağlık sunucusu, Self-Ping ve Kalıcı Dil hazır!")
+    print("Nun Bot 7/24 aktif; Namaz kartı formatı, Sağlık sunucusu ve Dil yönetimi hazır!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

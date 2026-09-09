@@ -153,7 +153,6 @@ def get_user_tz_offset(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> in
     if uid_str in USER_TIMEZONES:
         return USER_TIMEZONES[uid_str]
     lang = get_user_lang(user_id, context)
-    # Varsayılanlar: Türkçe ve Rusça -> UTC+3 (İstanbul/Moskova), Özbekçe -> UTC+5 (Taşkent), İngilizce -> UTC+3
     if lang in ('tr', 'ru', 'en'):
         return 3
     return 5
@@ -539,7 +538,7 @@ def latin_to_cyrillic(text: str) -> str:
         if c in ('s', 'S') and nxt in ('h', 'H'):
             res.append("Ш" if c.isupper() else "ш"); i += 2; continue
         if c in ('c', 'C') and nxt in ('h', 'H'):
-            res.append("Ч" if c.isupper() else "ч"); i += 2; continue
+            res.append("Ch" if c.isupper() else "ch"); i += 2; continue
         if c in ('t', 'T') and nxt in ('s', 'S'):
             res.append("Ц" if c.isupper() else "ц"); i += 2; continue
         if c in ('y', 'Y') and nxt in ('o', 'O'): res.append("Ё" if c.isupper() else "ё"); i += 2; continue
@@ -649,8 +648,8 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         f"  ▫️ *{lbls[0]}:*    `{t_f}`\n"
         f"  ▫️ *{lbls}:*    `{t_s}`\n"
         f"  ▫️ *{lbls}:*    `{t_d}`\n"
-        f"  ▫️ *{lbls[3]}:*    `{t_a}`\n"
-        f"  ▫️ *{lbls[4]}:*    `{t_m}`\n"
+        f"  ▫️ *{lbls}:*    `{t_a}`\n"
+        f"  ▫️ *{lbls}:*    `{t_m}`\n"
         f"  ▫️ *{lbls[5]}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
         f"_{source}_"
@@ -1367,9 +1366,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("settz_"):
-        tz_raw = data.split("_")
+        parts = data.split("_")
         try:
-            val = int(tz_raw)
+            val = int(parts)
             save_user_timezone(user_id, val)
             try: await query.message.delete()
             except Exception: pass
@@ -1893,8 +1892,6 @@ def main():
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("cancel", cancel_command))

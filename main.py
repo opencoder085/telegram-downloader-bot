@@ -65,7 +65,7 @@ def run_keep_alive_pinger():
         target_url = f"https://{target_url}"
 
     while True:
-        time.sleep(540)  # 9 dakikada bir uyandırma isteği gönderir
+        time.sleep(540)
         try:
             req = urllib.request.Request(
                 target_url,
@@ -248,7 +248,8 @@ def normalize_time_input(t_str: str):
     t_str = t_str.strip().replace(".", ":")
     m = re.match(r"^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$", t_str)
     if m:
-        h, mn = int(m.group(1)), int(m.group(2))
+        h = int(m.group(1))
+        mn = int(m.group(2))
         return f"{h:02d}:{mn:02d}"
     return None
 
@@ -288,7 +289,7 @@ def format_exam_countdown(exam: dict, lang: str = 'uz') -> str:
     return f"📌 *{title}*\n📅 `{dt.strftime('%d.%m.%Y %H:%M')}`\n{cd}\n"
 
 # =====================================================================
-# KUSURSUZ İNTERAKTİF TELEGRAM TAKVİMİ & SAAT SEÇİCİ
+# KESİNLİKLE HATASIZ İNTERAKTİF TAKVİM & SAAT SEÇİCİ
 # =====================================================================
 def build_inline_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyboardMarkup:
     month_names = {
@@ -312,7 +313,8 @@ def build_inline_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyb
 
     m_name = month_names.get(lang, month_names['uz'])[month]
     w_days = week_days.get(lang, week_days['uz'])
-    sc = shortcuts.get(lang, shortcuts['uz'])
+    sc_tuple = shortcuts.get(lang, shortcuts['uz'])
+    btn_today, btn_tmrw, btn_week, btn_cancel = sc_tuple
 
     rows = []
     # 1. Navigasyon Satırı: ◀️  Ay Yıl  ▶️
@@ -342,17 +344,18 @@ def build_inline_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyb
                 row.append(InlineKeyboardButton(label, callback_data=f"cal_date_{d_str}"))
         rows.append(row)
 
-    # 4. Kısayol Butonları (Hatasız Tuple İndekslemesi)
+    # 4. Kısayol Butonları (Kesinlikle String)
     now = datetime.now()
     t_today = now.strftime("%Y-%m-%d")
     t_tmrw = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     t_week = (now + timedelta(days=7)).strftime("%Y-%m-%d")
+
     rows.append([
-        InlineKeyboardButton(sc[0], callback_data=f"cal_date_{t_today}"),
-        InlineKeyboardButton(sc, callback_data=f"cal_date_{t_tmrw}"),
-        InlineKeyboardButton(sc, callback_data=f"cal_date_{t_week}"),
+        InlineKeyboardButton(btn_today, callback_data=f"cal_date_{t_today}"),
+        InlineKeyboardButton(btn_tmrw, callback_data=f"cal_date_{t_tmrw}"),
+        InlineKeyboardButton(btn_week, callback_data=f"cal_date_{t_week}"),
     ])
-    rows.append([InlineKeyboardButton(sc[3], callback_data="cal_cancel")])
+    rows.append([InlineKeyboardButton(btn_cancel, callback_data="cal_cancel")])
     return InlineKeyboardMarkup(rows)
 
 def build_time_picker(lang: str = 'uz') -> InlineKeyboardMarkup:
@@ -372,19 +375,23 @@ def build_time_picker(lang: str = 'uz') -> InlineKeyboardMarkup:
         'ru': ("🔙 Назад к дате", "✍️ Другое время", "❌ Отмена"),
         'en': ("🔙 Back to Date", "✍️ Custom Time", "❌ Cancel"),
     }
-    lbl = labels.get(lang, labels['uz'])
+    lbl_back, lbl_custom, lbl_cancel = labels.get(lang, labels['uz'])
     rows.append([
-        InlineKeyboardButton(lbl[0], callback_data="time_back_date"),
-        InlineKeyboardButton(lbl, callback_data="time_custom")
+        InlineKeyboardButton(lbl_back, callback_data="time_back_date"),
+        InlineKeyboardButton(lbl_custom, callback_data="time_custom")
     ])
-    rows.append([InlineKeyboardButton(lbl[2], callback_data="cal_cancel")])
+    rows.append([InlineKeyboardButton(lbl_cancel, callback_data="cal_cancel")])
     return InlineKeyboardMarkup(rows)
 
 async def safe_edit_text_markup(message, text: str, reply_markup=None, parse_mode=None):
     try:
         await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception:
-        pass
+        try:
+            clean_text = text.replace("*", "").replace("_", "").replace("`", "")
+            await message.edit_text(clean_text, reply_markup=reply_markup)
+        except Exception:
+            pass
 
 # =====================================================================
 # ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
@@ -656,7 +663,7 @@ async def fetch_prayer_times(city_input: str):
 
     norm = normalize_key(city_clean)
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json, text/plain, */*",
     }
 
@@ -719,13 +726,19 @@ async def fetch_prayer_times(city_input: str):
 
     return None, None, None, None, None
 
+def clean_time(time_str: str) -> str:
+    if not time_str:
+        return "--:--"
+    m = re.search(r"\d{1,2}:\d{2}", str(time_str))
+    return m.group(0) if m else "--:--"
+
 def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, greg_date: str, hijri_str: str, source_note: str, lang: str = 'uz') -> str:
-    t_fajr = timings.get("Fajr", "--:--").split()[0]
-    t_sunrise = timings.get("Sunrise", "--:--").split()[0]
-    t_dhuhr = timings.get("Dhuhr", "--:--").split()[0]
-    t_asr = timings.get("Asr", "--:--").split()[0]
-    t_maghrib = timings.get("Maghrib", "--:--").split()[0]
-    t_isha = timings.get("Isha", "--:--").split()[0]
+    t_fajr = clean_time(timings.get("Fajr"))
+    t_sunrise = clean_time(timings.get("Sunrise"))
+    t_dhuhr = clean_time(timings.get("Dhuhr"))
+    t_asr = clean_time(timings.get("Asr"))
+    t_maghrib = clean_time(timings.get("Maghrib"))
+    t_isha = clean_time(timings.get("Isha"))
 
     clean_disp = re.sub(r"[*_`\[\]]", "", display_name)
     clean_inp = re.sub(r"[*_`\[\]]", "", clean_prayer_query(user_input))
@@ -1047,7 +1060,7 @@ def download_media_sync(url: str, download_dir: str):
         'socket_timeout': 30,
         'retries': 5,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         },
         'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio/best',
@@ -1256,7 +1269,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 1. DİL DEĞİŞİMİ
     if data.startswith("lang_"):
-        selected_lang = data.split("_")
+        selected_lang = data.replace("lang_", "", 1).strip()
         if selected_lang not in TEXTS:
             selected_lang = 'uz'
 
@@ -1308,21 +1321,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 4. İNTERAKTİF TAKVİM: AY DEĞİŞTİRME (◀️  ▶️)
     if data.startswith("cal_nav_"):
         parts = data.split("_")
-        y, m = int(parts), int(parts)
+        _, _, nav_y, nav_m = parts
+        y, m = int(nav_y), int(nav_m)
         title = context.user_data.get('exam_draft_title', 'Imtihon')
         kb = build_inline_calendar(y, m, user_lang)
-        prompt = get_text(user_id, 'exam_pick_date', context).format(title=title)
+        prompt = get_text(user_id, 'exam_pick_date', context).replace("{title}", title)
         await safe_edit_text_markup(query.message, prompt, kb, parse_mode="Markdown")
         return
 
     # 5. İNTERAKTİF TAKVİM: GÜN SEÇİLDİ ➔ SAAT SEÇİCİYİ AÇ
     if data.startswith("cal_date_"):
-        date_str = data.replace("cal_date_", "").strip()
+        date_str = data.replace("cal_date_", "", 1).strip()
         context.user_data['exam_draft_date'] = date_str
         context.user_data['mode'] = 'exam_time_select'
         title = context.user_data.get('exam_draft_title', 'Imtihon')
         kb = build_time_picker(user_lang)
-        prompt = get_text(user_id, 'exam_pick_time', context).format(title=title, date=date_str)
+        prompt = get_text(user_id, 'exam_pick_time', context).replace("{title}", title).replace("{date}", date_str)
         await safe_edit_text_markup(query.message, prompt, kb, parse_mode="Markdown")
         return
 
@@ -1331,7 +1345,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.now()
         title = context.user_data.get('exam_draft_title', 'Imtihon')
         kb = build_inline_calendar(now.year, now.month, user_lang)
-        prompt = get_text(user_id, 'exam_pick_date', context).format(title=title)
+        prompt = get_text(user_id, 'exam_pick_date', context).replace("{title}", title)
         await safe_edit_text_markup(query.message, prompt, kb, parse_mode="Markdown")
         return
 
@@ -1346,7 +1360,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 8. SAAT BUTONUNA TIKLANDI ➔ SINAVI KAYDET
     if data.startswith("time_sel_"):
-        chosen_time = data.replace("time_sel_", "").strip()
+        chosen_time = data.replace("time_sel_", "", 1).strip()
         date_str = context.user_data.get('exam_draft_date', datetime.now().strftime("%Y-%m-%d"))
         title = context.user_data.get('exam_draft_title', 'Imtihon')
         full_datetime_str = f"{date_str} {chosen_time}"
@@ -1410,7 +1424,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 12. SINAV SİL
     if data.startswith("exam_del_"):
-        target_id = data.replace("exam_del_", "").strip()
+        target_id = data.replace("exam_del_", "", 1).strip()
         delete_user_exam(user_id, target_id)
         try:
             await query.message.delete()
@@ -1553,9 +1567,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if current_mode == 'exam_title_input':
         # Kullanıcı tek satırda mı yazdı? (Örn: Matematika - 15.11.2026 10:00)
         if "-" in raw_text and any(c.isdigit() for c in raw_text):
-            parts = raw_text.split("-", 1)
-            title = parts[0].strip()
-            date_part = parts.strip()
+            title, _, date_part = raw_text.partition("-")
+            title = title.strip()
+            date_part = date_part.strip()
             parsed_dt = parse_flexible_date(date_part)
             if parsed_dt:
                 exam_id = add_user_exam(user_id, title, parsed_dt.strftime("%Y-%m-%d %H:%M"))
@@ -1564,30 +1578,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await exam_command(update, context)
                 return
 
-        # Sadece ders adını yazdıysa (Örn: Matematik veya Yaramaz) ➔ Takvimi aç
-        context.user_data['exam_draft_title'] = raw_text.strip()
+        # Sadece ders adını yazdıysa (Örn: Nothing, Oneplus, Matematik) ➔ Takvimi aç
+        title_clean = raw_text.strip()
+        context.user_data['exam_draft_title'] = title_clean
         context.user_data['mode'] = 'exam_date_select'
         now = datetime.now()
         kb = build_inline_calendar(now.year, now.month, user_lang)
-        prompt = get_text(user_id, 'exam_pick_date', context).format(title=raw_text.strip())
-        await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+        prompt = get_text(user_id, 'exam_pick_date', context).replace("{title}", title_clean)
+        try:
+            await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+        except Exception:
+            clean_prompt = prompt.replace("*", "").replace("_", "").replace("`", "")
+            await update.message.reply_text(clean_prompt, reply_markup=kb)
         return
 
     if current_mode == 'exam_date_select':
-        # Kullanıcı takvim butonuna basmak yerine yazı yazarsa takvimi tekrar göster
         now = datetime.now()
         title = context.user_data.get('exam_draft_title', 'Imtihon')
         kb = build_inline_calendar(now.year, now.month, user_lang)
-        prompt = get_text(user_id, 'exam_pick_date', context).format(title=title)
-        await update.message.reply_text(
-            f"⚠️ Iltimos, quyidagi taqvimdan sanani tanlang:\n\n{prompt}",
-            parse_mode="Markdown",
-            reply_markup=kb
-        )
+        prompt = get_text(user_id, 'exam_pick_date', context).replace("{title}", title)
+        try:
+            await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+        except Exception:
+            clean_prompt = prompt.replace("*", "").replace("_", "").replace("`", "")
+            await update.message.reply_text(clean_prompt, reply_markup=kb)
         return
 
     if current_mode == 'exam_time_select':
-        # Kullanıcı saat butonuna basmak yerine doğrudan '10:30' yazarsa kaydet
         norm_time = normalize_time_input(raw_text)
         if norm_time:
             date_str = context.user_data.get('exam_draft_date', datetime.now().strftime("%Y-%m-%d"))
@@ -1609,8 +1626,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = context.user_data.get('exam_draft_title', 'Imtihon')
             date_str = context.user_data.get('exam_draft_date', '')
             kb = build_time_picker(user_lang)
-            prompt = get_text(user_id, 'exam_pick_time', context).format(title=title, date=date_str)
-            await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+            prompt = get_text(user_id, 'exam_pick_time', context).replace("{title}", title).replace("{date}", date_str)
+            try:
+                await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+            except Exception:
+                clean_prompt = prompt.replace("*", "").replace("_", "").replace("`", "")
+                await update.message.reply_text(clean_prompt, reply_markup=kb)
             return
 
     if current_mode == 'exam_custom_time':
@@ -1683,7 +1704,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 8. Tanınmayan kısa rastgele yazılarda menüyü hatırlat
+    # 8. Tanınmayan kısa rastgele yazılarda menüyü göster
     await update.message.reply_text(
         get_text(user_id, 'menu_title', context),
         reply_markup=get_reply_menu(user_id, context)

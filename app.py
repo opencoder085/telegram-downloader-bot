@@ -97,7 +97,7 @@ def run_keep_alive_pinger():
         time.sleep(480)
 
 # =====================================================================
-# GELİŞMİŞ VE KAPSAMLI SAAT DİLİMİ & KONUM MOTORU
+# GELİŞMİŞ SAAT DİLİMİ VE KONUM MOTORU
 # =====================================================================
 CITY_TIMEZONE_MAP = {
     # O'zbekiston (UTC+5)
@@ -127,7 +127,7 @@ CITY_TIMEZONE_MAP = {
 
     # Yaqin Sharq & Ko'rfaz
     "dubai": 4, "dubay": 4, "abu dhabi": 4, "riyadh": 3, "makka": 3, "makkah": 3, "mecca": 3,
-    "madina": 3, "medina": 3, "doha": 3, "kuwait": 3, "muscat": 4, "tehran": 3,
+    "madina": 3, "medine": 3, "medina": 3, "doha": 3, "kuwait": 3, "muscat": 4, "tehran": 3,
 
     # Yevropa
     "london": 0, "dublin": 0, "lisbon": 0, "paris": 1, "parij": 1, "berlin": 1, "rome": 1, "rim": 1,
@@ -155,19 +155,19 @@ def resolve_tz_from_city(city_input: str):
     return None
 
 def coords_to_tz_offset(lat: float, lon: float) -> int:
-    if 37.0 <= lat <= 46.0 and 56.0 <= lon <= 73.5: return 5  # O'zbekiston
-    if 35.5 <= lat <= 42.5 and 25.5 <= lon <= 45.0: return 3  # Turkiya
-    if 50.0 <= lat <= 65.0 and 28.0 <= lon <= 55.0: return 3  # Moskva / Yevropa Rossiyasi
-    if 22.0 <= lat <= 27.5 and 51.5 <= lon <= 60.0: return 4  # BAA / Dubay
-    if 16.0 <= lat <= 32.0 and 34.0 <= lon <= 51.5: return 3  # Saudiya
-    if 30.0 <= lat <= 46.0 and 124.0 <= lon <= 146.0: return 9 # Koreya / Yaponiya
-    if 1.0 <= lat <= 54.0 and 97.0 <= lon <= 124.0: return 8   # Xitoy / Singapur
-    if 36.5 <= lat <= 43.5 and 67.0 <= lon <= 75.0: return 5   # Tojikiston
-    if 39.0 <= lat <= 43.5 and 69.0 <= lon <= 80.5: return 6   # Qirg'iziston
-    if 40.5 <= lat <= 55.5 and 46.5 <= lon <= 87.5: return 5   # Qozog'iston
-    if 49.0 <= lat <= 60.5 and -11.0 <= lon <= 2.0: return 0   # Buyuk Britaniya
-    if 36.0 <= lat <= 55.0 and 2.0 <= lon <= 24.0: return 1    # Markaziy Yevropa
-    if 34.0 <= lat <= 70.0 and 20.0 <= lon <= 35.0: return 2   # Sharqiy Yevropa
+    if 37.0 <= lat <= 46.0 and 56.0 <= lon <= 73.5: return 5
+    if 35.5 <= lat <= 42.5 and 25.5 <= lon <= 45.0: return 3
+    if 50.0 <= lat <= 65.0 and 28.0 <= lon <= 55.0: return 3
+    if 22.0 <= lat <= 27.5 and 51.5 <= lon <= 60.0: return 4
+    if 16.0 <= lat <= 32.0 and 34.0 <= lon <= 51.5: return 3
+    if 30.0 <= lat <= 46.0 and 124.0 <= lon <= 146.0: return 9
+    if 1.0 <= lat <= 54.0 and 97.0 <= lon <= 124.0: return 8
+    if 36.5 <= lat <= 43.5 and 67.0 <= lon <= 75.0: return 5
+    if 39.0 <= lat <= 43.5 and 69.0 <= lon <= 80.5: return 6
+    if 40.5 <= lat <= 55.5 and 46.5 <= lon <= 87.5: return 5
+    if 49.0 <= lat <= 60.5 and -11.0 <= lon <= 2.0: return 0
+    if 36.0 <= lat <= 55.0 and 2.0 <= lon <= 24.0: return 1
+    if 34.0 <= lat <= 70.0 and 20.0 <= lon <= 35.0: return 2
     if 24.0 <= lat <= 50.0:
         if -80.0 <= lon <= -65.0: return -5
         if -90.0 <= lon <= -80.0: return -5
@@ -586,7 +586,7 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, user_lang
     return True
 
 # =====================================================================
-# POMODORO & HATIRLATICI MOTORU (SADE VE TAM SENKRONİZE)
+# POMODORO & HATIRLATICI MOTORU
 # =====================================================================
 async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
     await asyncio.sleep(duration_mins * 60)
@@ -632,21 +632,38 @@ async def reminders_worker(app):
                         pass
 
 # =====================================================================
-# KUSURSUZ ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
+# KUSURSUZ VE EKSİKSİZ ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU (DÜZELTİLDİ)
 # =====================================================================
 APOSTROPHES = set(["'", "’", "‘", "`", "ʻ", "ʼ", "\u02bb", "\u02bc"])
 VOWELS_CYR = set("аоуиэеёюяўАОУИЭЕЁЮЯЎ")
 VOWELS_LAT = set("aouieAOUiE")
 
+# Tüm karakterler doğrulanmış Kiril kod noktalarıyla bağlandı
 MAP_CYR_TO_LAT = {
-    'А': 'A', 'а': 'a', 'Б': 'B', 'б': 'b', 'В': 'V', 'в': 'v',
-    'Г': 'G', 'г': 'g', 'Д': 'D', 'д': 'd', 'Ж': 'J', 'ж': 'j',
-    'З': 'Z', 'з': 'z', 'И': 'I', 'и': 'i', 'Й': 'Y', 'й': 'y',
-    'К': 'K', 'к': 'k', 'Қ': 'Q', 'қ': 'q', 'Л': 'L', 'л': 'l',
-    'М': 'M', 'м': 'm', 'Н': 'N', 'н': 'n', 'О': 'O', 'о': 'o',
-    'П': 'P', 'п': 'p', 'Р': 'R', 'r': 'r', 'С': 'S', 'с': 's',
-    'Т': 'T', 'т': 't', 'У': 'U', 'у': 'u', 'Ф': 'F', 'ф': 'f',
-    'Х': 'X', 'х': 'x', 'Ҳ': 'H', 'ҳ': 'h', 'Э': 'E', 'э': 'e',
+    'А': 'A', 'а': 'a',
+    'Б': 'B', 'б': 'b',
+    'В': 'V', 'в': 'v',
+    'Г': 'G', 'г': 'g',
+    'Д': 'D', 'д': 'd',
+    'Ж': 'J', 'ж': 'j',
+    'З': 'Z', 'з': 'z',
+    'И': 'I', 'и': 'i',
+    'Й': 'Y', 'й': 'y',
+    'К': 'K', 'к': 'k',
+    'Қ': 'Q', 'қ': 'q',
+    'Л': 'L', 'л': 'l',   # DÜZELTİLDİ: Latin 'l' yerine Kiril 'л'
+    'М': 'M', 'м': 'm',
+    'Н': 'N', 'н': 'n',
+    'О': 'O', 'о': 'o',
+    'П': 'P', 'п': 'p',
+    'Р': 'R', 'р': 'r',   # DÜZELTİLDİ: Latin 'r' yerine Kiril 'р' ('p' çıkma hatası çözüldü)
+    'С': 'S', 'с': 's',
+    'Т': 'T', 'т': 't',
+    'У': 'U', 'у': 'u',
+    'Ф': 'F', 'ф': 'f',
+    'Х': 'X', 'х': 'x',
+    'Ҳ': 'H', 'ҳ': 'h',
+    'Э': 'E', 'э': 'e',
 }
 
 MAP_LAT_TO_CYR = {
@@ -668,11 +685,13 @@ def cyrillic_to_latin(text: str) -> str:
         prev = text[i-1] if i > 0 else " "
         nxt = text[i+1] if i+1 < n else ""
         
+        # S'H (сҳ -> s'h) vs SH (ш -> sh)
         if c in ('С', 'с') and nxt in ('Ҳ', 'ҳ'):
             res.append("S'H" if (c.isupper() and nxt.isupper()) else ("S'h" if c.isupper() else "s'h"))
             i += 2
             continue
             
+        # E / YE
         if c in ('Е', 'е'):
             if i == 0 or not prev.isalpha() or prev in VOWELS_CYR or prev in 'ъЪьЬ':
                 res.append("YE" if (c.isupper() and nxt.isupper()) else ("Ye" if c.isupper() else "ye"))
@@ -681,6 +700,7 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
+        # Ё, Ю, Я
         if c in ('Ё', 'ё'):
             res.append("YO" if (c.isupper() and nxt.isupper()) else ("Yo" if c.isupper() else "yo"))
             i += 1
@@ -694,6 +714,7 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
+        # Ч, Ш, Щ, Ц (DÜZELTİLDİ: 'Ch' yerine Kiril 'Ч')
         if c in ('Ч', 'ч'):
             res.append("CH" if (c.isupper() and nxt.isupper()) else ("Ch" if c.isupper() else "ch"))
             i += 1
@@ -709,6 +730,7 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
+        # Ў, Ғ
         if c == 'Ў': res.append("Oʻ"); i += 1; continue
         if c == 'ў': res.append("oʻ"); i += 1; continue
         if c == 'Ғ': res.append("Gʻ"); i += 1; continue
@@ -760,6 +782,11 @@ def latin_to_cyrillic(text: str) -> str:
             i += 2
             continue
             
+        if c in ('t', 'T') and nxt in ('s', 'S'):
+            res.append("Ц" if (c.isupper() and nxt.isupper()) else ("Ц" if c.isupper() else "ц"))
+            i += 2
+            continue
+            
         if c in ('y', 'Y') and nxt in ('o', 'O'):
             res.append("Ё" if (c.isupper() and nxt.isupper()) else ("Ё" if c.isupper() else "ё"))
             i += 2
@@ -777,11 +804,6 @@ def latin_to_cyrillic(text: str) -> str:
             
         if c in ('y', 'Y') and nxt in ('e', 'E'):
             res.append("Е" if (c.isupper() and nxt.isupper()) else ("Е" if c.isupper() else "е"))
-            i += 2
-            continue
-            
-        if c in ('t', 'T') and nxt in ('s', 'S'):
-            res.append("Ц" if (c.isupper() and nxt.isupper()) else ("Ц" if c.isupper() else "ц"))
             i += 2
             continue
             
@@ -853,7 +875,7 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
                 data = resp.json().get("data", {})
                 d = data.get("date", {})
                 return data.get("timings", {}), city_input.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
-    except Exception: pass
+        except Exception: pass
 
     return None, None, None, None, None
 
@@ -884,11 +906,11 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         f"📅 `{date_str}`\n\n"
         f"┌────────────────────────────┐\n"
         f"  ▫️ *{lbls[0]}:*    `{t_f}`\n"
-        f"  ▫️ *{lbls[1]}:*    `{t_s}`\n"
-        f"  ▫️ *{lbls[2]}:*    `{t_d}`\n"
-        f"  ▫️ *{lbls[3]}:*    `{t_a}`\n"
-        f"  ▫️ *{lbls[4]}:*    `{t_m}`\n"
-        f"  ▫️ *{lbls[5]}:*    `{t_i}`\n"
+        f"  ▫️ *{lbls}:*    `{t_s}`\n"
+        f"  ▫️ *{lbls}:*    `{t_d}`\n"
+        f"  ▫️ *{lbls}:*    `{t_a}`\n"
+        f"  ▫️ *{lbls}:*    `{t_m}`\n"
+        f"  ▫️ *{lbls}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
         f"_{source}_"
     )
@@ -958,7 +980,7 @@ def build_scheduler_keyboard(lang: str = 'uz') -> InlineKeyboardMarkup:
             'hour_minus': "➖ 1 час", 'hour_plus': "➕ 1 час",
             'min_minus': "➖ 15 мин", 'min_plus': "➕ 15 мин",
             'open_cal': "🗓 Выбрать из календаря",
-            'today': "⚡ Сегодня", 'tmrw': "⚡ Завtra", 'week': "⚡ 1 неделя",
+            'today': "⚡ Сегодня", 'tmrw': "⚡ Завтра", 'week': "⚡ 1 неделя",
             'confirm': "✅ ПОДТВЕРДИТЬ И СОХРАНИТЬ",
             'cancel': "❌ Отмена"
         },
@@ -1044,10 +1066,6 @@ def get_pdf_hub_keyboard(lang: str = 'uz'):
     ])
 
 def get_pomodoro_keyboard(user_id: int, lang: str = 'uz'):
-    """
-    Kullanıcı isteği doğrultusunda saat/mekan butonu Pomodoro altından
-    tamamen kaldırılmıştır; menüdeki müstakil butona ve otomatik senkrona bağlanmıştır.
-    """
     t = TEXTS.get(lang, TEXTS['uz'])
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t['pomo_btn_work25'], callback_data="pomo_25"), InlineKeyboardButton(t['pomo_btn_break5'], callback_data="pomo_5")],
@@ -1226,15 +1244,15 @@ TEXTS = {
             "📖 _«Allohumma solli 'alaa Muhammadiv-va 'alaa aali Muhammad, kamaa sollayta 'alaa Ibrohiyma va 'alaa aali Ibrohiym...»_\n"
             "🇺🇿 *Maʼnosi:* «Ey Allohim! Ibrohimga va uning oilasiga rahmat yogʻdirganingdek, Muhammadga va uning oilasiga ham rahmat yogʻdir...»\n\n"
             "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin tibbil quluubi va davaa'ihaa, va 'aafiyatil abdaani va shifaa'ihaa, va nuuril absori va diyaa'ihaa, va 'alaa aalihii va sohbihii va sallim.»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Qalblarning tabibi va davosi, tanlarning shifosi, koʻzlarning nuri boʻlgan Muhammad alayhissalomga, u zotning oilasi va sahobalariga salotu salom yoʻlla.»\n\n"
             "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin solaatan tunjiynaa bihaa min jamiy'il ahvaali val aafaat...»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Bizga shunday salovat yuborginki, uning sharofati bilan bizni barcha ofatlardan qutqar, ehtiyojlarimizni ravo qil, barcha yomonliklardan pokla va eng oliy darajalarga koʻtar...»\n\n"
             "4️⃣ *Salovati Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadinil faatihi limaa ughliq, val xootimi limaa sabaq, naasiril haqqi bil haqq...»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Yopiqlarni ochuvchi, oʻtganlarning xotimasi, haqiqatni himoya qiluvchi va toʻgʻri yoʻlga yetaklovchi Muhammadga salovat ayla.»\n\n"
             "5️⃣ *Qisqa va Fazilatli Salovat*\n"
@@ -1381,15 +1399,15 @@ TEXTS = {
             "📖 _«Allâhümme salli ‘alâ Muhammedin ve ‘alâ âli Muhammed, kemâ salleyte ‘alâ İbrâhîme ve ‘alâ âli İbrâhîm...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! İbrahim'e ve âline salât ettiğin gibi, Muhammed'e ve âline de salât eyle...»\n\n"
             "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin tıbbi’l-kulûbi ve devâihâ ve ‘âfiyeti’l-ebdâni ve şifâihâ ve nûri’l-ebsâri ve diyâihâ ve ‘alâ âlihî ve sahbihî ve sellim.»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Kalplerin tabibi ve devası, bedenlerin afiyeti ve şifası, gözlerin nuru ve aydınlığı olan Efendimiz Muhammed'e, âline ve ashabına salât ve selam eyle.»\n\n"
             "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin salâten tüncînâ bihâ min cemî‘i’l-ehvâli ve’l-âfât...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Efendimiz Muhammed'e öyle bir salât eyle ki; onunla bizi her türlü korku ve afetten kurtar, bütün ihtiyaçlarımızı gider, bütün günahlardan arındır ve en yüce derecelere eriştir...»\n\n"
             "4️⃣ *Salavat-ı Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedini’l-fâtihi limâ uğlika ve’l-hâtimi limâ sebaka nâsıri’l-hakkı bi’l-hakkı ve’l-hâdî ilâ sırâtike’l-müstekîm...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Kilitli kapıları açan, geçmiş peygamberlerin sonuncusu olan, hakka hak ile yardım eden ve doğru yoluna rehberlik eden Efendimiz Muhammed'e salât eyle.»\n\n"
             "5️⃣ *Kısa ve Faziletli Salavat*\n"
@@ -1519,9 +1537,9 @@ TEXTS = {
             "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
             "2️⃣ *Салават Тиббиль-Кулюб (Исцеление сердец)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "3️⃣ *Салават Тунджина (Спасение от бед)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ...\n"
             "4️⃣ *Краткий благословенный салават*\n"
             "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
             "📖 _«Салляллаху ‘алейхи ва саллям»_"
@@ -1675,7 +1693,7 @@ def get_reply_menu(user_id, context=None):
     ], resize_keyboard=True)
 
 # =====================================================================
-# GELİŞMİŞ VE ÇÖKMEZ VİDEO & MEDYA İNDİRME MOTORU (ÇOK KATMANLI YEDEKLEME)
+# GELİŞMİŞ VE ÇÖKMEZ VİDEO & MEDYA İNDİRME MOTORU
 # =====================================================================
 SUPPORTED_PLATFORMS = [
     r'(?:instagram\.com|instagr\.am|threads\.net)',
@@ -1872,7 +1890,7 @@ def _yt_dlp_download(url: str, download_dir: str) -> dict:
         for f in os.listdir(download_dir):
             full_p = os.path.join(download_dir, f)
             if os.path.isfile(full_p):
-                ext = os.path.splitext(f)[1].lower()
+                ext = os.path.splitext(f).lower()
                 if ext not in ('.part', '.ytdl', '.temp') and os.path.getsize(full_p) > 1024:
                     valid_files.append(full_p)
 
@@ -1886,7 +1904,7 @@ def _yt_dlp_download(url: str, download_dir: str) -> dict:
         if size_mb > 49.5:
             raise FileTooLargeError(size_mb)
 
-        ext = os.path.splitext(chosen_file)[1].lower()
+        ext = os.path.splitext(chosen_file).lower()
         is_video = ext in ('.mp4', '.mov', '.mkv', '.webm', '.avi')
         is_photo = ext in ('.jpg', '.jpeg', '.png', '.webp')
 
@@ -2039,7 +2057,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
         return
 
-    # DİL SEÇİMİ VE ARDINDAN DOĞRUDAN ŞEHİR TALEP ETME
+    # DİL SEÇİMİ VE ŞEHİR TALEP ETME
     if data.startswith("lang_"):
         l_code = data.replace("lang_", "", 1).strip()
         save_user_lang(user_id, l_code)
@@ -2098,7 +2116,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         city_name, val = city_tz_defaults.get(data, (None, None))
         if val is None:
             parts = data.split("_")
-            try: val = int(parts[1])
+            try: val = int(parts)
             except Exception: val = 3
         if city_name:
             save_user_city(user_id, city_name)
@@ -2132,7 +2150,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ZİKİRLER VE SALAVATLARIN İÇERİĞİ
+    # ZİKİRLER VE SALAVATLAR
     if data == "adhkar_morning":
         await query.message.reply_text(TEXTS[user_lang]['adhkar_morning_text'], parse_mode="Markdown")
         return
@@ -2605,7 +2623,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(t['city_not_found'], reply_markup=get_reply_menu(user_id, context))
             return
 
-    # 2. Medya Linki Kontrolü (Çok Katmanlı & Kesintisiz)
+    # 2. Medya Linki Kontrolü
     if is_supported_url(raw_text):
         m_url = re.search(r'https?://[^\s]+', raw_text)
         if m_url:

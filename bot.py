@@ -353,20 +353,16 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, title: st
 # =====================================================================
 async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
     await asyncio.sleep(duration_mins * 60)
-    if user_lang == 'tr':
-        msg = "🔔 *MOLA BİTTİ!* ☕" if is_break else f"🎉 *SÜRE BİTTİ!* 🍅 (`{duration_mins}` dakika)"
-        btn_lbl = "🍅 25 Dk Çalış" if is_break else "☕ 5 Dk Mola"
-    elif user_lang == 'ru':
-        msg = "🔔 *ПЕРЕРЫВ ОКОНЧЕН!* ☕" if is_break else f"🎉 *ПОМОДОРО ЗАВЕРШЕН!* 🍅 (`{duration_mins}` мин)"
-        btn_lbl = "🍅 25 Мин Работа" if is_break else "☕ 5 Мин Перерыв"
-    elif user_lang == 'en':
-        msg = "🔔 *BREAK OVER!* ☕" if is_break else f"🎉 *POMODORO FINISHED!* 🍅 (`{duration_mins}` mins)"
-        btn_lbl = "🍅 25 Min Work" if is_break else "☕ 5 Min Break"
+    t = TEXTS.get(user_lang, TEXTS['uz'])
+    if is_break:
+        msg = f"🔔 *{t['pomo_break_over']}* ☕"
+        btn_lbl = "🍅 25 Min Work" if user_lang == 'en' else ("🍅 25 Мин Работа" if user_lang == 'ru' else ("🍅 25 Dk Çalış" if user_lang == 'tr' else "🍅 25 Dk Ish"))
+        cb = "pomo_25"
     else:
-        msg = "🔔 *TANAFFUS TUGADI!* ☕" if is_break else f"🎉 *POMODORO TUGADI!* 🍅 (`{duration_mins}` daqiqa)"
-        btn_lbl = "🍅 25 Dk Ish" if is_break else "☕ 5 Dk Mola"
+        msg = f"🎉 *{t['pomo_work_over']}* 🍅 (`{duration_mins} {t['pomo_mins_unit']}`)"
+        btn_lbl = "☕ 5 Min Break" if user_lang == 'en' else ("☕ 5 Мин Перерыв" if user_lang == 'ru' else ("☕ 5 Dk Mola" if user_lang == 'tr' else "☕ 5 Dk Mola"))
+        cb = "pomo_5"
 
-    cb = "pomo_25" if is_break else "pomo_5"
     kb = InlineKeyboardMarkup([[InlineKeyboardButton(btn_lbl, callback_data=cb)]])
     try:
         await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", reply_markup=kb)
@@ -387,11 +383,14 @@ async def reminders_worker(app):
             save_json(REMINDERS_FILE, USER_REMINDERS)
             for uid, item in due:
                 u_lang = USER_LANGS.get(str(uid), 'uz')
-                t_due = TEXTS.get(u_lang, TEXTS['uz'])['remind_due']
+                t = TEXTS.get(u_lang, TEXTS['uz'])
+                hdr = t['remind_due']
+                lbl_task = "Vazifa" if u_lang == 'uz' else ("Görev" if u_lang == 'tr' else ("Задача" if u_lang == 'ru' else "Task"))
+                note = "Belgilangan vaqt yetib keldi!" if u_lang == 'uz' else ("Belirlenen vakit geldi!" if u_lang == 'tr' else ("Время пришло!" if u_lang == 'ru' else "Time is up!"))
                 try:
                     await app.bot.send_message(
                         chat_id=int(uid),
-                        text=f"{t_due}\n\n📌 *Vazifa:* {item.get('text')}\n⏰ Belgilangan vaqt yetib keldi!",
+                        text=f"🔔 *{hdr}*\n\n📌 *{lbl_task}:* {item.get('text')}\n⏰ {note}",
                         parse_mode="Markdown"
                     )
                 except Exception:
@@ -737,7 +736,7 @@ def get_pdf_hub_keyboard(lang: str = 'uz'):
     elif lang == 'ru':
         t_conv, t_ocr = "📸 Фото / Word / Excel / TXT ➔ PDF", "🔍 Извлечение текста (OCR)"
     elif lang == 'en':
-        t_conv, t_ocr = "📸 Photo / Word / Excel / TXT ➔ PDF", "🔍 Text Extraction (OCR)"
+        t_conv, t_ocr = "📸 Photo / Word / Excel / TXT ➔ PDF", "🔍 Extract Text (OCR)"
     else:
         t_conv, t_ocr = "📸 Rasm / Word / Excel / TXT ➔ PDF", "🔍 Rasmdan Matn Olish (OCR)"
 
@@ -784,7 +783,7 @@ def get_adhkar_selection_keyboard(lang: str = 'uz'):
         [InlineKeyboardButton(t_m, callback_data="adhkar_morning"), InlineKeyboardButton(t_e, callback_data="adhkar_evening")]
     ])
 
-# 4 DİLLİ TAM SÖZLÜK
+# 4 DİLLİ TAM SÖZLÜK (57 ANAHTAR EKSİKSİZ)
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\nQuyidagi menyudan kerakli boʻlimni tanlang:",
@@ -809,27 +808,41 @@ TEXTS = {
         'prompt_ocr': "🔍 *RASMDAN MATN CHIQARISH (OCR) FAOL*\n\nMatnini oʻqib olmoqchi boʻlgan kitob yoki taxta rasmini yuboring:\n_(Arabcha, Xitoycha, Ruscha, Oʻzbekcha va barcha tillar qoʻllab-quvvatlanadi)_",
         'prompt_exam_title': "🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_",
         'prompt_remind': "⏰ Eslatmani quyidagicha yuboring:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`",
+        'pomo_started': "POMODORO BOSHLANDI",
+        'pomo_work_label': "Dars",
+        'pomo_break_label': "Dam olish",
+        'pomo_mins_unit': "daq",
+        'pomo_mode_lbl': "Rejim",
+        'pomo_dur_lbl': "Davomiyligi",
+        'pomo_end_lbl': "Tugash vaqti",
+        'pomo_break_over': "TANAFFUS TUGADI!",
+        'pomo_work_over': "POMODORO TUGADI!",
         'exam_empty': "Sizda hali saqlangan imtihon yoʻq.",
         'exam_btn_add': "➕ Imtihon qoʻshish",
-        'exam_saved': "✅ *Imtihon muvaffaqiyatli saqlandi!*",
-        'remind_saved': "✅ *Eslatma oʻrnatildi!*",
+        'exam_saved': "Imtihon muvaffaqiyatli saqlandi!",
+        'exam_deleted': "Imtihon muvaffaqiyatli oʻchirildi.",
+        'remind_saved': "Eslatma oʻrnatildi!",
         'remind_empty': "Sizda faol eslatmalar yoʻq.",
-        'remind_due': "🔔 *NUN PROJECT // ESLATMA*",
-        'pdf_ready': "✅ PDF hujjati muvaffaqiyatli tayyorlandi!",
-        'pdf_fail': "❌ Faylni PDF ga oʻgirishda xatolik yuz berdi.",
-        'ocr_title': "🔍 *RASMDAN OʻQIB OLINGAN MATN:*",
-        'ocr_fail': "❌ Rasmdan tushunarli matn topilmadi.",
-        'direct_img_prompt': "📸 *Rasm qabul qilindi.*\nQaysi amalni bajarmoqchisiz?",
-        'btn_direct_pdf': "📄 PDF ga aylantirish",
-        'btn_direct_ocr': "🔍 Matnni oʻqish (OCR)",
-        'btn_cancel': "❌ Bekor qilish",
-        'cancel_success': "✅ Amal bekor qilindi.",
-        'lang_changed': "✅ Til muvaffaqiyatli oʻzgartirildi!",
-        'city_not_found': "❌ Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
-        'downloading': "⏳ Video yuklab olinmoqda, iltimos kuting...",
-        'uploading': "📤 Telegramga yuklanmoqda...",
-        'error_size': "⚠️ Fayl hajmi Telegram cheklovidan (50 MB) katta.",
-        'error_general': "❌ Xatolik yuz berdi. Qaytadan urinib koʻring.",
+        'remind_due': "NUN PROJECT // ESLATMA",
+        'pdf_ready': "PDF hujjati muvaffaqiyatli tayyorlandi!",
+        'pdf_fail': "Faylni PDF ga oʻgirishda xatolik yuz berdi.",
+        'ocr_title': "RASMDAN OʻQIB OLINGAN MATN:",
+        'ocr_fail': "Rasmdan tushunarli matn topilmadi.",
+        'direct_img_prompt': "Rasm qabul qilindi. Qaysi amalni bajarmoqchisiz?",
+        'btn_direct_pdf': "PDF ga aylantirish",
+        'btn_direct_ocr': "Matnni oʻqish (OCR)",
+        'btn_cancel': "Bekor qilish",
+        'cancel_success': "Amal bekor qilindi.",
+        'lang_changed': "Til muvaffaqiyatli oʻzgartirildi!",
+        'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
+        'downloading': "Video yuklab olinmoqda, iltimos kuting...",
+        'uploading': "Telegramga yuklanmoqda...",
+        'error_size': "Fayl hajmi Telegram cheklovidan (50 MB) katta.",
+        'error_general': "Xatolik yuz berdi. Qaytadan urinib koʻring.",
+        'schedule_processing': "Kilit ekrani fon rasmi tayyorlanmoqda...",
+        'schedule_ready_caption': "Dars Jadvali (Kilit Ekrani)",
+        'doc_processing': "Fayl qabul qilindi, ishlov berilmoqda...",
+        'video_error': "Videoni yuklab olishda xatolik yuz berdi."
     },
     'tr': {
         'welcome': "Merhaba! Nun Bota hoş geldiniz.\nAşağıdaki menüden işlem seçiniz:",
@@ -854,27 +867,41 @@ TEXTS = {
         'prompt_ocr': "🔍 *GÖRSELDEN METİN ÇIKARMA (OCR) AKTİF*\n\nMetnini okutmak istediğiniz kitap veya tahta fotoğrafını gönderin:\n_(Arapça, Çince, Rusça, Türkçe, Özbekçe ve tüm diller desteklenir)_",
         'prompt_exam_title': "🎓 *SINAV EKLE*\n\n✍️ Sınav veya dersin adını yazıp gönderin:\n_(Örneğin: *Yüksek Matematik*, *Fizik Final*)_",
         'prompt_remind': "⏰ Hatırlatıcıyı şu şekilde gönderin:\n`Kitap oku - 18:30` veya `Ders - 30 dakika`",
+        'pomo_started': "POMODORO BAŞLADI",
+        'pomo_work_label': "Çalışma",
+        'pomo_break_label': "Mola",
+        'pomo_mins_unit': "dk",
+        'pomo_mode_lbl': "Mod",
+        'pomo_dur_lbl': "Süre",
+        'pomo_end_lbl': "Bitiş Saati",
+        'pomo_break_over': "MOLA BİTTİ!",
+        'pomo_work_over': "POMODORO TAMAMLANDI!",
         'exam_empty': "Henüz kayıtlı bir sınavınız bulunmuyor.",
         'exam_btn_add': "➕ Sınav Ekle",
-        'exam_saved': "✅ *Sınav başarıyla kaydedildi!*",
-        'remind_saved': "✅ *Hatırlatıcı kuruldu!*",
+        'exam_saved': "Sınav başarıyla kaydedildi!",
+        'exam_deleted': "Sınav başarıyla silindi.",
+        'remind_saved': "Hatırlatıcı kuruldu!",
         'remind_empty': "Aktif hatırlatıcınız bulunmuyor.",
-        'remind_due': "🔔 *NUN PROJECT // HATIRLATICI*",
-        'pdf_ready': "✅ PDF belgesi başarıyla hazırlandı!",
-        'pdf_fail': "❌ Dosyayı PDF'e dönüştürürken bir hata oluştu.",
-        'ocr_title': "🔍 *GÖRSELDEN OKUNAN METİN:*",
-        'ocr_fail': "❌ Görselden okunabilir bir metin bulunamadı.",
-        'direct_img_prompt': "📸 *Fotoğraf alındı.*\nHangi işlemi yapmak istersiniz?",
-        'btn_direct_pdf': "📄 PDF'e Dönüştür",
-        'btn_direct_ocr': "🔍 Metni Oku (OCR)",
-        'btn_cancel': "❌ İptal",
-        'cancel_success': "✅ İşlem iptal edildi.",
-        'lang_changed': "✅ Dil başarıyla değiştirildi!",
-        'city_not_found': "❌ Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
-        'downloading': "⏳ Medya indiriliyor, lütfen bekleyin...",
-        'uploading': "📤 Telegram'a yükleniyor...",
-        'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
-        'error_general': "❌ Bir hata oluştu. Lütfen tekrar deneyin.",
+        'remind_due': "NUN PROJECT // HATIRLATICI",
+        'pdf_ready': "PDF belgesi başarıyla hazırlandı!",
+        'pdf_fail': "Dosyayı PDF'e dönüştürürken bir hata oluştu.",
+        'ocr_title': "GÖRSELDEN OKUNAN METİN:",
+        'ocr_fail': "Görselden okunabilir bir metin bulunamadı.",
+        'direct_img_prompt': "Fotoğraf alındı. Hangi işlemi yapmak istersiniz?",
+        'btn_direct_pdf': "PDF'e Dönüştür",
+        'btn_direct_ocr': "Metni Oku (OCR)",
+        'btn_cancel': "İptal",
+        'cancel_success': "İşlem iptal edildi.",
+        'lang_changed': "Dil başarıyla değiştirildi!",
+        'city_not_found': "Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
+        'downloading': "Medya indiriliyor, lütfen bekleyin...",
+        'uploading': "Telegram'a yükleniyor...",
+        'error_size': "Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
+        'error_general': "Bir hata oluştu. Lütfen tekrar deneyin.",
+        'schedule_processing': "Kilit ekranı duvar kağıdı hazırlanıyor...",
+        'schedule_ready_caption': "Ders Programı (Kilit Ekranı)",
+        'doc_processing': "Dosya alındı, işleniyor...",
+        'video_error': "Video indirilirken bir hata oluştu."
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\nВыберите действие в меню:",
@@ -899,27 +926,41 @@ TEXTS = {
         'prompt_ocr': "🔍 *ИЗВЛЕЧЕНИЕ ТЕКСТА (OCR) АКТИВНО*\n\nОтправьте фото книги, конспекта или доски:\n_(Поддерживаются арабский, китайский, русский, узбекский, английский и все языки)_",
         'prompt_exam_title': "🎓 *ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*)_",
         'prompt_remind': "⏰ Отправьте напоминание в формате:\n`Читать книгу - 18:30` или `Учеба - 30 минут`",
+        'pomo_started': "ПОМОДОРО ЗАПУЩЕН",
+        'pomo_work_label': "Работа",
+        'pomo_break_label': "Перерыв",
+        'pomo_mins_unit': "мин",
+        'pomo_mode_lbl': "Режим",
+        'pomo_dur_lbl': "Длительность",
+        'pomo_end_lbl': "Окончание",
+        'pomo_break_over': "ПЕРЕРЫВ ОКОНЧЕН!",
+        'pomo_work_over': "ПОМОДОРО ЗАВЕРШЕН!",
         'exam_empty': "У вас пока нет сохраненных экзаменов.",
         'exam_btn_add': "➕ Добавить экзамен",
-        'exam_saved': "✅ *Экзамен успешно сохранен!*",
-        'remind_saved': "✅ *Напоминание установлено!*",
+        'exam_saved': "Экзамен успешно сохранен!",
+        'exam_deleted': "Экзамен успешно удален.",
+        'remind_saved': "Напоминание установлено!",
         'remind_empty': "У вас нет активных напоминаний.",
-        'remind_due': "🔔 *NUN PROJECT // НАПОМИНАНИЕ*",
-        'pdf_ready': "✅ PDF документ успешно сформирован!",
-        'pdf_fail': "❌ Ошибка при конвертации в PDF.",
-        'ocr_title': "🔍 *ТЕКСТ, РАСПОЗНАННЫЙ С ИЗОБРАЖЕНИЯ:*",
-        'ocr_fail': "❌ Разборчивый текст на изображении не найден.",
-        'direct_img_prompt': "📸 *Изображение получено.*\nЧто вы хотите сделать?",
-        'btn_direct_pdf': "📄 Конвертировать в PDF",
-        'btn_direct_ocr': "🔍 Распознать текст (OCR)",
-        'btn_cancel': "❌ Отмена",
-        'cancel_success': "✅ Действие отменено.",
-        'lang_changed': "✅ Язык успешно изменен!",
-        'city_not_found': "❌ Город не найден. Напишите правильное название.",
-        'downloading': "⏳ Скачивается, пожалуйста подождите...",
-        'uploading': "📤 Отправка в Telegram...",
-        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
-        'error_general': "❌ Произошла ошибка. Попробуйте снова.",
+        'remind_due': "NUN PROJECT // НАПОМИНАНИЕ",
+        'pdf_ready': "PDF документ успешно сформирован!",
+        'pdf_fail': "Ошибка при конвертации в PDF.",
+        'ocr_title': "ТЕКСТ, РАСПОЗНАННЫЙ С ИЗОБРАЖЕНИЯ:",
+        'ocr_fail': "Разборчивый текст на изображении не найден.",
+        'direct_img_prompt': "Изображение получено. Что вы хотите сделать?",
+        'btn_direct_pdf': "Конвертировать в PDF",
+        'btn_direct_ocr': "Распознать текст (OCR)",
+        'btn_cancel': "Отмена",
+        'cancel_success': "Действие отменено.",
+        'lang_changed': "Язык успешно изменен!",
+        'city_not_found': "Город не найден. Напишите правильное название.",
+        'downloading': "Скачивается, пожалуйста подождите...",
+        'uploading': "Отправка в Telegram...",
+        'error_size': "Размер файла превышает лимит Telegram (50 МБ).",
+        'error_general': "Произошла ошибка. Попробуйте снова.",
+        'schedule_processing': "Создаются обои для экрана блокировки...",
+        'schedule_ready_caption': "Расписание занятий (Экран блокировки)",
+        'doc_processing': "Файл получен, обрабатывается...",
+        'video_error': "Произошла ошибка при загрузке видео."
     },
     'en': {
         'welcome': "Hello! Welcome to Nun Bot.\nChoose an option from the menu:",
@@ -944,35 +985,47 @@ TEXTS = {
         'prompt_ocr': "🔍 *TEXT EXTRACTION (OCR) ACTIVE*\n\nSend a photo of a whiteboard, book, or notes:\n_(Arabic, Chinese, Russian, Turkish, Uzbek, English and all languages supported)_",
         'prompt_exam_title': "🎓 *ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*)_",
         'prompt_remind': "⏰ Send reminder in format:\n`Read book - 18:30` or `Study - 30 minutes`",
+        'pomo_started': "POMODORO STARTED",
+        'pomo_work_label': "Work",
+        'pomo_break_label': "Break",
+        'pomo_mins_unit': "min",
+        'pomo_mode_lbl': "Mode",
+        'pomo_dur_lbl': "Duration",
+        'pomo_end_lbl': "Ends at",
+        'pomo_break_over': "BREAK OVER!",
+        'pomo_work_over': "POMODORO FINISHED!",
         'exam_empty': "You don't have any saved exams yet.",
         'exam_btn_add': "➕ Add Exam",
-        'exam_saved': "✅ *Exam successfully saved!*",
-        'remind_saved': "✅ *Reminder set!*",
+        'exam_saved': "Exam successfully saved!",
+        'exam_deleted': "Exam successfully deleted.",
+        'remind_saved': "Reminder set!",
         'remind_empty': "You have no active reminders.",
-        'remind_due': "🔔 *NUN PROJECT // REMINDER*",
-        'pdf_ready': "✅ PDF document successfully generated!",
-        'pdf_fail': "❌ Failed to convert file to PDF.",
-        'ocr_title': "🔍 *TEXT RECOGNIZED FROM IMAGE:*",
-        'ocr_fail': "❌ No readable text found on the image.",
-        'direct_img_prompt': "📸 *Image received.*\nWhat would you like to do?",
-        'btn_direct_pdf': "📄 Convert to PDF",
-        'btn_direct_ocr': "🔍 Extract Text (OCR)",
-        'btn_cancel': "❌ Cancel",
-        'cancel_success': "✅ Action cancelled.",
-        'lang_changed': "✅ Language updated successfully!",
-        'city_not_found': "❌ City not found. Please enter a valid city name.",
-        'downloading': "⏳ Downloading media, please wait...",
-        'uploading': "📤 Uploading to Telegram...",
-        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
-        'error_general': "❌ An error occurred. Please try again.",
+        'remind_due': "NUN PROJECT // REMINDER",
+        'pdf_ready': "PDF document successfully generated!",
+        'pdf_fail': "Failed to convert file to PDF.",
+        'ocr_title': "TEXT RECOGNIZED FROM IMAGE:",
+        'ocr_fail': "No readable text found on the image.",
+        'direct_img_prompt': "Image received. What would you like to do?",
+        'btn_direct_pdf': "Convert to PDF",
+        'btn_direct_ocr': "Extract Text (OCR)",
+        'btn_cancel': "Cancel",
+        'cancel_success': "Action cancelled.",
+        'lang_changed': "Language updated successfully!",
+        'city_not_found': "City not found. Please enter a valid city name.",
+        'downloading': "Downloading media, please wait...",
+        'uploading': "Uploading to Telegram...",
+        'error_size': "File exceeds Telegram's 50 MB limit.",
+        'error_general': "An error occurred. Please try again.",
+        'schedule_processing': "Generating lock-screen wallpaper...",
+        'schedule_ready_caption': "Class Schedule (Lock Screen)",
+        'doc_processing': "File received, processing...",
+        'video_error': "An error occurred during video download."
     }
 }
 
-DOWNLOAD_SEMAPHORE = asyncio.Semaphore(1)
-
-def get_text(user_id, key, context=None):
+def get_text(user_id, key, context=None) -> str:
     lang = get_user_lang(user_id, context)
-    return TEXTS.get(lang, TEXTS['uz']).get(key, '')
+    return TEXTS.get(lang, TEXTS['uz']).get(key, TEXTS['uz'].get(key, ''))
 
 def get_reply_menu(user_id, context=None):
     lang = get_user_lang(user_id, context)
@@ -1018,7 +1071,7 @@ def download_media_sync(url: str, download_dir: str):
     raise RuntimeError("Dosya indirilemedi.")
 
 # =====================================================================
-# DİNAMİK BOT KOMUTLARI GÜNCELLEME
+# DİNAMİK BOT KOMUTLARI
 # =====================================================================
 async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: int, lang: str):
     commands_map = {
@@ -1028,7 +1081,6 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("namoz", "Namoz vaqtlari"),
             BotCommand("pdf", "PDF & Hujjatlar"),
             BotCommand("imtihon", "Imtihonlar taymeri"),
-            BotCommand("pomodoro", "Pomodoro taymeri"),
             BotCommand("cancel", "Bekor qilish"),
         ],
         'tr': [
@@ -1037,7 +1089,6 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("namaz", "Namaz vakitleri"),
             BotCommand("pdf", "PDF & Belge araçları"),
             BotCommand("sinav", "Sınav & Geri sayım"),
-            BotCommand("pomodoro", "Pomodoro sayacı"),
             BotCommand("cancel", "İptal et"),
         ],
         'ru': [
@@ -1046,7 +1097,6 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("namaz", "Время намаза"),
             BotCommand("pdf", "PDF и Документы"),
             BotCommand("exam", "Таймер экзаменов"),
-            BotCommand("pomodoro", "Помодоро таймер"),
             BotCommand("cancel", "Отмена"),
         ],
         'en': [
@@ -1055,7 +1105,6 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("prayer", "Prayer times"),
             BotCommand("pdf", "PDF & Documents"),
             BotCommand("exam", "Exam countdown"),
-            BotCommand("pomodoro", "Pomodoro timer"),
             BotCommand("cancel", "Cancel action"),
         ],
     }
@@ -1146,12 +1195,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         img_p = context.user_data.get('direct_file_path')
         if img_p and os.path.exists(img_p):
             with tempfile.TemporaryDirectory() as tmp_dir:
-                out_p = os.path.join(tmp_dir, "nun_rasm.pdf")
+                out_p = os.path.join(tmp_dir, "converted.pdf")
                 with Image.open(img_p) as im:
                     if im.mode in ("RGBA", "P"): im = im.convert("RGB")
                     im.save(out_p, format="PDF")
                 with open(out_p, "rb") as f:
-                    await query.message.reply_document(document=f, filename="nun_rasm.pdf", caption=get_text(user_id, 'pdf_ready', context))
+                    await query.message.reply_document(document=f, filename="converted.pdf", caption=get_text(user_id, 'pdf_ready', context))
         cleanup_user_temp_files(context, user_id)
         return
 
@@ -1162,10 +1211,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if txt:
                 if len(txt) > 3500:
                     with tempfile.TemporaryDirectory() as t_dir:
-                        t_file = os.path.join(t_dir, "nun_ocr_matn.txt")
+                        t_file = os.path.join(t_dir, "ocr_text.txt")
                         with open(t_file, "w", encoding="utf-8") as f_out: f_out.write(txt)
                         with open(t_file, "rb") as f_send:
-                            await query.message.reply_document(document=f_send, filename="nun_ocr_matn.txt", caption=get_text(user_id, 'ocr_title', context))
+                            await query.message.reply_document(document=f_send, filename="ocr_text.txt", caption=get_text(user_id, 'ocr_title', context))
                 else:
                     await query.message.reply_text(f"{get_text(user_id, 'ocr_title', context)}\n\n`{txt}`", parse_mode="Markdown")
             else:
@@ -1178,8 +1227,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mins = int(data.replace("pomo_", "", 1))
         is_break = mins in (5, 10)
         end_time = datetime.now() + timedelta(minutes=mins)
-        label = "Mola" if is_break else "Çalışma" if user_lang == 'tr' else "Dam olish" if is_break else "Dars"
-        await query.message.reply_text(f"🍅 *POMODORO*\n\n📌 {label}\n⏳ `{mins}` dk\n🏁 `{end_time.strftime('%H:%M')}`", parse_mode="Markdown")
+        label = get_text(user_id, 'pomo_break_label', context) if is_break else get_text(user_id, 'pomo_work_label', context)
+        unit = get_text(user_id, 'pomo_mins_unit', context)
+        hdr = get_text(user_id, 'pomo_started', context)
+        lbl_mode = get_text(user_id, 'pomo_mode_lbl', context)
+        lbl_dur = get_text(user_id, 'pomo_dur_lbl', context)
+        lbl_end = get_text(user_id, 'pomo_end_lbl', context)
+
+        card = (
+            f"🍅 *{hdr}*\n\n"
+            f"📌 *{lbl_mode}:* {label}\n"
+            f"⏳ *{lbl_dur}:* `{mins} {unit}`\n"
+            f"🏁 *{lbl_end}:* `{end_time.strftime('%H:%M')}`"
+        )
+        await query.message.reply_text(card, parse_mode="Markdown")
         asyncio.create_task(pomodoro_timer_task(context.bot, user_id, mins, is_break, user_lang))
         return
 
@@ -1284,7 +1345,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     fname = doc.file_name or "fayl"
     ext = os.path.splitext(fname).lower()
-    status = await update.message.reply_text("⚙️ ...")
+    status = await update.message.reply_text(get_text(user_id, 'doc_processing', context))
 
     try:
         file_obj = await doc.get_file()
@@ -1378,7 +1439,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     mode = context.user_data.get('mode', 'auto')
     photo = update.message.photo[-1]
-    status = await update.message.reply_text("⚙️ ...")
+    status = await update.message.reply_text(get_text(user_id, 'doc_processing', context))
 
     try:
         file_obj = await photo.get_file()
@@ -1494,12 +1555,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status.delete()
         except Exception as e:
             print(f"Video hatasi: {e}")
-            await status.edit_text(get_text(user_id, 'error_general', context))
+            await status.edit_text(get_text(user_id, 'video_error', context))
         return
 
     mode = context.user_data.get('mode', 'auto')
 
-    # 3. SINAV ADI GİRİŞİ (SEÇENEK A - CANLI AYARLAYICI)
+    # 3. KORUMALI SINAV GİRİŞİ (SEÇENEK A - CANLI AYARLAYICI)
     if mode == 'exam_title_input':
         title_clean = raw_text.strip()
         context.user_data['exam_draft_title'] = title_clean
@@ -1517,13 +1578,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 4. HAFTALIK DERS PROGRAMI GÖRSELİ
     if mode == 'schedule_img_input':
-        status = await update.message.reply_text("⚙️ ...")
+        status = await update.message.reply_text(get_text(user_id, 'schedule_processing', context))
         parsed_data = parse_schedule_text(raw_text)
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_img = os.path.join(tmp_dir, "timetable_wallpaper.png")
             generate_schedule_wallpaper(parsed_data, out_img, "DERS PROGRAMI")
             with open(out_img, "rb") as f_photo, open(out_img, "rb") as f_doc:
-                await update.message.reply_photo(photo=f_photo, caption="📱 1080x1920", parse_mode="Markdown")
+                await update.message.reply_photo(photo=f_photo, caption=f"📱 {get_text(user_id, 'schedule_ready_caption', context)}", parse_mode="Markdown")
                 await update.message.reply_document(document=f_doc, filename="timetable_1080x1920.png")
         cleanup_user_temp_files(context, user_id)
         try: await status.delete()
@@ -1538,7 +1599,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rem_text, _, time_part = raw_text.partition("-")
             rem_text = rem_text.strip()
             time_part = time_part.strip()
-            m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m)", time_part, re.IGNORECASE)
+            m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", time_part, re.IGNORECASE)
             if m_min: target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
             else:
                 m_t = re.search(r"(\d{1,2})[:.](\d{2})", time_part)
@@ -1547,10 +1608,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if target_dt < datetime.now(): target_dt += timedelta(days=1)
 
         if not target_dt:
-            m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m)", raw_text, re.IGNORECASE)
+            m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", raw_text, re.IGNORECASE)
             if m_min:
                 target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
-                rem_text = re.sub(r"(\d+)\s*(?:daqiqa|dakika|min|m)", "", raw_text, flags=re.IGNORECASE).strip()
+                rem_text = re.sub(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", "", raw_text, flags=re.IGNORECASE).strip()
 
         if target_dt:
             dt_str = target_dt.strftime("%Y-%m-%d %H:%M")

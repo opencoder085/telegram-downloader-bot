@@ -44,42 +44,65 @@ from telegram.ext import (
 import yt_dlp
 
 # =====================================================================
-# RENDER 7/24 SAĞLIK KONTROLÜ VE SELF-PINGER
+# RENDER 7/24 GELİŞMİŞ SAĞLIK SUNUCUSU & SELF-PINGER
 # =====================================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"NUN BOT 7/24 AKTIF!")
+        self.wfile.write(b'{"status": "ok", "service": "NUN_BOT_24_7"}')
 
     def do_HEAD(self):
         self.send_response(200)
+        self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
 
     def log_message(self, format, *args):
         return
 
 def run_health_server():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-def run_keep_alive_pinger():
-    target_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL")
-    if not target_url:
-        return
-    if not target_url.startswith("http"):
-        target_url = f"https://{target_url}"
+def get_target_ping_url() -> str:
+    # 1. Render'ın varsayılan enjekte ettiği hostname
+    hostname = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+    if hostname:
+        return f"https://{hostname}/ping"
+    
+    # 2. Manuel girilmiş olabilecek ortam değişkenleri
+    url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL") or os.environ.get("WEB_URL")
+    if url:
+        if not url.startswith("http"):
+            url = f"https://{url}"
+        return f"{url.rstrip('/')}/ping"
+    
+    return None
 
+def run_keep_alive_pinger():
+    # Sunucunun ve Render routing altyapısının ayağa kalkması için 60 sn bekle
+    time.sleep(60)
     while True:
-        time.sleep(540)
-        try:
-            req = urllib.request.Request(target_url, headers={'User-Agent': 'NunBot-KeepAlive/1.0'})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                pass
-        except Exception:
-            pass
+        target_url = get_target_ping_url()
+        if target_url:
+            try:
+                req = urllib.request.Request(
+                    target_url,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NunBot-KeepAlive/2.0'
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    print(f"[KEEP-ALIVE] Ping basarili: {target_url} -> Kod: {resp.status}")
+            except Exception as e:
+                print(f"[KEEP-ALIVE] Ping uyarisi: {e}")
+        else:
+            print("[KEEP-ALIVE] RENDER_EXTERNAL_HOSTNAME tanimli degil. UptimeRobot ile Render linkinizi 8 dk'da bir pingleyebilirsiniz.")
+
+        # Render 15 dakikada uyur, 8 dakikada bir (480 sn) ping göndermek idealdir
+        time.sleep(480)
 
 # =====================================================================
 # VERİ TABANI YÖNETİMİ (DİL, SINAVLAR, HATIRLATICILAR)
@@ -1672,6 +1695,7 @@ def main():
     if not token: raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
     load_databases()
 
+    # Arka plan keep-alive ve HTTP sağlık sunucusu başlatılıyor
     threading.Thread(target=run_health_server, daemon=True).start()
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
@@ -1687,8 +1711,8 @@ def main():
     loop = asyncio.get_event_loop()
     loop.create_task(reminders_worker(app))
 
-    print("Nun Bot 4 dilli tam senkronizasyonla devrede!")
-    app.run_polling(drop_pending_updates=True)
+    print("Nun Bot 7/24 Kesintisiz Modda Devrede!")
+    app.run_polling(drop_pending_updates=True, timeout=30)
 
 if __name__ == "__main__":
     main()

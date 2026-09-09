@@ -280,9 +280,15 @@ def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code
 
     if detected_tz is None and uid_str not in USER_TIMEZONES and user_lang_code:
         code = user_lang_code.lower()
-        if code.startswith('tr'): detected_tz = 3; save_user_city(user_id, "Istanbul")
-        elif code.startswith('ru'): detected_tz = 3; save_user_city(user_id, "Moskva")
-        elif code.startswith('uz'): detected_tz = 5; save_user_city(user_id, "Toshkent")
+        if code.startswith('tr'):
+            detected_tz = 3
+            save_user_city(user_id, "Istanbul")
+        elif code.startswith('ru'):
+            detected_tz = 3
+            save_user_city(user_id, "Moskva")
+        elif code.startswith('uz'):
+            detected_tz = 5
+            save_user_city(user_id, "Toshkent")
 
     if detected_tz is not None:
         save_user_timezone(user_id, detected_tz, locked=False)
@@ -378,15 +384,17 @@ def cleanup_user_temp_files(context, user_id):
     dp = context.user_data.get('direct_file_path')
     if dp:
         try:
-            if os.path.exists(dp): os.remove(dp)
-        except Exception: pass
+            if os.path.exists(dp):
+                os.remove(dp)
+        except Exception:
+            pass
     context.user_data.pop('direct_file_path', None)
     context.user_data.pop('exam_draft_title', None)
     context.user_data.pop('exam_draft_dt', None)
     context.user_data['mode'] = 'auto'
 
 # =====================================================================
-# PDF DÖNÜŞTÜRME MOTORU (WORD, EXCEL, TXT, RESİM ➔ PDF)
+# PDF DÖNÜŞTÜRME MOTORU
 # =====================================================================
 def docx_to_pdf(input_docx: str, output_pdf: str) -> bool:
     try:
@@ -632,13 +640,12 @@ async def reminders_worker(app):
                         pass
 
 # =====================================================================
-# KUSURSUZ VE EKSİKSİZ ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU (DÜZELTİLDİ)
+# KUSURSUZ ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
 # =====================================================================
 APOSTROPHES = set(["'", "’", "‘", "`", "ʻ", "ʼ", "\u02bb", "\u02bc"])
 VOWELS_CYR = set("аоуиэеёюяўАОУИЭЕЁЮЯЎ")
 VOWELS_LAT = set("aouieAOUiE")
 
-# Tüm karakterler doğrulanmış Kiril kod noktalarıyla bağlandı
 MAP_CYR_TO_LAT = {
     'А': 'A', 'а': 'a',
     'Б': 'B', 'б': 'b',
@@ -651,12 +658,12 @@ MAP_CYR_TO_LAT = {
     'Й': 'Y', 'й': 'y',
     'К': 'K', 'к': 'k',
     'Қ': 'Q', 'қ': 'q',
-    'Л': 'L', 'л': 'l',   # DÜZELTİLDİ: Latin 'l' yerine Kiril 'л'
+    'Л': 'L', 'л': 'l',
     'М': 'M', 'м': 'm',
     'Н': 'N', 'н': 'n',
     'О': 'O', 'о': 'o',
     'П': 'P', 'п': 'p',
-    'Р': 'R', 'р': 'r',   # DÜZELTİLDİ: Latin 'r' yerine Kiril 'р' ('p' çıkma hatası çözüldü)
+    'Р': 'R', 'р': 'r',
     'С': 'S', 'с': 's',
     'Т': 'T', 'т': 't',
     'У': 'U', 'у': 'u',
@@ -685,13 +692,11 @@ def cyrillic_to_latin(text: str) -> str:
         prev = text[i-1] if i > 0 else " "
         nxt = text[i+1] if i+1 < n else ""
         
-        # S'H (сҳ -> s'h) vs SH (ш -> sh)
         if c in ('С', 'с') and nxt in ('Ҳ', 'ҳ'):
             res.append("S'H" if (c.isupper() and nxt.isupper()) else ("S'h" if c.isupper() else "s'h"))
             i += 2
             continue
             
-        # E / YE
         if c in ('Е', 'е'):
             if i == 0 or not prev.isalpha() or prev in VOWELS_CYR or prev in 'ъЪьЬ':
                 res.append("YE" if (c.isupper() and nxt.isupper()) else ("Ye" if c.isupper() else "ye"))
@@ -700,7 +705,6 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
-        # Ё, Ю, Я
         if c in ('Ё', 'ё'):
             res.append("YO" if (c.isupper() and nxt.isupper()) else ("Yo" if c.isupper() else "yo"))
             i += 1
@@ -714,7 +718,6 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
-        # Ч, Ш, Щ, Ц (DÜZELTİLDİ: 'Ch' yerine Kiril 'Ч')
         if c in ('Ч', 'ч'):
             res.append("CH" if (c.isupper() and nxt.isupper()) else ("Ch" if c.isupper() else "ch"))
             i += 1
@@ -730,13 +733,29 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
-        # Ў, Ғ
-        if c == 'Ў': res.append("Oʻ"); i += 1; continue
-        if c == 'ў': res.append("oʻ"); i += 1; continue
-        if c == 'Ғ': res.append("Gʻ"); i += 1; continue
-        if c == 'ғ': res.append("gʻ"); i += 1; continue
-        if c in ('Ъ', 'ъ'): res.append("'"); i += 1; continue
-        if c in ('Ь', 'ь'): i += 1; continue
+        if c == 'Ў':
+            res.append("Oʻ")
+            i += 1
+            continue
+        if c == 'ў':
+            res.append("oʻ")
+            i += 1
+            continue
+        if c == 'Ғ':
+            res.append("Gʻ")
+            i += 1
+            continue
+        if c == 'ғ':
+            res.append("gʻ")
+            i += 1
+            continue
+        if c in ('Ъ', 'ъ'):
+            res.append("'")
+            i += 1
+            continue
+        if c in ('Ь', 'ь'):
+            i += 1
+            continue
             
         res.append(MAP_CYR_TO_LAT.get(c, c))
         i += 1
@@ -853,7 +872,8 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
     slug = UZ_REGIONS.get(c_norm)
     if not slug:
         matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
-        if matches: slug = UZ_REGIONS[matches[0]]
+        if matches:
+            slug = UZ_REGIONS[matches[0]]
     if slug:
         try:
             async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
@@ -866,7 +886,8 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
                         "Fajr": t.get("bomdod"), "Sunrise": t.get("quyosh"), "Dhuhr": t.get("peshin"),
                         "Asr": t.get("asr"), "Maghrib": t.get("shom"), "Isha": t.get("xufton")
                     }, meta.get("region", {}).get("name", city_input.title()), meta.get("date", ""), "", "Oʻzbekiston Din ishlari qoʻmitasi"
-        except Exception: pass
+        except Exception:
+            pass
 
     try:
         async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
@@ -875,7 +896,8 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
                 data = resp.json().get("data", {})
                 d = data.get("date", {})
                 return data.get("timings", {}), city_input.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
-        except Exception: pass
+    except Exception:
+        pass
 
     return None, None, None, None, None
 
@@ -909,8 +931,8 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         f"  ▫️ *{lbls}:*    `{t_s}`\n"
         f"  ▫️ *{lbls}:*    `{t_d}`\n"
         f"  ▫️ *{lbls}:*    `{t_a}`\n"
-        f"  ▫️ *{lbls}:*    `{t_m}`\n"
-        f"  ▫️ *{lbls}:*    `{t_i}`\n"
+        f"  ▫️ *{lbls[4]}:*    `{t_m}`\n"
+        f"  ▫️ *{lbls[5]}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
         f"_{source}_"
     )
@@ -1244,15 +1266,15 @@ TEXTS = {
             "📖 _«Allohumma solli 'alaa Muhammadiv-va 'alaa aali Muhammad, kamaa sollayta 'alaa Ibrohiyma va 'alaa aali Ibrohiym...»_\n"
             "🇺🇿 *Maʼnosi:* «Ey Allohim! Ibrohimga va uning oilasiga rahmat yogʻdirganingdek, Muhammadga va uning oilasiga ham rahmat yogʻdir...»\n\n"
             "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin tibbil quluubi va davaa'ihaa, va 'aafiyatil abdaani va shifaa'ihaa, va nuuril absori va diyaa'ihaa, va 'alaa aalihii va sohbihii va sallim.»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Qalblarning tabibi va davosi, tanlarning shifosi, koʻzlarning nuri boʻlgan Muhammad alayhissalomga, u zotning oilasi va sahobalariga salotu salom yoʻlla.»\n\n"
             "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin solaatan tunjiynaa bihaa min jamiy'il ahvaali val aafaat...»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Bizga shunday salovat yuborginki, uning sharofati bilan bizni barcha ofatlardan qutqar, ehtiyojlarimizni ravo qil, barcha yomonliklardan pokla va eng oliy darajalarga koʻtar...»\n\n"
             "4️⃣ *Salovati Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadinil faatihi limaa ughliq, val xootimi limaa sabaq, naasiril haqqi bil haqq...»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Yopiqlarni ochuvchi, oʻtganlarning xotimasi, haqiqatni himoya qiluvchi va toʻgʻri yoʻlga yetaklovchi Muhammadga salovat ayla.»\n\n"
             "5️⃣ *Qisqa va Fazilatli Salovat*\n"
@@ -1399,15 +1421,15 @@ TEXTS = {
             "📖 _«Allâhümme salli ‘alâ Muhammedin ve ‘alâ âli Muhammed, kemâ salleyte ‘alâ İbrâhîme ve ‘alâ âli İbrâhîm...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! İbrahim'e ve âline salât ettiğin gibi, Muhammed'e ve âline de salât eyle...»\n\n"
             "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَAFِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin tıbbi’l-kulûbi ve devâihâ ve ‘âfiyeti’l-ebdâni ve şifâihâ ve nûri’l-ebsâri ve diyâihâ ve ‘alâ âlihî ve sahbihî ve sellim.»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Kalplerin tabibi ve devası, bedenlerin afiyeti ve şifası, gözlerin nuru ve aydınlığı olan Efendimiz Muhammed'e, âline ve ashabına salât ve selam eyle.»\n\n"
             "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin salâten tüncînâ bihâ min cemî‘i’l-ehvâli ve’l-âfât...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Efendimiz Muhammed'e öyle bir salât eyle ki; onunla bizi her türlü korku ve afetten kurtar, bütün ihtiyaçlarımızı gider, bütün günahlardan arındır ve en yüce derecelere eriştir...»\n\n"
             "4️⃣ *Salavat-ı Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedini’l-fâtihi limâ uğlika ve’l-hâtimi limâ sebaka nâsıri’l-hakkı bi’l-hakkı ve’l-hâdî ilâ sırâtike’l-müstekîm...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Kilitli kapıları açan, geçmiş peygamberlerin sonuncusu olan, hakka hak ile yardım eden ve doğru yoluna rehberlik eden Efendimiz Muhammed'e salât eyle.»\n\n"
             "5️⃣ *Kısa ve Faziletli Salavat*\n"
@@ -1512,7 +1534,7 @@ TEXTS = {
             "🇷🇺 *Перевод:* «Аллах — нет божества, кроме Него, Живого, Вседержителя...»\n\n"
             "2️⃣ *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас (по 3 раза)*\n"
             "3️⃣ *Саййид аль-Истигфар*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلКТَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
             "4️⃣ *Утренняя благодарность*\n"
             "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
             "5️⃣ *Мольба о защите (3 раза)*\n"
@@ -1537,9 +1559,9 @@ TEXTS = {
             "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
             "2️⃣ *Салават Тиббиль-Кулюб (Исцеление сердец)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَAFِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "3️⃣ *Салават Тунджина (Спасение от бед)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ...\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
             "4️⃣ *Краткий благословенный салават*\n"
             "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
             "📖 _«Салляллаху ‘алейхи ва саллям»_"
@@ -1658,7 +1680,7 @@ TEXTS = {
             "4️⃣ *Evening Praise*\n"
             "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ...\n"
             "5️⃣ *Seeking Refuge (3 times)*\n"
-            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
+            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّAMَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
             "6️⃣ *Tasbih (100 times)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
@@ -1667,7 +1689,7 @@ TEXTS = {
             "1️⃣ *Salawat Ibrahimiyyah (Prayer Salawat)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
             "2️⃣ *Salawat Tibbil Qulub (Healing of Hearts)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَAFِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "3️⃣ *Salawat Munjiyyah (Deliverance)*\n"
             "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
             "4️⃣ *Short Salawat*\n"
@@ -2052,8 +2074,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # İPTAL VE TEMİZLİK
     if data == "cancel_action":
         cleanup_user_temp_files(context, user_id)
-        try: await query.message.delete()
-        except Exception: pass
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
         return
 
@@ -2065,8 +2089,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context and context.user_data is not None:
             context.user_data['lang'] = l_code
             context.user_data['mode'] = 'awaiting_city_after_lang'
-        try: await query.message.delete()
-        except Exception: pass
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         await update_user_bot_commands(context, user_id, l_code)
         
         t = TEXTS[l_code]
@@ -2116,13 +2142,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         city_name, val = city_tz_defaults.get(data, (None, None))
         if val is None:
             parts = data.split("_")
-            try: val = int(parts)
-            except Exception: val = 3
+            try:
+                val = int(parts)
+            except Exception:
+                val = 3
         if city_name:
             save_user_city(user_id, city_name)
         save_user_timezone(user_id, val, locked=True)
-        try: await query.message.delete()
-        except Exception: pass
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         
         user_now = get_user_now(user_id, context)
         now_str = user_now.strftime("%H:%M")
@@ -2191,7 +2221,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 out_p = os.path.join(tmp_dir, "converted.pdf")
                 with Image.open(img_p) as im:
-                    if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                    if im.mode in ("RGBA", "P"):
+                        im = im.convert("RGB")
                     im.save(out_p, format="PDF")
                 with open(out_p, "rb") as f:
                     await query.message.reply_document(document=f, filename="converted.pdf", caption=get_text(user_id, 'pdf_ready', context))
@@ -2206,7 +2237,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if len(txt) > 3500:
                     with tempfile.TemporaryDirectory() as t_dir:
                         t_file = os.path.join(t_dir, "ocr_text.txt")
-                        with open(t_file, "w", encoding="utf-8") as f_out: f_out.write(txt)
+                        with open(t_file, "w", encoding="utf-8") as f_out:
+                            f_out.write(txt)
                         with open(t_file, "rb") as f_send:
                             await query.message.reply_document(document=f_send, filename="ocr_text.txt", caption=get_text(user_id, 'ocr_title', context))
                 else:
@@ -2265,8 +2297,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("del_rem_"):
         r_id = data.replace("del_rem_", "", 1)
         delete_user_reminder(user_id, r_id)
-        try: await query.message.delete()
-        except Exception: pass
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
         await query.message.reply_text(f"🗑️ {get_text(user_id, 'remind_deleted', context)}")
         return
 
@@ -2286,12 +2320,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur_dt = context.user_data.get('exam_draft_dt') or ((get_user_now(user_id, context) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0))
         title = context.user_data.get('exam_draft_title', def_t)
         
-        if data == "sched_day_prev": cur_dt -= timedelta(days=1)
-        elif data == "sched_day_next": cur_dt += timedelta(days=1)
-        elif data == "sched_hour_minus": cur_dt -= timedelta(hours=1)
-        elif data == "sched_hour_plus": cur_dt += timedelta(hours=1)
-        elif data == "sched_min_minus": cur_dt -= timedelta(minutes=15)
-        elif data == "sched_min_plus": cur_dt += timedelta(minutes=15)
+        if data == "sched_day_prev":
+            cur_dt -= timedelta(days=1)
+        elif data == "sched_day_next":
+            cur_dt += timedelta(days=1)
+        elif data == "sched_hour_minus":
+            cur_dt -= timedelta(hours=1)
+        elif data == "sched_hour_plus":
+            cur_dt += timedelta(hours=1)
+        elif data == "sched_min_minus":
+            cur_dt -= timedelta(minutes=15)
+        elif data == "sched_min_plus":
+            cur_dt += timedelta(minutes=15)
         elif data == "sched_jump_today": 
             now = get_user_now(user_id, context)
             cur_dt = cur_dt.replace(year=now.year, month=now.month, day=now.day)
@@ -2308,8 +2348,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             full_dt = cur_dt.strftime("%Y-%m-%d %H:%M")
             exam_id = add_user_exam(user_id, title, full_dt)
             cleanup_user_temp_files(context, user_id)
-            try: await query.message.delete()
-            except Exception: pass
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
             card = f"📌 *{title}*\n📅 `{full_dt}`"
             await context.bot.send_message(chat_id=user_id, text=f"{get_text(user_id, 'exam_saved', context)}\n\n{card}", parse_mode="Markdown")
             return
@@ -2351,7 +2393,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     mode = context.user_data.get('mode', 'auto')
     doc = update.message.document
-    if not doc: return
+    if not doc:
+        return
 
     fname = doc.file_name or "file"
     ext = os.path.splitext(fname).lower()
@@ -2369,7 +2412,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if len(txt) > 3500:
                     with tempfile.TemporaryDirectory() as t_dir:
                         t_file = os.path.join(t_dir, "ocr_text.txt")
-                        with open(t_file, "w", encoding="utf-8") as f_out: f_out.write(txt)
+                        with open(t_file, "w", encoding="utf-8") as f_out:
+                            f_out.write(txt)
                         with open(t_file, "rb") as f_send:
                             await update.message.reply_document(document=f_send, filename="ocr_text.txt", caption=get_text(user_id, 'ocr_title', context))
                 else:
@@ -2377,20 +2421,26 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(get_text(user_id, 'ocr_fail', context))
             cleanup_user_temp_files(context, user_id)
-            try: os.remove(perm_tmp.name)
-            except Exception: pass
+            try:
+                os.remove(perm_tmp.name)
+            except Exception:
+                pass
             return
 
         if mode == 'convert_to_pdf':
             with tempfile.TemporaryDirectory() as tmp_dir:
                 out_pdf = os.path.join(tmp_dir, "converted.pdf")
                 ok = False
-                if ext in (".docx", ".doc"): ok = await asyncio.to_thread(docx_to_pdf, perm_tmp.name, out_pdf)
-                elif ext in (".xlsx", ".xls"): ok = await asyncio.to_thread(xlsx_to_pdf, perm_tmp.name, out_pdf)
-                elif ext == ".txt": ok = await asyncio.to_thread(txt_to_pdf, perm_tmp.name, out_pdf)
+                if ext in (".docx", ".doc"):
+                    ok = await asyncio.to_thread(docx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext in (".xlsx", ".xls"):
+                    ok = await asyncio.to_thread(xlsx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext == ".txt":
+                    ok = await asyncio.to_thread(txt_to_pdf, perm_tmp.name, out_pdf)
                 elif ext in (".jpg", ".jpeg", ".png"):
                     with Image.open(perm_tmp.name) as im:
-                        if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                        if im.mode in ("RGBA", "P"):
+                            im = im.convert("RGB")
                         im.save(out_pdf, format="PDF")
                     ok = True
                 if ok and os.path.exists(out_pdf):
@@ -2399,8 +2449,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text(get_text(user_id, 'pdf_fail', context))
             cleanup_user_temp_files(context, user_id)
-            try: os.remove(perm_tmp.name)
-            except Exception: pass
+            try:
+                os.remove(perm_tmp.name)
+            except Exception:
+                pass
             return
 
         if ext in (".jpg", ".jpeg", ".png", ".webp"):
@@ -2420,26 +2472,35 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 out_pdf = os.path.join(tmp_dir, "converted.pdf")
                 ok = False
-                if ext == ".docx": ok = await asyncio.to_thread(docx_to_pdf, perm_tmp.name, out_pdf)
-                elif ext == ".xlsx": ok = await asyncio.to_thread(xlsx_to_pdf, perm_tmp.name, out_pdf)
-                elif ext == ".txt": ok = await asyncio.to_thread(txt_to_pdf, perm_tmp.name, out_pdf)
+                if ext == ".docx":
+                    ok = await asyncio.to_thread(docx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext == ".xlsx":
+                    ok = await asyncio.to_thread(xlsx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext == ".txt":
+                    ok = await asyncio.to_thread(txt_to_pdf, perm_tmp.name, out_pdf)
                 if ok and os.path.exists(out_pdf):
                     with open(out_pdf, "rb") as f:
                         await update.message.reply_document(document=f, filename="converted.pdf", caption=get_text(user_id, 'pdf_ready', context))
-            try: os.remove(perm_tmp.name)
-            except Exception: pass
+            try:
+                os.remove(perm_tmp.name)
+            except Exception:
+                pass
             return
 
-        try: os.remove(perm_tmp.name)
-        except Exception: pass
+        try:
+            os.remove(perm_tmp.name)
+        except Exception:
+            pass
         await update.message.reply_text("⚠️")
 
     except Exception as e:
         print(f"Hata: {e}")
         await update.message.reply_text(get_text(user_id, 'error_general', context))
     finally:
-        try: await status.delete()
-        except Exception: pass
+        try:
+            await status.delete()
+        except Exception:
+            pass
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -2459,7 +2520,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if len(txt) > 3500:
                     with tempfile.TemporaryDirectory() as t_dir:
                         t_file = os.path.join(t_dir, "ocr_text.txt")
-                        with open(t_file, "w", encoding="utf-8") as f_out: f_out.write(txt)
+                        with open(t_file, "w", encoding="utf-8") as f_out:
+                            f_out.write(txt)
                         with open(t_file, "rb") as f_send:
                             await update.message.reply_document(document=f_send, filename="ocr_text.txt", caption=get_text(user_id, 'ocr_title', context))
                 else:
@@ -2467,21 +2529,26 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(get_text(user_id, 'ocr_fail', context))
             cleanup_user_temp_files(context, user_id)
-            try: os.remove(perm_tmp.name)
-            except Exception: pass
+            try:
+                os.remove(perm_tmp.name)
+            except Exception:
+                pass
             return
 
         if mode == 'convert_to_pdf':
             with tempfile.TemporaryDirectory() as tmp_dir:
                 out_pdf = os.path.join(tmp_dir, "converted.pdf")
                 with Image.open(perm_tmp.name) as im:
-                    if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                    if im.mode in ("RGBA", "P"):
+                        im = im.convert("RGB")
                     im.save(out_pdf, format="PDF")
                 with open(out_pdf, "rb") as f:
                     await update.message.reply_document(document=f, filename="converted.pdf", caption=get_text(user_id, 'pdf_ready', context))
             cleanup_user_temp_files(context, user_id)
-            try: os.remove(perm_tmp.name)
-            except Exception: pass
+            try:
+                os.remove(perm_tmp.name)
+            except Exception:
+                pass
             return
 
         context.user_data['direct_file_path'] = perm_tmp.name
@@ -2499,8 +2566,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Hata: {e}")
         await update.message.reply_text(get_text(user_id, 'error_general', context))
     finally:
-        try: await status.delete()
-        except Exception: pass
+        try:
+            await status.delete()
+        except Exception:
+            pass
 
 # =====================================================================
 # METİN MESAJ YÖNLENDİRİCİSİ (4 DİL TAM DESTEK)
@@ -2535,9 +2604,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 saved_city = get_user_city(user_id)
                 if saved_city:
                     status = await update.message.reply_text("⏳ " + get_text(user_id, 'downloading', context))
-                    timings, d_name, dt_s, h_s, src = await fetch_prayer_times(saved_city, user_id=user_id)
-                    try: await status.delete()
-                    except Exception: pass
+                    try:
+                        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(saved_city, user_id=user_id)
+                    finally:
+                        try:
+                            await status.delete()
+                        except Exception:
+                            pass
                     if timings:
                         card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang)
                         kb = InlineKeyboardMarkup([
@@ -2656,12 +2729,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 height=media_res.get('height'),
                                 supports_streaming=True
                             )
-
-                try:
-                    await status.delete()
-                except Exception:
-                    pass
-
             except FileTooLargeError:
                 try:
                     await status.edit_text(get_text(user_id, 'error_size', context))
@@ -2672,6 +2739,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 err_msg = get_text(user_id, 'video_error', context)
                 try:
                     await status.edit_text(err_msg)
+                except Exception:
+                    pass
+            finally:
+                try:
+                    await status.delete()
                 except Exception:
                     pass
             return
@@ -2696,16 +2768,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == 'schedule_img_input':
         status = await update.message.reply_text(get_text(user_id, 'schedule_processing', context))
         parsed_data = parse_schedule_text(raw_text, user_lang)
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            out_img = os.path.join(tmp_dir, "timetable_wallpaper.png")
-            generate_schedule_wallpaper(parsed_data, out_img, user_lang)
-            caption_text = f"📱 {get_text(user_id, 'schedule_ready_caption', context)}"
-            with open(out_img, "rb") as f_photo, open(out_img, "rb") as f_doc:
-                await update.message.reply_photo(photo=f_photo, caption=caption_text, parse_mode="Markdown")
-                await update.message.reply_document(document=f_doc, filename=f"timetable_{user_lang}.png")
-        cleanup_user_temp_files(context, user_id)
-        try: await status.delete()
-        except Exception: pass
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_img = os.path.join(tmp_dir, "timetable_wallpaper.png")
+                generate_schedule_wallpaper(parsed_data, out_img, user_lang)
+                caption_text = f"📱 {get_text(user_id, 'schedule_ready_caption', context)}"
+                with open(out_img, "rb") as f_photo, open(out_img, "rb") as f_doc:
+                    await update.message.reply_photo(photo=f_photo, caption=caption_text, parse_mode="Markdown")
+                    await update.message.reply_document(document=f_doc, filename=f"timetable_{user_lang}.png")
+            cleanup_user_temp_files(context, user_id)
+        finally:
+            try:
+                await status.delete()
+            except Exception:
+                pass
         return
 
     # 5. HATIRLATICI
@@ -2718,12 +2794,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rem_text = rem_text.strip()
             time_part = time_part.strip()
             m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", time_part, re.IGNORECASE)
-            if m_min: target_dt = user_now + timedelta(minutes=int(m_min.group(1)))
+            if m_min:
+                target_dt = user_now + timedelta(minutes=int(m_min.group(1)))
             else:
                 m_t = re.search(r"(\d{1,2})[:.](\d{2})", time_part)
                 if m_t:
                     target_dt = user_now.replace(hour=int(m_t.group(1)), minute=int(m_t.group(2)), second=0)
-                    if target_dt < user_now: target_dt += timedelta(days=1)
+                    if target_dt < user_now:
+                        target_dt += timedelta(days=1)
 
         if not target_dt:
             m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", raw_text, re.IGNORECASE)
@@ -2773,7 +2851,8 @@ async def post_init_setup(application):
 
 def main():
     token = os.environ.get("BOT_TOKEN")
-    if not token: raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
+    if not token:
+        raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
     load_databases()
 
     threading.Thread(target=run_health_server, daemon=True).start()

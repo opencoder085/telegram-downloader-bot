@@ -77,7 +77,7 @@ def run_keep_alive_pinger():
             pass
 
 # =====================================================================
-# SAF PYTHON (SIFIR DIŞ BAĞIMLILIK) GÖRSEL ➔ PDF DÖNÜŞTÜRÜCÜSÜ
+# SAF PYTHON GÖRSEL ➔ PDF DÖNÜŞTÜRÜCÜSÜ
 # =====================================================================
 def get_jpeg_size(data: bytes):
     i = 0
@@ -196,8 +196,6 @@ def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
         l = context.user_data['lang']
         if isinstance(l, str) and l in TEXTS:
             return l
-        if isinstance(l, list) and len(l) > 1 and l in TEXTS:
-            return l
 
     return 'uz'
 
@@ -290,7 +288,7 @@ def format_exam_countdown(exam: dict, lang: str = 'uz') -> str:
     return f"📌 *{title}*\n📅 `{dt.strftime('%d.%m.%Y %H:%M')}`\n{cd}\n"
 
 # =====================================================================
-# İNTERAKTİF TELEGRAM TAKVİMİ & SAAT SEÇİCİ
+# KUSURSUZ İNTERAKTİF TELEGRAM TAKVİMİ & SAAT SEÇİCİ
 # =====================================================================
 def build_inline_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyboardMarkup:
     month_names = {
@@ -326,7 +324,7 @@ def build_inline_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyb
         InlineKeyboardButton("▶️", callback_data=f"cal_nav_{next_y}_{next_m}")
     ])
 
-    # 2. Haftanın Günleri Başlık Satırı
+    # 2. Haftanın Günleri Başlığı
     rows.append([InlineKeyboardButton(d, callback_data="cal_ignore") for d in w_days])
 
     # 3. Günler Matrisi
@@ -344,7 +342,7 @@ def build_inline_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyb
                 row.append(InlineKeyboardButton(label, callback_data=f"cal_date_{d_str}"))
         rows.append(row)
 
-    # 4. Hızlı Kısayol Tuşları (Bugün, Yarın, 1 Hafta Sonra)
+    # 4. Kısayol Butonları (Hatasız Tuple İndekslemesi)
     now = datetime.now()
     t_today = now.strftime("%Y-%m-%d")
     t_tmrw = (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -597,51 +595,42 @@ def is_mostly_cyrillic(text: str) -> bool:
 # =====================================================================
 UZ_OFFICIAL_REGIONS = {
     "toshkent": "toshkent", "tashkent": "toshkent", "тошкент": "toshkent", "ташкент": "toshkent",
-    "qoqon": "qoqon-shahri", "qo'qon": "qoqon-shahri", "qoʻqon": "qoqon-shahri", "kokand": "qoqon-shahri", "коканд": "qoqon-shahri",
+    "qoqon": "qoqon-shahri", "qo'qon": "qoqon-shahri", "qoʻqon": "qoqon-shahri", "kokand": "qoqon-shahri",
     "samarqand": "samarqand-shahri", "samarkand": "samarqand-shahri", "самарқанд": "samarqand-shahri",
     "buxoro": "buxoro-shahri", "bukhara": "buxoro-shahri", "бухоро": "buxoro-shahri",
     "andijon": "andijon-shahri", "andijan": "andijon-shahri", "андижон": "andijon-shahri",
     "namangan": "namangan-shahri", "наманган": "namangan-shahri",
-    "fargona": "fargona-shahri", "farg'ona": "fargona-shahri", "fargʻona": "fargona-shahri", "fergana": "fargona-shahri", "фарғона": "fargona-shahri",
-    "margilon": "marghilon-shahri", "marg'ilon": "marghilon-shahri", "марғилон": "marghilon-shahri", "marghilon": "marghilon-shahri",
-    "urganch": "urganch-shahri", "urgench": "urgench-shahri", "урганч": "urgench-shahri",
-    "xiva": "xiva-shahri", "khiva": "xiva-shahri", "хива": "xiva-shahri",
-    "nukus": "nukus-shahri", "нукус": "nukus-shahri",
-    "qarshi": "qarshi-shahri", "karshi": "qarshi-shahri", "қарши": "qarshi-shahri",
-    "navoiy": "navoiy-shahri", "navoi": "navoiy-shahri", "навоий": "navoiy-shahri",
-    "termiz": "termiz-shahri", "termez": "termiz-shahri", "термиз": "termiz-shahri",
-    "denov": "denov", "denau": "denov", "денов": "denov",
-    "guliston": "guliston-shahri", "гулистон": "guliston-shahri",
-    "jizzax": "jizzax-shahri", "jizzakh": "jizzax-shahri", "жиззах": "jizzax-shahri",
-    "shahrisabz": "shahrisabz", "шаҳрисабз": "shahrisabz",
-    "angren": "angren", "ангрен": "angren",
-    "chirchiq": "chirchiq", "чирчиқ": "chirchiq",
-    "zarafshon": "zarafshon", "зарафшон": "zarafshon",
+    "fargona": "fargona-shahri", "farg'ona": "fargona-shahri", "fargʻona": "fargona-shahri", "fergana": "fargona-shahri",
+    "margilon": "marghilon-shahri", "urganch": "urganch-shahri", "xiva": "xiva-shahri",
+    "nukus": "nukus-shahri", "qarshi": "qarshi-shahri", "navoiy": "navoiy-shahri",
+    "termiz": "termiz-shahri", "denov": "denov", "guliston": "guliston-shahri",
+    "jizzax": "jizzax-shahri", "shahrisabz": "shahrisabz", "angren": "angren", "chirchiq": "chirchiq",
 }
 
 GLOBAL_CITY_ALIASES = {
-    "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul", "stambul": "Istanbul", "истанбул": "Istanbul", "стамбул": "Istanbul",
-    "ankara": "Ankara", "анкара": "Ankara",
-    "izmir": "Izmir", "измир": "Izmir",
-    "bursa": "Bursa", "бурса": "Bursa",
-    "antalya": "Antalya", "анталья": "Antalya",
-    "adana": "Adana", "konya": "Konya", "gaziantep": "Gaziantep",
-    "sanliurfa": "Sanliurfa", "urfa": "Sanliurfa", "kayseri": "Kayseri",
+    "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul", "stambul": "Istanbul",
+    "ankara": "Ankara", "izmir": "Izmir", "bursa": "Bursa", "antalya": "Antalya",
+    "adana": "Adana", "konya": "Konya", "gaziantep": "Gaziantep", "kayseri": "Kayseri",
     "eskisehir": "Eskisehir", "samsun": "Samsun", "trabzon": "Trabzon",
-    "mersin": "Mersin", "malatya": "Malatya", "sivas": "Sivas", "erzurum": "Erzurum", "denizli": "Denizli",
-    "moskva": "Moscow", "moscow": "Moscow", "москва": "Moscow",
-    "almaty": "Almaty", "olmaota": "Almaty", "алматы": "Almaty",
-    "astana": "Astana", "ostona": "Astana", "астана": "Astana",
-    "bishkek": "Bishkek", "бишкек": "Bishkek",
-    "dushanbe": "Dushanbe", "душанбе": "Dushanbe",
-    "baku": "Baku", "boku": "Baku", "баку": "Baku",
+    "moskva": "Moscow", "moscow": "Moscow", "almaty": "Almaty", "olmaota": "Almaty",
+    "astana": "Astana", "bishkek": "Bishkek", "dushanbe": "Dushanbe", "baku": "Baku",
     "makka": "Makkah", "mekke": "Makkah", "mecca": "Makkah",
-    "madina": "Medina", "medine": "Medina",
-    "dubai": "Dubai", "dubay": "Dubai",
-    "london": "London", "лондон": "London",
-    "berlin": "Berlin", "paris": "Paris", "parij": "Paris",
-    "reykjavik": "Reykjavik", "reykyavik": "Reykjavik", "рейкьявик": "Reykjavik", "рейкявик": "Reykjavik",
+    "madina": "Medina", "medine": "Medina", "dubai": "Dubai", "dubay": "Dubai",
+    "london": "London", "berlin": "Berlin", "paris": "Paris"
 }
+
+ALL_KNOWN_CITIES = set(list(UZ_OFFICIAL_REGIONS.keys()) + list(GLOBAL_CITY_ALIASES.keys()))
+
+def is_valid_city_intent(text: str) -> bool:
+    clean = re.sub(r"['’`ʻʼ]", "", text.lower().strip())
+    clean = clean.replace('i̇', 'i').replace('ı', 'i')
+    if clean in ALL_KNOWN_CITIES:
+        return True
+    if len(clean) >= 4:
+        matches = difflib.get_close_matches(clean, list(ALL_KNOWN_CITIES), n=1, cutoff=0.78)
+        if matches:
+            return True
+    return False
 
 def normalize_key(text: str) -> str:
     s = text.lower().strip()
@@ -728,31 +717,6 @@ async def fetch_prayer_times(city_input: str):
             except Exception:
                 pass
 
-        for cand in cand_list:
-            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(cand)}&count=1&language=en&format=json"
-            try:
-                geo_resp = await client.get(geo_url, headers=headers)
-                if geo_resp.status_code == 200:
-                    results = geo_resp.json().get("results")
-                    if results and len(results) > 0:
-                        lat = results[0].get("latitude")
-                        lon = results[0].get("longitude")
-                        found_name = results[0].get("name", cand)
-
-                        coord_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}"
-                        coord_resp = await client.get(coord_url, headers=headers)
-                        if coord_resp.status_code == 200:
-                            c_json = coord_resp.json()
-                            if c_json.get("code") == 200 and "data" in c_json and "timings" in c_json["data"]:
-                                t = c_json["data"]["timings"]
-                                d = c_json["data"].get("date", {})
-                                g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
-                                hijri = d.get("hijri", {})
-                                h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-                                return t, found_name, g_date, h_str, "Jonli AlAdhan API orqali olindi"
-            except Exception:
-                pass
-
     return None, None, None, None, None
 
 def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, greg_date: str, hijri_str: str, source_note: str, lang: str = 'uz') -> str:
@@ -769,42 +733,22 @@ def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, gr
 
     if lang == 'tr':
         header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
-        lbl_fajr = "İMSAK"
-        lbl_sunrise = "GÜNEŞ"
-        lbl_dhuhr = "ÖĞLE"
-        lbl_asr = "İKİNDİ"
-        lbl_maghrib = "AKŞAM"
-        lbl_isha = "YATSI"
+        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Arama: \"{clean_inp}\" ➔ *{clean_disp}* olarak belirlendi._\n" if is_fuzzy else ""
     elif lang == 'ru':
         header = "*NUN PROJECT // ВРЕМЯ НАМАЗА*"
-        lbl_fajr = "ФАДЖР"
-        lbl_sunrise = "ВОСХОД"
-        lbl_dhuhr = "ЗУХР"
-        lbl_asr = "АСР"
-        lbl_maghrib = "МАГРИБ"
-        lbl_isha = "ИША"
+        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "ФАДЖР", "ВОСХОД", "ЗУХР", "АСР", "МАГРИБ", "ИША"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Поиск: \"{clean_inp}\" ➔ *{clean_disp}* определено._\n" if is_fuzzy else ""
     elif lang == 'en':
         header = "*NUN PROJECT // PRAYER TIMES*"
-        lbl_fajr = "FAJR"
-        lbl_sunrise = "SUNRISE"
-        lbl_dhuhr = "DHUHR"
-        lbl_asr = "ASR"
-        lbl_maghrib = "MAGHRIB"
-        lbl_isha = "ISHA"
+        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "FAJR", "SUNRISE", "DHUHR", "ASR", "MAGHRIB", "ISHA"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Search: \"{clean_inp}\" ➔ Predicted as *{clean_disp}*._\n" if is_fuzzy else ""
     else:  # 'uz'
         header = "*NUN PROJECT // NAMOZ VAQTLARI*"
-        lbl_fajr = "BOMDOD"
-        lbl_sunrise = "QUYOSH"
-        lbl_dhuhr = "PESHIN"
-        lbl_asr = "ASR"
-        lbl_maghrib = "SHOM"
-        lbl_isha = "XUFTON"
+        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON"
         footer = f"_{source_note}_"
         fuzzy_note = f"\n_🎯 Qidiruv: \"{clean_inp}\" ➔ *{clean_disp}* deb aniqlandi._\n" if is_fuzzy else ""
 
@@ -839,20 +783,8 @@ ADHKAAR_DATA = {
             'arabic': "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
             'uz': "Biz ham, butun mulk ham Allohga tegishli boʻlgan holda tong ottirdik. Hamd Allohgadir. Allohdan oʻzga iloh yoʻq, U yagonadir va sherigi yoʻqdir.",
             'tr': "Biz de mülk de Allah için sabaha erdik. Hamd Allah'adır. Allah'tan başka ilah yoktur, O tektir ve ortağı yoktur.",
-            'ru': "Мы дожили до утра, и утро встретила власть, принадлежащая Аллаху. Хвала Аллаху, нет бога, кроме одного лишь Аллаха.",
+            'ru': "Мы дожили до утра, и утро встретила власть, принадлежащая Аллаху. Хвала Аллаху.",
             'en': "We have entered the morning and the kingdom belongs to Allah. All praise is due to Allah."
-        },
-        {
-            'count': "1x",
-            'name_uz': "Sayyidul Istigʻfor",
-            'name_tr': "Seyyidü'l İstiğfar",
-            'name_ru': "Саййидуль-Истигфар",
-            'name_en': "Sayyid al-Istighfar",
-            'arabic': "اللَّهُمَّ أَنْتَ رَبِّي لاَ إِلَهَ إِلاَّ أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي، فَاغْفِرْ لِي فَإِنَّهُ لاَ يَغْفِرُ الذُّنُوبَ إِلاَّ أَنْتَ",
-            'uz': "Allohim, Sen mening Rabbimsan, Sendan oʻzga iloh yoʻq. Meni Sen yaratding va men Sening qulingman. Meni kechir, zero gunohlarni faqat Sen kechirursan.",
-            'tr': "Allahım! Sen benim Rabbimsin, Senden başka ilah yoktur. Beni Sen yarattın, ben Senin kulunum. Beni bağışla; çünkü günahları Senden başkası bağışlayamaz.",
-            'ru': "О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. Прости же меня, ведь никто не прощает грехов, кроме Тебя!",
-            'en': "O Allah, You are my Lord, there is no deity except You. You have created me and I am Your slave. Forgive me, for none forgives sins except You."
         }
     ],
     'evening': [
@@ -875,17 +807,15 @@ def format_adhkar_card(period: str, lang: str = 'uz') -> str:
         count_str = item.get('count', '1x')
         arabic = item.get('arabic', '')
         meaning = item.get(lang, item.get('uz', ''))
-        name = item.get(f'name_{lang}')
-        name_line = f"▫️ *{name}* `[{count_str}]`\n" if name else f"▫️ *{idx}-Zikr* `[{count_str}]`\n"
-        lines.append(f"{name_line}📖 {arabic}\n\n💬 _{meaning}_\n────────────────────────────")
+        lines.append(f"▫️ *Zikr* `[{count_str}]`\n📖 {arabic}\n\n💬 _{meaning}_\n────────────────────────────")
     return "\n".join(lines)
 
 # =====================================================================
-# ÇOK DİLLİ METİNLER VE ARAYÜZ SÖZLÜĞÜ
+# METİNLER
 # =====================================================================
 TEXTS = {
     'uz': {
-        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\n\nKerakli boʻlimni tanlang yoki toʻgʻridan-toʻgʻri shahar nomini yuboring:",
+        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\n\nKerakli boʻlimni tanlang:",
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
         'btn_prayer': "🕌 Namoz vaqtlari",
@@ -922,84 +852,8 @@ TEXTS = {
         'city_not_found': "❌ Shahar aniqlanmadi. Iltimos, shahar nomini toʻgʻri yozing.",
         'lang_changed': "✅ Til muvaffaqiyatli oʻzgartirildi!",
     },
-    'ru': {
-        'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\n\nВыберите действие в меню или отправьте название города:",
-        'menu_title': "📋 Главное меню:",
-        'btn_video': "🎬 Скачать видео",
-        'btn_prayer': "🕌 Время намаза",
-        'btn_adhkar': "📿 Зикры",
-        'btn_translit': "🔤 Кириллица ⇄ Латиница",
-        'btn_pdf': "📄 Фото ➔ PDF",
-        'btn_exam': "🎓 Экзамены и Таймер",
-        'btn_lang': "🌐 Сменить язык",
-        'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*...)_",
-        'prompt_adhkar': "📿 *NUN PROJECT // ЗИКРЫ*\n\nВыберите категорию зикров:",
-        'btn_morning_adhkar': "🌅 Утренние зикры",
-        'btn_evening_adhkar': "🌇 Вечерние зикры",
-        'prompt_translit': "✍️ Отправьте текст для автоматического перевода:",
-        'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
-        'prompt_pdf': "📸 Отправьте фото для конвертации в PDF (JPG, PNG):",
-        'pdf_processing': "⚙️ Конвертация фото в PDF...",
-        'pdf_success': "✅ Фото успешно конвертировано в PDF!",
-        'pdf_error': "❌ Ошибка при конвертации фото в PDF.",
-        'exam_title': "🎓 *NUN PROJECT // РАСПИСАНИЕ И ТАЙМЕР ЭКЗАМЕНОВ*",
-        'exam_empty': "У вас пока нет сохраненных экзаменов.\nВы можете добавить новый ниже:",
-        'exam_btn_add': "➕ Добавить экзамен",
-        'exam_btn_del': "🗑️ Удалить экзамен",
-        'exam_prompt_title': "🎓 *NUN PROJECT // ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*, *Английский*)_",
-        'exam_pick_date': "🎓 *NUN PROJECT // ВЫБОР ДАТЫ*\n\n📌 Предмет: *{title}*\n\nВыберите дату экзамена в календаре:",
-        'exam_pick_time': "🎓 *NUN PROJECT // ВЫБОР ВРЕМЕНИ*\n\n📌 Предмет: *{title}*\n📅 Дата: `{date}`\n\nВыберите время начала экзамена:",
-        'exam_custom_time_prompt': "✍️ Напишите точное время (например: `10:15` или `14:45`):",
-        'exam_add_success': "✅ Экзамен успешно сохранен!",
-        'exam_choose_del': "🗑️ Выберите экзамен для удаления:",
-        'exam_deleted': "🗑️ Экзамен успешно удален.",
-        'downloading': "⏳ Скачивается, пожалуйста подождите...",
-        'uploading': "📤 Отправка в Telegram...",
-        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
-        'error_general': "❌ Произошла ошибка. Попробуйте снова.",
-        'city_not_found': "❌ Город не распознан. Пожалуйста, напишите заново.",
-        'lang_changed': "✅ Язык успешно изменен!",
-    },
-    'en': {
-        'welcome': "Hello! Welcome to Nun Bot.\n\nChoose an action from the menu or send a city name:",
-        'menu_title': "📋 Main Menu:",
-        'btn_video': "🎬 Download Video",
-        'btn_prayer': "🕌 Prayer Times",
-        'btn_adhkar': "📿 Adhkar",
-        'btn_translit': "🔤 Cyrillic ⇄ Latin",
-        'btn_pdf': "📄 Photo ➔ PDF",
-        'btn_exam': "🎓 Exams & Countdown",
-        'btn_lang': "🌐 Change Language",
-        'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name to get prayer times:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*...)_",
-        'prompt_adhkar': "📿 *NUN PROJECT // ADHKAR*\n\nChoose category:",
-        'btn_morning_adhkar': "🌅 Morning Adhkar",
-        'btn_evening_adhkar': "🌇 Evening Adhkar",
-        'prompt_translit': "✍️ Send your text to convert:",
-        'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
-        'prompt_pdf': "📸 Send the photo you want to convert to PDF (JPG, PNG):",
-        'pdf_processing': "⚙️ Converting photo to PDF...",
-        'pdf_success': "✅ Photo successfully converted to PDF!",
-        'pdf_error': "❌ An error occurred during PDF conversion.",
-        'exam_title': "🎓 *NUN PROJECT // EXAM COUNTDOWN & SCHEDULE*",
-        'exam_empty': "You don't have any saved exams yet.\nUse the button below to add one:",
-        'exam_btn_add': "➕ Add Exam",
-        'exam_btn_del': "🗑️ Delete Exam",
-        'exam_prompt_title': "🎓 *NUN PROJECT // ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*, *English*)_",
-        'exam_pick_date': "🎓 *NUN PROJECT // SELECT DATE*\n\n📌 Subject: *{title}*\n\nSelect the exam date from the calendar:",
-        'exam_pick_time': "🎓 *NUN PROJECT // SELECT TIME*\n\n📌 Subject: *{title}*\n📅 Date: `{date}`\n\nChoose the exam start time:",
-        'exam_custom_time_prompt': "✍️ Type the exact time (e.g. `10:15` or `14:45`):",
-        'exam_add_success': "✅ Exam successfully saved!",
-        'exam_choose_del': "🗑️ Select an exam to delete:",
-        'exam_deleted': "🗑️ Exam successfully deleted.",
-        'downloading': "⏳ Downloading media, please wait...",
-        'uploading': "📤 Uploading to Telegram...",
-        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
-        'error_general': "❌ An error occurred. Please try again.",
-        'city_not_found': "❌ City could not be detected. Please try again.",
-        'lang_changed': "✅ Language updated successfully!",
-    },
     'tr': {
-        'welcome': "Merhaba! Nun Bota hoş geldiniz.\n\nAşağıdaki menüden işlem seçebilir veya doğrudan şehir adı yazabilirsiniz:",
+        'welcome': "Merhaba! Nun Bota hoş geldiniz.\n\nAşağıdaki menüden işlem seçiniz:",
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
         'btn_prayer': "🕌 Namaz Vakitleri",
@@ -1035,6 +889,82 @@ TEXTS = {
         'error_general': "❌ Bir hata oluştu. Lütfen tekrar deneyin.",
         'city_not_found': "❌ Şehir bulunamadı. Lütfen geçerli bir şehir adı yazın.",
         'lang_changed': "✅ Dil başarıyla değiştirildi!",
+    },
+    'ru': {
+        'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\n\nВыберите действие в меню:",
+        'menu_title': "📋 Главное меню:",
+        'btn_video': "🎬 Скачать видео",
+        'btn_prayer': "🕌 Время намаза",
+        'btn_adhkar': "📿 Зикры",
+        'btn_translit': "🔤 Кириллица ⇄ Латиница",
+        'btn_pdf': "📄 Фото ➔ PDF",
+        'btn_exam': "🎓 Экзамены и Таймер",
+        'btn_lang': "🌐 Сменить язык",
+        'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*...)_",
+        'prompt_adhkar': "📿 *NUN PROJECT // ЗИКРЫ*\n\nВыберите категорию зикров:",
+        'btn_morning_adhkar': "🌅 Утренние зикры",
+        'btn_evening_adhkar': "🌇 Вечерние зикры",
+        'prompt_translit': "✍️ Отправьте текст для автоматического перевода:",
+        'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
+        'prompt_pdf': "📸 Отправьте фото для конвертации в PDF (JPG, PNG):",
+        'pdf_processing': "⚙️ Конвертация фото в PDF...",
+        'pdf_success': "✅ Фото успешно конвертировано в PDF!",
+        'pdf_error': "❌ Ошибка при конвертации фото в PDF.",
+        'exam_title': "🎓 *NUN PROJECT // РАСПИСАНИЕ И ТАЙМЕР ЭКЗАМЕНОВ*",
+        'exam_empty': "У вас пока нет сохраненных экзаменов.\nВы можете добавить новый ниже:",
+        'exam_btn_add': "➕ Добавить экзамен",
+        'exam_btn_del': "🗑️ Удалить экзамен",
+        'exam_prompt_title': "🎓 *NUN PROJECT // ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*)_",
+        'exam_pick_date': "🎓 *NUN PROJECT // ВЫБОР ДАТЫ*\n\n📌 Предмет: *{title}*\n\nВыберите дату экзамена в календаре:",
+        'exam_pick_time': "🎓 *NUN PROJECT // ВЫБОР ВРЕМЕНИ*\n\n📌 Предмет: *{title}*\n📅 Дата: `{date}`\n\nВыберите время начала экзамена:",
+        'exam_custom_time_prompt': "✍️ Напишите точное время (например: `10:15` или `14:45`):",
+        'exam_add_success': "✅ Экзамен успешно сохранен!",
+        'exam_choose_del': "🗑️ Выберите экзамен для удаления:",
+        'exam_deleted': "🗑️ Экзамен успешно удален.",
+        'downloading': "⏳ Скачивается, пожалуйста подождите...",
+        'uploading': "📤 Отправка в Telegram...",
+        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
+        'error_general': "❌ Произошла ошибка. Попробуйте снова.",
+        'city_not_found': "❌ Город не распознан. Пожалуйста, напишите заново.",
+        'lang_changed': "✅ Язык успешно изменен!",
+    },
+    'en': {
+        'welcome': "Hello! Welcome to Nun Bot.\n\nChoose an action from the menu:",
+        'menu_title': "📋 Main Menu:",
+        'btn_video': "🎬 Download Video",
+        'btn_prayer': "🕌 Prayer Times",
+        'btn_adhkar': "📿 Adhkar",
+        'btn_translit': "🔤 Cyrillic ⇄ Latin",
+        'btn_pdf': "📄 Photo ➔ PDF",
+        'btn_exam': "🎓 Exams & Countdown",
+        'btn_lang': "🌐 Change Language",
+        'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name to get prayer times:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*...)_",
+        'prompt_adhkar': "📿 *NUN PROJECT // ADHKAR*\n\nChoose category:",
+        'btn_morning_adhkar': "🌅 Morning Adhkar",
+        'btn_evening_adhkar': "🌇 Evening Adhkar",
+        'prompt_translit': "✍️ Send your text to convert:",
+        'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
+        'prompt_pdf': "📸 Send the photo you want to convert to PDF (JPG, PNG):",
+        'pdf_processing': "⚙️ Converting photo to PDF...",
+        'pdf_success': "✅ Photo successfully converted to PDF!",
+        'pdf_error': "❌ An error occurred during PDF conversion.",
+        'exam_title': "🎓 *NUN PROJECT // EXAM COUNTDOWN & SCHEDULE*",
+        'exam_empty': "You don't have any saved exams yet.\nUse the button below to add one:",
+        'exam_btn_add': "➕ Add Exam",
+        'exam_btn_del': "🗑️ Delete Exam",
+        'exam_prompt_title': "🎓 *NUN PROJECT // ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*)_",
+        'exam_pick_date': "🎓 *NUN PROJECT // SELECT DATE*\n\n📌 Subject: *{title}*\n\nSelect the exam date from the calendar:",
+        'exam_pick_time': "🎓 *NUN PROJECT // SELECT TIME*\n\n📌 Subject: *{title}*\n📅 Date: `{date}`\n\nChoose the exam start time:",
+        'exam_custom_time_prompt': "✍️ Type the exact time (e.g. `10:15` or `14:45`):",
+        'exam_add_success': "✅ Exam successfully saved!",
+        'exam_choose_del': "🗑️ Select an exam to delete:",
+        'exam_deleted': "🗑️ Exam successfully deleted.",
+        'downloading': "⏳ Downloading media, please wait...",
+        'uploading': "📤 Uploading to Telegram...",
+        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
+        'error_general': "❌ An error occurred. Please try again.",
+        'city_not_found': "❌ City could not be detected. Please try again.",
+        'lang_changed': "✅ Language updated successfully!",
     }
 }
 
@@ -1248,6 +1178,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if context.user_data:
+        context.user_data['mode'] = 'auto'
+        context.user_data.pop('exam_draft_title', None)
+        context.user_data.pop('exam_draft_date', None)
+
     await update.message.reply_text(
         get_text(user_id, 'menu_title', context),
         reply_markup=get_reply_menu(user_id, context)
@@ -1321,7 +1256,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 1. DİL DEĞİŞİMİ
     if data.startswith("lang_"):
-        selected_lang = data.replace("lang_", "").strip()
+        selected_lang = data.split("_")
         if selected_lang not in TEXTS:
             selected_lang = 'uz'
 
@@ -1373,7 +1308,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 4. İNTERAKTİF TAKVİM: AY DEĞİŞTİRME (◀️  ▶️)
     if data.startswith("cal_nav_"):
         parts = data.split("_")
-        y, m = int(parts), int(parts[3])
+        y, m = int(parts), int(parts)
         title = context.user_data.get('exam_draft_title', 'Imtihon')
         kb = build_inline_calendar(y, m, user_lang)
         prompt = get_text(user_id, 'exam_pick_date', context).format(title=title)
@@ -1391,7 +1326,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit_text_markup(query.message, prompt, kb, parse_mode="Markdown")
         return
 
-    # 6. ZAMAN SEÇİCİDEN TARİHE GERİ DÖN
+    # 6. SAAT SEÇİCİDEN TARİHE GERİ DÖN
     if data == "time_back_date":
         now = datetime.now()
         title = context.user_data.get('exam_draft_title', 'Imtihon')
@@ -1409,7 +1344,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 8. SAAT BUTONUNA TIKLANDI ➔ SINAVI DOĞRUDAN KAYDET
+    # 8. SAAT BUTONUNA TIKLANDI ➔ SINAVI KAYDET
     if data.startswith("time_sel_"):
         chosen_time = data.replace("time_sel_", "").strip()
         date_str = context.user_data.get('exam_draft_date', datetime.now().strftime("%Y-%m-%d"))
@@ -1531,6 +1466,9 @@ async def handle_photo_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
         print(f"PDF Dönüştürme Hatası: {e}")
         await safe_edit_text(status_msg, get_text(user_id, 'pdf_error', context))
 
+# =====================================================================
+# KESİN MESAJ YÖNLENDİRİCİSİ (STATE ROUTER)
+# =====================================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -1540,7 +1478,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları
+    # 1. Menü Butonları Tıklamaları (Her an durumları sıfırlar ve menüyü açar)
     btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
     btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
     btn_adh = [TEXTS[l]['btn_adhkar'] for l in TEXTS]
@@ -1551,11 +1489,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if raw_text in btn_vid:
         context.user_data['mode'] = 'video'
+        context.user_data.pop('exam_draft_title', None)
         await update.message.reply_text(get_text(user_id, 'prompt_video', context))
         return
 
     if raw_text in btn_pry:
         context.user_data['mode'] = 'prayer'
+        context.user_data.pop('exam_draft_title', None)
         await update.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
             parse_mode="Markdown"
@@ -1564,6 +1504,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if raw_text in btn_adh:
         context.user_data['mode'] = 'adhkar'
+        context.user_data.pop('exam_draft_title', None)
         await update.message.reply_text(
             get_text(user_id, 'prompt_adhkar', context),
             reply_markup=get_adhkar_selection_keyboard(user_id, context),
@@ -1573,15 +1514,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if raw_text in btn_trn:
         context.user_data['mode'] = 'translit'
+        context.user_data.pop('exam_draft_title', None)
         await update.message.reply_text(get_text(user_id, 'prompt_translit', context))
         return
 
     if raw_text in btn_pdf:
         context.user_data['mode'] = 'pdf'
+        context.user_data.pop('exam_draft_title', None)
         await update.message.reply_text(get_text(user_id, 'prompt_pdf', context))
         return
 
     if raw_text in btn_exm:
+        context.user_data['mode'] = 'auto'
+        context.user_data.pop('exam_draft_title', None)
         await exam_command(update, context)
         return
 
@@ -1592,7 +1537,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 2. Medya İndirme Linki
+    # 2. Medya İndirme Linki (Tüm modlardan önceliklidir)
     url_match = re.search(r'https?://[^\s]+', raw_text)
     if url_match:
         url = url_match.group(0)
@@ -1604,9 +1549,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_mode = context.user_data.get('mode', 'auto')
     lower_text = raw_text.lower().strip()
 
-    # 3. YENİ İNTERAKTİF SINAV AKIŞI
+    # 3. KORUMALI SINAV AKIŞI (BAŞKA MODLARA ASLA SIZAMAZ)
     if current_mode == 'exam_title_input':
-        # Kullanıcı eski yöntemle tek satırda tarih de yazdıysa (Örn: Matematika - 15.11.2026 10:00)
+        # Kullanıcı tek satırda mı yazdı? (Örn: Matematika - 15.11.2026 10:00)
         if "-" in raw_text and any(c.isdigit() for c in raw_text):
             parts = raw_text.split("-", 1)
             title = parts[0].strip()
@@ -1619,7 +1564,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await exam_command(update, context)
                 return
 
-        # Sadece ders adını yazdıysa ➔ Takvimi aç
+        # Sadece ders adını yazdıysa (Örn: Matematik veya Yaramaz) ➔ Takvimi aç
         context.user_data['exam_draft_title'] = raw_text.strip()
         context.user_data['mode'] = 'exam_date_select'
         now = datetime.now()
@@ -1627,6 +1572,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt = get_text(user_id, 'exam_pick_date', context).format(title=raw_text.strip())
         await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
         return
+
+    if current_mode == 'exam_date_select':
+        # Kullanıcı takvim butonuna basmak yerine yazı yazarsa takvimi tekrar göster
+        now = datetime.now()
+        title = context.user_data.get('exam_draft_title', 'Imtihon')
+        kb = build_inline_calendar(now.year, now.month, user_lang)
+        prompt = get_text(user_id, 'exam_pick_date', context).format(title=title)
+        await update.message.reply_text(
+            f"⚠️ Iltimos, quyidagi taqvimdan sanani tanlang:\n\n{prompt}",
+            parse_mode="Markdown",
+            reply_markup=kb
+        )
+        return
+
+    if current_mode == 'exam_time_select':
+        # Kullanıcı saat butonuna basmak yerine doğrudan '10:30' yazarsa kaydet
+        norm_time = normalize_time_input(raw_text)
+        if norm_time:
+            date_str = context.user_data.get('exam_draft_date', datetime.now().strftime("%Y-%m-%d"))
+            title = context.user_data.get('exam_draft_title', 'Imtihon')
+            full_datetime_str = f"{date_str} {norm_time}"
+
+            exam_id = add_user_exam(user_id, title, full_datetime_str)
+            context.user_data['mode'] = 'auto'
+            context.user_data.pop('exam_draft_title', None)
+            context.user_data.pop('exam_draft_date', None)
+
+            success_text = get_text(user_id, 'exam_add_success', context)
+            exam_obj = {'id': exam_id, 'title': title, 'date': full_datetime_str}
+            card = format_exam_countdown(exam_obj, user_lang)
+            await update.message.reply_text(f"{success_text}\n\n{card}", parse_mode="Markdown")
+            await exam_command(update, context)
+            return
+        else:
+            title = context.user_data.get('exam_draft_title', 'Imtihon')
+            date_str = context.user_data.get('exam_draft_date', '')
+            kb = build_time_picker(user_lang)
+            prompt = get_text(user_id, 'exam_pick_time', context).format(title=title, date=date_str)
+            await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+            return
 
     if current_mode == 'exam_custom_time':
         norm_time = normalize_time_input(raw_text)
@@ -1650,17 +1635,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'exam_custom_time_prompt', context), parse_mode="Markdown")
             return
 
-    # 4. Çeviri Modu (Kiril ⇄ Latin Otomatik Çeviri)
-    if current_mode == 'translit':
-        if is_mostly_cyrillic(raw_text):
-            converted = cyrillic_to_latin(raw_text)
-            await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
-        else:
-            converted = latin_to_cyrillic(raw_text)
-            await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
-        return
-
-    # 5. Zikir Kelimesi Kontrolü
+    # 4. KULLANICI AÇIKÇA ZİKİR İSTEDİĞİNDE
     if bool(re.search(r'\b(zikr|zikirlar|zikirler|adhkar|azkar|зикры|зикр)\b', lower_text)):
         await update.message.reply_text(
             get_text(user_id, 'prompt_adhkar', context),
@@ -1669,17 +1644,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if lower_text in ('namoz', 'namaz', 'prayer', 'vaqt', 'vakit'):
-        context.user_data['mode'] = 'prayer'
-        await update.message.reply_text(
-            get_text(user_id, 'prompt_prayer', context),
-            parse_mode="Markdown"
-        )
-        return
-
+    # 5. KULLANICI AÇIKÇA NAMAZ VAKTİ İSTEDİĞİNDE
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
-
-    # 6. Namaz Vakti Modu
     if current_mode == 'prayer' or is_prayer_intent:
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
         if timings:
@@ -1689,16 +1655,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(card)
-            context.user_data['mode'] = 'prayer'
+            context.user_data['mode'] = 'auto'
             return
         else:
             await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
-            context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Otomatik Şehir Algılama
-    words = raw_text.split()
-    if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
+    # 6. SADECE GERÇEK BİR ŞEHİR ADI YAZILDIYSA NAMAZ VAKTİ VER
+    if is_valid_city_intent(raw_text):
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
         if timings:
             disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
@@ -1707,16 +1671,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(card, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(card)
-            context.user_data['mode'] = 'prayer'
             return
 
-    # 8. Otomatik Çeviri (Uzun cümleler)
-    if is_mostly_cyrillic(raw_text):
-        converted = cyrillic_to_latin(raw_text)
-        await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
-    else:
-        converted = latin_to_cyrillic(raw_text)
-        await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
+    # 7. METİN ÇEVİRİSİ (Sadece çeviri modundaysa veya uzun cümlelerde)
+    if current_mode == 'translit' or len(raw_text.split()) >= 3:
+        if is_mostly_cyrillic(raw_text):
+            converted = cyrillic_to_latin(raw_text)
+            await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
+        else:
+            converted = latin_to_cyrillic(raw_text)
+            await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
+        return
+
+    # 8. Tanınmayan kısa rastgele yazılarda menüyü hatırlat
+    await update.message.reply_text(
+        get_text(user_id, 'menu_title', context),
+        reply_markup=get_reply_menu(user_id, context)
+    )
 
 def main():
     token = os.environ.get("BOT_TOKEN")
@@ -1742,7 +1713,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo_to_pdf))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot aktif; İnteraktif Takvim & Saat Seçici ve 7/24 Hizmet Devrede!")
+    print("Nun Bot aktif; Kusursuz İnteraktif Takvim ve Korumalı Durum Makinesi Devrede!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

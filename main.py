@@ -15,6 +15,17 @@ import calendar
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import httpx
+from PIL import Image, ImageDraw, ImageFont
+import pypdf
+from pypdf import PdfWriter, PdfReader
+import docx
+import openpyxl
+import reportlab
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import pytesseract
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -35,7 +46,7 @@ from telegram.ext import (
 import yt_dlp
 
 # =====================================================================
-# RENDER 7/24 HEALTH CHECK & SELF-PING MOTORU
+# RENDER 7/24 SAĞLIK KONTROLÜ VE SELF-PINGER
 # =====================================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -77,391 +88,361 @@ def run_keep_alive_pinger():
             pass
 
 # =====================================================================
-# SAF PYTHON GÖRSEL ➔ PDF DÖNÜŞTÜRÜCÜSÜ
-# =====================================================================
-def get_jpeg_size(data: bytes):
-    i = 0
-    size = len(data)
-    while i < size - 1:
-        if data[i] == 0xFF:
-            marker = data[i + 1]
-            if marker in (0xC0, 0xC1, 0xC2):
-                h, w = struct.unpack(">HH", data[i + 5:i + 9])
-                return w, h
-            elif marker not in (0xD8, 0xD9, 0x00, 0xFF):
-                length = struct.unpack(">H", data[i + 2:i + 4])[0]
-                i += 2 + length
-                continue
-        i += 1
-    return 800, 1000
-
-def pure_jpeg_to_pdf(jpeg_path: str, pdf_path: str) -> bool:
-    try:
-        with open(jpeg_path, "rb") as f:
-            img_data = f.read()
-
-        width, height = get_jpeg_size(img_data)
-        w_pt, h_pt = width * 72 / 96, height * 72 / 96
-
-        objects = []
-        objects.append(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-        objects.append(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
-        page = f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w_pt:.2f} {h_pt:.2f}] /Contents 4 0 R /Resources << /XObject << /Im 5 0 R >> >> >>\nendobj\n".encode()
-        objects.append(page)
-        content = f"q\n{w_pt:.2f} 0 0 {h_pt:.2f} 0 0 cm\n/Im Do\nQ\n".encode()
-        obj4 = f"4 0 obj\n<< /Length {len(content)} >>\nstream\n".encode() + content + b"endstream\nendobj\n"
-        objects.append(obj4)
-        obj5_header = f"5 0 obj\n<< /Type /XObject /Subtype /Image /Width {width} /Height {height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(img_data)} >>\nstream\n".encode()
-        obj5 = obj5_header + img_data + b"\nendstream\nendobj\n"
-        objects.append(obj5)
-
-        pdf = b"%PDF-1.4\n"
-        offsets = [0]
-        for obj in objects:
-            offsets.append(len(pdf))
-            pdf += obj
-
-        xref_pos = len(pdf)
-        pdf += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
-        for off in offsets[1:]:
-            pdf += f"{off:010d} 00000 n \n".encode()
-        pdf += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode()
-
-        with open(pdf_path, "wb") as f:
-            f.write(pdf)
-        return True
-    except Exception as e:
-        print(f"pure_jpeg_to_pdf hatası: {e}")
-        return False
-
-def convert_image_to_pdf_safe(input_path: str, output_path: str) -> bool:
-    try:
-        from PIL import Image
-        with Image.open(input_path) as img:
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-            img.save(output_path, format="PDF", resolution=100.0)
-        return True
-    except Exception:
-        return pure_jpeg_to_pdf(input_path, output_path)
-
-# =====================================================================
-# KALICI VERİ YÖNETİM SİSTEMİ (DİL & SINAVLAR)
+# VERİ TABANI YÖNETİMİ (DİL, SINAVLAR, HATIRLATICILAR)
 # =====================================================================
 LANG_FILE = "user_langs.json"
 EXAMS_FILE = "user_exams.json"
+REMINDERS_FILE = "user_reminders.json"
 USER_LANGS = {}
 USER_EXAMS = {}
+USER_REMINDERS = {}
 
 def load_databases():
-    global USER_LANGS, USER_EXAMS
-    if os.path.exists(LANG_FILE):
-        try:
-            with open(LANG_FILE, "r", encoding="utf-8") as f:
-                USER_LANGS = json.load(f)
-        except Exception:
-            USER_LANGS = {}
+    global USER_LANGS, USER_EXAMS, USER_REMINDERS
+    for fname, var_ref in [(LANG_FILE, USER_LANGS), (EXAMS_FILE, USER_EXAMS), (REMINDERS_FILE, USER_REMINDERS)]:
+        if os.path.exists(fname):
+            try:
+                with open(fname, "r", encoding="utf-8") as f:
+                    var_ref.update(json.load(f))
+            except Exception:
+                pass
 
-    if os.path.exists(EXAMS_FILE):
-        try:
-            with open(EXAMS_FILE, "r", encoding="utf-8") as f:
-                USER_EXAMS = json.load(f)
-        except Exception:
-            USER_EXAMS = {}
+def save_json(fname, data):
+    try:
+        with open(fname, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 def save_user_lang(user_id, lang_code: str):
-    global USER_LANGS
-    uid_str = str(user_id)
-    USER_LANGS[uid_str] = lang_code
-    try:
-        with open(LANG_FILE, "w", encoding="utf-8") as f:
-            json.dump(USER_LANGS, f, ensure_ascii=False)
-    except Exception:
-        pass
-
-def save_user_exams():
-    global USER_EXAMS
-    try:
-        with open(EXAMS_FILE, "w", encoding="utf-8") as f:
-            json.dump(USER_EXAMS, f, ensure_ascii=False)
-    except Exception:
-        pass
+    USER_LANGS[str(user_id)] = lang_code
+    save_json(LANG_FILE, USER_LANGS)
 
 def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     uid_str = str(user_id)
     if uid_str in USER_LANGS and USER_LANGS[uid_str] in TEXTS:
         return USER_LANGS[uid_str]
-
     if context and context.user_data and 'lang' in context.user_data:
         l = context.user_data['lang']
         if isinstance(l, str) and l in TEXTS:
             return l
-
     return 'uz'
 
 def add_user_exam(user_id, title: str, date_str: str) -> str:
     uid_str = str(user_id)
     if uid_str not in USER_EXAMS:
         USER_EXAMS[uid_str] = []
-
     exam_id = str(int(time.time() * 1000))[-6:]
-    USER_EXAMS[uid_str].append({
-        'id': exam_id,
-        'title': title,
-        'date': date_str
-    })
-    save_user_exams()
+    USER_EXAMS[uid_str].append({'id': exam_id, 'title': title, 'date': date_str})
+    save_json(EXAMS_FILE, USER_EXAMS)
     return exam_id
 
 def delete_user_exam(user_id, exam_id: str) -> bool:
     uid_str = str(user_id)
     if uid_str in USER_EXAMS:
-        orig_len = len(USER_EXAMS[uid_str])
+        orig = len(USER_EXAMS[uid_str])
         USER_EXAMS[uid_str] = [e for e in USER_EXAMS[uid_str] if e.get('id') != exam_id]
-        if len(USER_EXAMS[uid_str]) < orig_len:
-            save_user_exams()
+        if len(USER_EXAMS[uid_str]) < orig:
+            save_json(EXAMS_FILE, USER_EXAMS)
             return True
     return False
 
 def get_user_exams(user_id) -> list:
+    return USER_EXAMS.get(str(user_id), [])
+
+def add_user_reminder(user_id, text: str, target_dt_str: str) -> str:
     uid_str = str(user_id)
-    return USER_EXAMS.get(uid_str, [])
+    if uid_str not in USER_REMINDERS:
+        USER_REMINDERS[uid_str] = []
+    rem_id = str(int(time.time() * 1000))[-6:]
+    USER_REMINDERS[uid_str].append({'id': rem_id, 'text': text, 'time': target_dt_str})
+    save_json(REMINDERS_FILE, USER_REMINDERS)
+    return rem_id
 
-def parse_flexible_date(date_str: str):
-    date_str = date_str.strip()
-    formats = [
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d",
-        "%d.%m.%Y %H:%M",
-        "%d.%m.%Y",
-        "%d/%m/%Y %H:%M",
-        "%d/%m/%Y",
-    ]
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            pass
-    return None
+def get_user_reminders(user_id) -> list:
+    return USER_REMINDERS.get(str(user_id), [])
 
-def format_exam_countdown(exam: dict, lang: str = 'uz') -> str:
-    dt = parse_flexible_date(exam.get('date', ''))
-    title = exam.get('title', 'Imtihon')
-    if not dt:
-        return f"📌 *{title}*: `{exam.get('date', '')}`\n"
-
-    now = datetime.now()
-    diff = dt - now
-
-    if diff.total_seconds() <= 0:
-        if lang == 'tr':
-            status = "🏁 _Sınav vakti geldi veya geçti._"
-        elif lang == 'ru':
-            status = "🏁 _Время экзамена наступило или прошло._"
-        elif lang == 'en':
-            status = "🏁 _Exam time has arrived or passed._"
-        else:
-            status = "🏁 _Imtihon vaqti keldi yoki oʻtdi._"
-        return f"📌 *{title}*\n📅 `{dt.strftime('%d.%m.%Y %H:%M')}`\n{status}\n"
-
-    days = diff.days
-    hours, rem = divmod(diff.seconds, 3600)
-    mins, _ = divmod(rem, 60)
-
-    if lang == 'tr':
-        cd = f"⏳ *Kalan Süre:* `{days} gün, {hours} saat, {mins} dakika`"
-    elif lang == 'ru':
-        cd = f"⏳ *Осталось:* `{days} дн., {hours} ч., {mins} мин.`"
-    elif lang == 'en':
-        cd = f"⏳ *Remaining:* `{days} days, {hours} hrs, {mins} mins`"
-    else:
-        cd = f"⏳ *Qolgan vaqt:* `{days} kun, {hours} soat, {mins} daqiqa`"
-
-    return f"📌 *{title}*\n📅 `{dt.strftime('%d.%m.%Y %H:%M')}`\n{cd}\n"
+def delete_user_reminder(user_id, rem_id: str):
+    uid_str = str(user_id)
+    if uid_str in USER_REMINDERS:
+        USER_REMINDERS[uid_str] = [r for r in USER_REMINDERS[uid_str] if r.get('id') != rem_id]
+        save_json(REMINDERS_FILE, USER_REMINDERS)
 
 # =====================================================================
-# SEÇENEK A: CANLI İNTERAKTİF ZAMANLAYICI PANELİ & TAKVİM
+# PDF & BELGE DÖNÜŞTÜRME MOTORLARI
 # =====================================================================
-def format_scheduler_card(title: str, dt: datetime, lang: str = 'uz') -> str:
-    month_names = {
-        'uz': ["", "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"],
-        'tr': ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
-        'ru': ["", "Января", "Февраля", "Марта", "Апреля", "Мая", "Июня", "Июля", "Августа", "Сентября", "Октября", "Ноября", "Декабря"],
-        'en': ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
-    }
-    m_name = month_names.get(lang, month_names['uz'])[dt.month]
-    date_formatted = f"{dt.day} {m_name} {dt.year}"
-    time_formatted = dt.strftime("%H : %M")
-
-    clean_title = re.sub(r"[*_`\[\]]", "", title)
-
-    if lang == 'tr':
-        header = "*NUN PROJECT // ZAMAN AYARI*"
-        lbl_exam = "Ders / Sınav"
-        lbl_date = "Tarih"
-        lbl_time = "Saat"
-        hint = "_Aşağıdaki butonlarla tarihi ve saati canlı olarak ayarlayın:_"
-    elif lang == 'ru':
-        header = "*NUN PROJECT // НАСТРОЙКА ВРЕМЕНИ*"
-        lbl_exam = "Предмет / Экзамен"
-        lbl_date = "Дата"
-        lbl_time = "Время"
-        hint = "_Настройте дату и время с помощью кнопок ниже:_"
-    elif lang == 'en':
-        header = "*NUN PROJECT // SCHEDULE TIME*"
-        lbl_exam = "Subject / Exam"
-        lbl_date = "Date"
-        lbl_time = "Time"
-        hint = "_Adjust date and time in real-time using buttons below:_"
-    else:  # 'uz'
-        header = "*NUN PROJECT // VAQTNI SOZLASH*"
-        lbl_exam = "Fan / Imtihon"
-        lbl_date = "Sana"
-        lbl_time = "Vaqt"
-        hint = "_Quyidagi tugmalar orqali sana va vaqtni jonli sozlang:_"
-
-    card = (
-        f"{header}\n"
-        f"📌 {lbl_exam}: *{clean_title}*\n\n"
-        f"┌──────────────────────────────┐\n"
-        f"  🗓 {lbl_date}:   `{date_formatted}`\n"
-        f"  ⏰ {lbl_time}:   `{time_formatted}`\n"
-        f"└──────────────────────────────┘\n"
-        f"{hint}"
-    )
-    return card
-
-def build_scheduler_keyboard(lang: str = 'uz') -> InlineKeyboardMarkup:
-    labels = {
-        'uz': {
-            'day_prev': "◀️ Kun", 'day_next': "Kun ▶️",
-            'hour_minus': "➖ 1 soat", 'hour_plus': "➕ 1 soat",
-            'min_minus': "➖ 15 daq", 'min_plus': "➕ 15 daq",
-            'open_cal': "🗓 Taqvimdan tanlash",
-            'today': "⚡ Bugun", 'tmrw': "⚡ Ertaga", 'week': "⚡ 1 hafta",
-            'confirm': "✅ TASDIQLASH VA SAQLASH",
-            'cancel': "❌ Bekor qilish"
-        },
-        'tr': {
-            'day_prev': "◀️ Gün", 'day_next': "Gün ▶️",
-            'hour_minus': "➖ 1 Saat", 'hour_plus': "➕ 1 Saat",
-            'min_minus': "➖ 15 Dk", 'min_plus': "➕ 15 Dk",
-            'open_cal': "🗓 Takvimden Seç",
-            'today': "⚡ Bugün", 'tmrw': "⚡ Yarın", 'week': "⚡ 1 Hafta",
-            'confirm': "✅ ONAYLA VE KAYDET",
-            'cancel': "❌ İptal"
-        },
-        'ru': {
-            'day_prev': "◀️ День", 'day_next': "День ▶️",
-            'hour_minus': "➖ 1 час", 'hour_plus': "➕ 1 час",
-            'min_minus': "➖ 15 мин", 'min_plus': "➕ 15 мин",
-            'open_cal': "🗓 Выбрать из календаря",
-            'today': "⚡ Сегодня", 'tmrw': "⚡ Завтра", 'week': "⚡ 1 неделя",
-            'confirm': "✅ ПОДТВЕРДИТЬ И СОХРАНИТЬ",
-            'cancel': "❌ Отмена"
-        },
-        'en': {
-            'day_prev': "◀️ Day", 'day_next': "Day ▶️",
-            'hour_minus': "➖ 1 hr", 'hour_plus': "➕ 1 hr",
-            'min_minus': "➖ 15 min", 'min_plus': "➕ 15 min",
-            'open_cal': "🗓 Select from Calendar",
-            'today': "⚡ Today", 'tmrw': "⚡ Tomorrow", 'week': "⚡ 1 week",
-            'confirm': "✅ CONFIRM & SAVE",
-            'cancel': "❌ Cancel"
-        }
-    }
-    lbl = labels.get(lang, labels['uz'])
-    rows = [
-        [
-            InlineKeyboardButton(lbl['day_prev'], callback_data="sched_day_prev"),
-            InlineKeyboardButton(lbl['day_next'], callback_data="sched_day_next"),
-        ],
-        [
-            InlineKeyboardButton(lbl['hour_minus'], callback_data="sched_hour_minus"),
-            InlineKeyboardButton(lbl['hour_plus'], callback_data="sched_hour_plus"),
-        ],
-        [
-            InlineKeyboardButton(lbl['min_minus'], callback_data="sched_min_minus"),
-            InlineKeyboardButton(lbl['min_plus'], callback_data="sched_min_plus"),
-        ],
-        [
-            InlineKeyboardButton(lbl['today'], callback_data="sched_jump_today"),
-            InlineKeyboardButton(lbl['tmrw'], callback_data="sched_jump_tmrw"),
-            InlineKeyboardButton(lbl['week'], callback_data="sched_jump_week"),
-        ],
-        [
-            InlineKeyboardButton(lbl['open_cal'], callback_data="sched_open_cal"),
-        ],
-        [
-            InlineKeyboardButton(lbl['confirm'], callback_data="sched_confirm"),
-        ],
-        [
-            InlineKeyboardButton(lbl['cancel'], callback_data="sched_cancel"),
-        ]
-    ]
-    return InlineKeyboardMarkup(rows)
-
-def build_month_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyboardMarkup:
-    month_names = {
-        'uz': ["", "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"],
-        'tr': ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
-        'ru': ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"],
-        'en': ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
-    }
-    week_days = {
-        'uz': ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"],
-        'tr': ["Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz"],
-        'ru': ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
-        'en': ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
-    }
-    back_labels = {
-        'uz': "🔙 Orqaga (Sozlash)",
-        'tr': "🔙 Geri Dön (Ayar)",
-        'ru': "🔙 Назад к настройке",
-        'en': "🔙 Back to Adjust",
-    }
-
-    m_name = month_names.get(lang, month_names['uz'])[month]
-    w_days = week_days.get(lang, week_days['uz'])
-    btn_back = back_labels.get(lang, back_labels['uz'])
-
-    rows = []
-    prev_y, prev_m = (year, month - 1) if month > 1 else (year - 1, 12)
-    next_y, next_m = (year, month + 1) if month < 12 else (year + 1, 1)
-    rows.append([
-        InlineKeyboardButton("◀️", callback_data=f"cal_nav_{prev_y}_{prev_m}"),
-        InlineKeyboardButton(f"{m_name} {year}", callback_data="cal_ignore"),
-        InlineKeyboardButton("▶️", callback_data=f"cal_nav_{next_y}_{next_m}")
-    ])
-
-    rows.append([InlineKeyboardButton(d, callback_data="cal_ignore") for d in w_days])
-
-    cal = calendar.monthcalendar(year, month)
-    today = datetime.now()
-
-    for week in cal:
-        row = []
-        for day in week:
-            if day == 0:
-                row.append(InlineKeyboardButton(" ", callback_data="cal_ignore"))
-            else:
-                d_str = f"{year:04d}-{month:02d}-{day:02d}"
-                label = f"•{day}•" if (today.year == year and today.month == month and today.day == day) else str(day)
-                row.append(InlineKeyboardButton(label, callback_data=f"cal_pick_{d_str}"))
-        rows.append(row)
-
-    rows.append([InlineKeyboardButton(btn_back, callback_data="cal_back_panel")])
-    return InlineKeyboardMarkup(rows)
-
-async def safe_edit_text_markup(message, text: str, reply_markup=None, parse_mode=None):
+def docx_to_pdf(input_docx: str, output_pdf: str) -> bool:
     try:
-        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
-    except Exception:
+        doc = docx.Document(input_docx)
+        styles = getSampleStyleSheet()
+        story = []
+        for p in doc.paragraphs:
+            txt = p.text.strip()
+            if not txt:
+                story.append(Spacer(1, 8))
+                continue
+            if p.style.name.startswith('Heading'):
+                story.append(Paragraph(f"<b>{txt}</b>", styles['Heading2']))
+                story.append(Spacer(1, 6))
+            else:
+                story.append(Paragraph(txt, styles['Normal']))
+                story.append(Spacer(1, 4))
+        pdf_doc = SimpleDocTemplate(output_pdf, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+        pdf_doc.build(story)
+        return True
+    except Exception as e:
+        print(f"docx_to_pdf hatasi: {e}")
+        return False
+
+def xlsx_to_pdf(input_xlsx: str, output_pdf: str) -> bool:
+    try:
+        wb = openpyxl.load_workbook(input_xlsx, data_only=True)
+        ws = wb.active
+        table_data = []
+        for row in ws.iter_rows(values_only=True):
+            if any(cell is not None for cell in row):
+                table_data.append([str(c) if c is not None else "" for c in row])
+        if not table_data:
+            return False
+        pdf_doc = SimpleDocTemplate(output_pdf, pagesize=A4)
+        story = [Paragraph("<b>Excel Jadvali</b>", getSampleStyleSheet()['Heading2']), Spacer(1, 10)]
+        t = Table(table_data)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#222222')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor('#666666')),
+            ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ]))
+        story.append(t)
+        pdf_doc.build(story)
+        return True
+    except Exception as e:
+        print(f"xlsx_to_pdf hatasi: {e}")
+        return False
+
+def txt_to_pdf(input_txt: str, output_pdf: str) -> bool:
+    try:
+        with open(input_txt, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        doc = SimpleDocTemplate(output_pdf, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+        styles = getSampleStyleSheet()
+        story = [Paragraph("<b>Matn Hujjati</b>", styles['Heading2']), Spacer(1, 10)]
+        for line in content.split("\n"):
+            line_clean = line.strip()
+            if line_clean:
+                story.append(Paragraph(line_clean, styles['Normal']))
+                story.append(Spacer(1, 4))
+        doc.build(story)
+        return True
+    except Exception as e:
+        print(f"txt_to_pdf hatasi: {e}")
+        return False
+
+def pdf_to_docx(input_pdf: str, output_docx: str) -> bool:
+    try:
+        reader = PdfReader(input_pdf)
+        doc = docx.Document()
+        doc.add_heading("PDF'dan Oʻgirilgan Hujjat", level=1)
+        has_text = False
+        for page in reader.pages:
+            txt = page.extract_text()
+            if txt:
+                has_text = True
+                for p in txt.split("\n"):
+                    if p.strip():
+                        doc.add_paragraph(p.strip())
+        if not has_text:
+            return False
+        doc.save(output_docx)
+        return True
+    except Exception as e:
+        print(f"pdf_to_docx hatasi: {e}")
+        return False
+
+def merge_pdfs(pdf_paths: list, output_pdf: str) -> bool:
+    try:
+        writer = PdfWriter()
+        for p in pdf_paths:
+            writer.append(p)
+        with open(output_pdf, "wb") as f:
+            writer.write(f)
+        return True
+    except Exception as e:
+        print(f"merge_pdfs hatasi: {e}")
+        return False
+
+def parse_page_ranges(range_str: str, max_pages: int):
+    selected = set()
+    parts = range_str.replace(" ", "").split(",")
+    for p in parts:
+        if "-" in p:
+            start_str, _, end_str = p.partition("-")
+            if start_str.isdigit() and end_str.isdigit():
+                start = max(1, int(start_str))
+                end = min(max_pages, int(end_str))
+                for pg in range(start, end + 1):
+                    selected.add(pg - 1)
+        elif p.isdigit():
+            pg = int(p)
+            if 1 <= pg <= max_pages:
+                selected.add(pg - 1)
+    return sorted(list(selected))
+
+def split_pdf(input_pdf: str, range_str: str, output_pdf: str) -> bool:
+    try:
+        reader = PdfReader(input_pdf)
+        max_p = len(reader.pages)
+        pages_to_extract = parse_page_ranges(range_str, max_p)
+        if not pages_to_extract:
+            return False
+        writer = PdfWriter()
+        for idx in pages_to_extract:
+            writer.add_page(reader.pages[idx])
+        with open(output_pdf, "wb") as f:
+            writer.write(f)
+        return True
+    except Exception as e:
+        print(f"split_pdf hatasi: {e}")
+        return False
+
+# =====================================================================
+# TESSERACT OCR (GÖRSELDEN METİN ÇIKARMA)
+# =====================================================================
+def extract_text_from_image(image_path: str) -> str:
+    try:
+        img = Image.open(image_path)
+        avail = []
         try:
-            clean_text = text.replace("*", "").replace("_", "").replace("`", "")
-            await message.edit_text(clean_text, reply_markup=reply_markup)
+            avail = pytesseract.get_languages()
         except Exception:
-            pass
+            avail = ['eng']
+        langs = [l for l in ['tur', 'uzb', 'rus', 'eng'] if l in avail]
+        lang_arg = "+".join(langs) if langs else "eng"
+        text = pytesseract.image_to_string(img, lang=lang_arg)
+        return text.strip()
+    except Exception as e:
+        print(f"OCR hatasi: {e}")
+        return ""
+
+# =====================================================================
+# HAFTALIK DERS PROGRAMI DUVAR KAĞIDI (PILLOW / 1080x1920)
+# =====================================================================
+def parse_schedule_text(text: str):
+    day_keywords = {
+        "dushanba": "DUSHANBA", "pazartesi": "PAZARTESİ", "monday": "MONDAY", "понедельник": "ПОНЕДЕЛЬНИК",
+        "seshanba": "SESHANBA", "sali": "SALI", "tuesday": "TUESDAY", "вторник": "ВТОРНИК",
+        "chorshanba": "CHORSHANBA", "carsamba": "ÇARŞAMBA", "wednesday": "WEDNESDAY", "среда": "СРЕДА",
+        "payshanba": "PAYSHANBA", "persembe": "PERŞEMBE", "thursday": "THURSDAY", "четверг": "ЧЕТВЕРГ",
+        "juma": "JUMA", "cuma": "CUMA", "friday": "FRIDAY", "пятница": "ПЯТНИЦА",
+        "shanba": "SHANBA", "cumartesi": "CUMARTESİ", "saturday": "SATURDAY", "суббота": "СУББОТА",
+        "yakshanba": "YAKSHANBA", "pazar": "PAZAR", "sunday": "SUNDAY", "воскресенье": "ВОСКРЕСЕНЬЕ",
+    }
+    current_day = "DUSHANBA"
+    schedule = {}
+    lines = text.strip().split("\n")
+    for line in lines:
+        l_c = line.strip()
+        if not l_c:
+            continue
+        first_word = l_c.lower().replace(":", "").replace("-", "").split()[0]
+        if first_word in day_keywords:
+            current_day = day_keywords[first_word]
+            if current_day not in schedule:
+                schedule[current_day] = []
+            rest = l_c[len(first_word):].lstrip(":- ").strip()
+            if rest:
+                schedule[current_day].append(rest)
+        else:
+            if current_day not in schedule:
+                schedule[current_day] = []
+            schedule[current_day].append(l_c)
+    return schedule
+
+def generate_schedule_wallpaper(schedule_data: dict, output_path: str, title: str = "DERS PROGRAMI"):
+    width, height = 1080, 1920
+    img = Image.new("RGB", (width, height), color=(10, 10, 10))
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
+        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+        font_item = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 26)
+    except Exception:
+        font_large = font_med = font_sub = font_item = ImageFont.load_default()
+
+    # Arkaplan çizgileri
+    for x in range(0, width, 80):
+        draw.line([(x, 0), (x, height)], fill=(18, 18, 18), width=1)
+    for y in range(0, height, 80):
+        draw.line([(0, y), (width, y)], fill=(18, 18, 18), width=1)
+
+    # Başlık Kutusu
+    draw.rectangle([(60, 80), (width - 60, 220)], fill=(18, 18, 18), outline=(60, 60, 60), width=2)
+    draw.text((100, 105), "NUN PROJECT // ACADEMIC", fill=(160, 160, 160), font=font_sub)
+    draw.text((100, 140), title.upper(), fill=(255, 255, 255), font=font_large)
+
+    cur_y = 260
+    for day, items in schedule_data.items():
+        if cur_y > height - 200:
+            break
+        day_box_height = 55 + (len(items) * 45)
+        draw.rectangle([(60, cur_y), (width - 60, cur_y + day_box_height)], fill=(15, 15, 15), outline=(50, 50, 50), width=1)
+        draw.rectangle([(60, cur_y), (width - 60, cur_y + 45)], fill=(30, 30, 30))
+        draw.text((80, cur_y + 8), f"●  {day}", fill=(255, 255, 255), font=font_med)
+
+        item_y = cur_y + 55
+        for it in items:
+            draw.text((90, item_y + 5), f"▫️  {it}", fill=(220, 220, 220), font=font_item)
+            item_y += 42
+        cur_y += day_box_height + 20
+
+    draw.text((width // 2 - 180, height - 70), "NUN PROJECT • LOCKSCREEN TIMETABLE", fill=(100, 100, 100), font=font_sub)
+    img.save(output_path, quality=95)
+    return True
+
+# =====================================================================
+# POMODORO & HATIRLATICI ARKAPLAN MOTORU
+# =====================================================================
+async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
+    await asyncio.sleep(duration_mins * 60)
+    if is_break:
+        msg = "🔔 *TANAFFUS TUGADI!* ☕\n\nYangi ish seansiga tayyormisiz?" if user_lang == 'uz' else "🔔 *MOLA BİTTİ!* ☕\n\nYeni çalışma seansına hazır mısınız?"
+        btn_text = "🍅 25 Dk Pomodoro"
+        cb = "pomo_25"
+    else:
+        msg = f"🎉 *POMODORO TUGADI!* 🍅\n\n`{duration_mins}` daqiqalik dars muvaffaqiyatli yakunlandi!\nEndi 5 daqiqa dam oling." if user_lang == 'uz' else f"🎉 *SÜRE BİTTİ!* 🍅\n\n`{duration_mins}` dakikalık seans tamamlandı!\nŞimdi 5 dakika mola vakti."
+        btn_text = "☕ 5 Dk Mola"
+        cb = "pomo_5"
+
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton(btn_text, callback_data=cb)]])
+    try:
+        await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", reply_markup=kb)
+    except Exception:
+        pass
+
+async def reminders_worker(app):
+    while True:
+        await asyncio.sleep(30)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        due = []
+        for uid, items in list(USER_REMINDERS.items()):
+            for it in list(items):
+                if it.get("time") <= now_str:
+                    due.append((uid, it))
+                    items.remove(it)
+        if due:
+            save_json(REMINDERS_FILE, USER_REMINDERS)
+            for uid, item in due:
+                try:
+                    await app.bot.send_message(
+                        chat_id=int(uid),
+                        text=f"🔔 *NUN PROJECT // ESLATMA*\n\n📌 *Vazifa:* {item.get('text')}\n⏰ Belgilangan vaqt yetib keldi!",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
 
 # =====================================================================
 # ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
@@ -470,853 +451,335 @@ APOSTROPHES = set(["'", "\u2019", "\u2018", "`", "\u02bb", "\u02bc"])
 VOWELS_CYR = set("аоуиэеёюяўАОУИЭЕЁЮЯЎ")
 
 MAP_CYR_TO_LAT = {
-    '\u0410': 'A', '\u0430': 'a', '\u0411': 'B', '\u0431': 'b',
-    '\u0412': 'V', '\u0432': 'v', '\u0413': 'G', '\u0433': 'g',
-    '\u0414': 'D', '\u0434': 'd', '\u0416': 'J', '\u0436': 'j',
-    '\u0417': 'Z', '\u0437': 'z', '\u0418': 'I', '\u0438': 'i',
-    '\u0419': 'Y', '\u0439': 'y', '\u041a': 'K', '\u043a': 'k',
-    '\u049a': 'Q', '\u049b': 'q', '\u041b': 'L', '\u043b': 'l',
-    '\u041c': 'M', '\u043c': 'm', '\u041d': 'N', '\u043d': 'n',
-    '\u041e': 'O', '\u043e': 'o', '\u041f': 'P', '\u043f': 'p',
-    '\u0420': 'R', '\u0440': 'r', '\u0421': 'S', '\u0441': 's',
-    '\u0422': 'T', '\u0442': 't', '\u0423': 'U', '\u0443': 'u',
-    '\u0424': 'F', '\u0444': 'f', '\u0425': 'X', '\u0445': 'x',
-    '\u04b2': 'H', '\u04b3': 'h', '\u042d': 'E', '\u044d': 'e',
+    '\u0410': 'A', '\u0430': 'a', '\u0411': 'B', '\u0431': 'b', '\u0412': 'V', '\u0432': 'v',
+    '\u0413': 'G', '\u0433': 'g', '\u0414': 'D', '\u0434': 'd', '\u0416': 'J', '\u0436': 'j',
+    '\u0417': 'Z', '\u0437': 'z', '\u0418': 'I', '\u0438': 'i', '\u0419': 'Y', '\u0439': 'y',
+    '\u041a': 'K', '\u043a': 'k', '\u049a': 'Q', '\u049b': 'q', '\u041b': 'L', '\u043b': 'l',
+    '\u041c': 'M', '\u043c': 'm', '\u041d': 'N', '\u043d': 'n', '\u041e': 'O', '\u043e': 'o',
+    '\u041f': 'P', '\u043f': 'p', '\u0420': 'R', '\u0440': 'r', '\u0421': 'S', '\u0441': 's',
+    '\u0422': 'T', '\u0442': 't', '\u0423': 'U', '\u0443': 'u', '\u0424': 'F', '\u0444': 'f',
+    '\u0425': 'X', '\u0445': 'x', '\u04b2': 'H', '\u04b3': 'h', '\u042d': 'E', '\u044d': 'e',
 }
 
 MAP_LAT_TO_CYR = {
-    'A': '\u0410', 'a': '\u0430', 'B': '\u0411', 'b': '\u0431',
-    'V': '\u0412', 'v': '\u0432', 'G': '\u0413', 'g': '\u0433',
-    'D': '\u0414', 'd': '\u0434', 'J': '\u0416', 'j': '\u0436',
-    'Z': '\u0417', 'z': '\u0437', 'I': '\u0418', 'i': '\u0438',
-    'Y': '\u0419', 'y': '\u0439', 'K': '\u041a', 'k': '\u043a',
-    'Q': '\u049a', 'q': '\u049b', 'L': '\u041b', 'l': '\u043b',
-    'M': '\u041c', 'm': '\u043c', 'N': '\u041d', 'n': '\u043d',
-    'O': '\u041e', 'o': '\u043e', 'P': '\u041f', 'p': '\u043f',
-    'R': '\u0420', 'r': '\u0440', 'S': '\u0421', 's': '\u0441',
-    'T': '\u0422', 't': '\u0442', 'U': '\u0423', 'u': '\u0443',
-    'F': '\u0424', 'f': '\u0444', 'X': '\u0425', 'x': '\u0445',
-    'H': '\u04b2', 'h': '\u04b3',
+    'A': '\u0410', 'a': '\u0430', 'B': '\u0411', 'b': '\u0431', 'V': '\u0412', 'v': '\u0432',
+    'G': '\u0413', 'g': '\u0433', 'D': '\u0414', 'd': '\u0434', 'J': '\u0416', 'j': '\u0436',
+    'Z': '\u0417', 'z': '\u0437', 'I': '\u0418', 'i': '\u0438', 'Y': '\u0419', 'y': '\u0439',
+    'K': '\u041a', 'k': '\u043a', 'Q': '\u049a', 'q': '\u049b', 'L': '\u041b', 'l': '\u043b',
+    'M': '\u041c', 'm': '\u043c', 'N': '\u041d', 'n': '\u043d', 'O': '\u041e', 'o': '\u043e',
+    'P': '\u041f', 'p': '\u043f', 'R': '\u0420', 'r': '\u0440', 'S': '\u0421', 's': '\u0441',
+    'T': '\u0422', 't': '\u0442', 'U': '\u0423', 'u': '\u0443', 'F': '\u0424', 'f': '\u0444',
+    'X': '\u0425', 'x': '\u0445', 'H': '\u04b2', 'h': '\u04b3',
 }
 
 def cyrillic_to_latin(text: str) -> str:
-    result = []
-    i = 0
-    n = len(text)
+    res = []
+    i, n = 0, len(text)
     while i < n:
         c = text[i]
-        prev_char = text[i-1] if i > 0 else " "
-        next_char = text[i+1] if i+1 < n else ""
-        is_upper = c.isupper()
-        next_is_upper = next_char.isupper()
-
-        if c in ('С', 'с') and next_char in ('Ҳ', 'ҳ'):
-            res = ("S'H" if next_is_upper else "S'h") if is_upper else "s'h"
-            result.append(res)
-            i += 2
-            continue
-
+        prev = text[i-1] if i > 0 else " "
+        nxt = text[i+1] if i+1 < n else ""
+        if c in ('С', 'с') and nxt in ('Ҳ', 'ҳ'):
+            res.append("S'H" if c.isupper() and nxt.isupper() else ("S'h" if c.isupper() else "s'h"))
+            i += 2; continue
         if c in ('Е', 'е'):
-            is_word_start = (i == 0 or not prev_char.isalpha())
-            after_vowel = (prev_char in VOWELS_CYR or prev_char in 'ъЪьЬ')
-            if is_word_start or after_vowel:
-                res = ("YE" if next_is_upper else "Ye") if is_upper else "ye"
+            if i == 0 or not prev.isalpha() or prev in VOWELS_CYR or prev in 'ъЪьЬ':
+                res.append("YE" if c.isupper() and nxt.isupper() else ("Ye" if c.isupper() else "ye"))
             else:
-                res = "E" if is_upper else "e"
-            result.append(res)
-            i += 1
-            continue
-
-        if c in ('Ё', 'ё'):
-            result.append(("YO" if next_is_upper else "Yo") if is_upper else "yo")
-            i += 1
-            continue
-        if c in ('Ю', 'ю'):
-            result.append(("YU" if next_is_upper else "Yu") if is_upper else "yu")
-            i += 1
-            continue
-        if c in ('Я', 'я'):
-            result.append(("YA" if next_is_upper else "Ya") if is_upper else "ya")
-            i += 1
-            continue
-        if c in ('Ч', 'ч'):
-            result.append(("CH" if next_is_upper else "Ch") if is_upper else "ch")
-            i += 1
-            continue
-        if c in ('Ш', 'ш') or c in ('Щ', 'щ'):
-            result.append(("SH" if next_is_upper else "Sh") if is_upper else "sh")
-            i += 1
-            continue
-        if c in ('Ц', 'ц'):
-            result.append(("TS" if next_is_upper else "Ts") if is_upper else "ts")
-            i += 1
-            continue
-        if c == 'Ў':
-            result.append("Oʻ")
-            i += 1
-            continue
-        elif c == 'ў':
-            result.append("oʻ")
-            i += 1
-            continue
-        if c == 'Ғ':
-            result.append("Gʻ")
-            i += 1
-            continue
-        elif c == 'ғ':
-            result.append("gʻ")
-            i += 1
-            continue
-        if c in ('Ъ', 'ъ'):
-            result.append("'")
-            i += 1
-            continue
-        if c in ('Ь', 'ь'):
-            i += 1
-            continue
-
-        result.append(MAP_CYR_TO_LAT.get(c, c))
+                res.append("E" if c.isupper() else "e")
+            i += 1; continue
+        if c in ('Ё', 'ё'): res.append("Yo" if c.isupper() else "yo"); i += 1; continue
+        if c in ('Ю', 'ю'): res.append("Yu" if c.isupper() else "yu"); i += 1; continue
+        if c in ('Я', 'я'): res.append("Ya" if c.isupper() else "ya"); i += 1; continue
+        if c in ('Ч', 'ч'): res.append("Ch" if c.isupper() else "ch"); i += 1; continue
+        if c in ('Ш', 'ш', 'Щ', 'щ'): res.append("Sh" if c.isupper() else "sh"); i += 1; continue
+        if c in ('Ц', 'ц'): res.append("Ts" if c.isupper() else "ts"); i += 1; continue
+        if c == 'Ў': res.append("Oʻ"); i += 1; continue
+        if c == 'ў': res.append("oʻ"); i += 1; continue
+        if c == 'Ғ': res.append("Gʻ"); i += 1; continue
+        if c == 'ғ': res.append("gʻ"); i += 1; continue
+        if c in ('Ъ', 'ъ'): res.append("'"); i += 1; continue
+        if c in ('Ь', 'ь'): i += 1; continue
+        res.append(MAP_CYR_TO_LAT.get(c, c))
         i += 1
-    return "".join(result)
+    return "".join(res)
 
 def latin_to_cyrillic(text: str) -> str:
-    result = []
-    i = 0
-    n = len(text)
+    res = []
+    i, n = 0, len(text)
     while i < n:
         c = text[i]
-        c_next = text[i+1] if i+1 < n else ""
-        c_next2 = text[i+2] if i+2 < n else ""
-        prev_char = text[i-1] if i > 0 else " "
-
-        if c in ('s', 'S') and c_next in APOSTROPHES and c_next2 in ('h', 'H'):
-            res = ("СҲ" if c_next2.isupper() else "Сҳ") if c == 'S' else "сҳ"
-            result.append(res)
-            i += 3
-            continue
-
-        if c in ('o', 'O') and c_next and c_next in APOSTROPHES:
-            result.append("Ў" if c == 'O' else "ў")
-            i += 2
-            continue
-
-        if c in ('g', 'G') and c_next in APOSTROPHES:
-            result.append("Ғ" if c == 'G' else "ғ")
-            i += 2
-            continue
-
-        if c in ('s', 'S') and c_next in ('h', 'H'):
-            result.append("Ш" if c.isupper() else "ш")
-            i += 2
-            continue
-
-        if c in ('c', 'C') and c_next in ('h', 'H'):
-            result.append("Ч" if c.isupper() else "ч")
-            i += 2
-            continue
-
-        if c in ('t', 'T') and c_next in ('s', 'S'):
-            result.append("Ц" if c.isupper() else "ц")
-            i += 2
-            continue
-
-        if c in ('y', 'Y') and c_next in ('o', 'O'):
-            result.append("Ё" if c.isupper() else "ё")
-            i += 2
-            continue
-
-        if c in ('y', 'Y') and c_next in ('u', 'U'):
-            result.append("Ю" if c.isupper() else "ю")
-            i += 2
-            continue
-
-        if c in ('y', 'Y') and c_next in ('a', 'A'):
-            result.append("Я" if c.isupper() else "я")
-            i += 2
-            continue
-
-        if c in ('y', 'Y') and c_next in ('e', 'E'):
-            result.append("Е" if c.isupper() else "е")
-            i += 2
-            continue
-
+        nxt = text[i+1] if i+1 < n else ""
+        nxt2 = text[i+2] if i+2 < n else ""
+        prev = text[i-1] if i > 0 else " "
+        if c in ('s', 'S') and nxt in APOSTROPHES and nxt2 in ('h', 'H'):
+            res.append("СҲ" if nxt2.isupper() else "Сҳ" if c == 'S' else "сҳ"); i += 3; continue
+        if c in ('o', 'O') and nxt and nxt in APOSTROPHES:
+            res.append("Ў" if c == 'O' else "ў"); i += 2; continue
+        if c in ('g', 'G') and nxt and nxt in APOSTROPHES:
+            res.append("Ғ" if c == 'G' else "ғ"); i += 2; continue
+        if c in ('s', 'S') and nxt in ('h', 'H'):
+            res.append("Ш" if c.isupper() else "ш"); i += 2; continue
+        if c in ('c', 'C') and nxt in ('h', 'H'):
+            res.append("Ч" if c.isupper() else "ч"); i += 2; continue
+        if c in ('t', 'T') and nxt in ('s', 'S'):
+            res.append("Ц" if c.isupper() else "ц"); i += 2; continue
+        if c in ('y', 'Y') and nxt in ('o', 'O'): res.append("Ё" if c.isupper() else "ё"); i += 2; continue
+        if c in ('y', 'Y') and nxt in ('u', 'U'): res.append("Ю" if c.isupper() else "ю"); i += 2; continue
+        if c in ('y', 'Y') and nxt in ('a', 'A'): res.append("Я" if c.isupper() else "я"); i += 2; continue
+        if c in ('y', 'Y') and nxt in ('e', 'E'): res.append("Е" if c.isupper() else "е"); i += 2; continue
         if c in ('e', 'E'):
-            is_word_start = (i == 0 or not prev_char.isalpha())
-            after_vowel = (prev_char.lower() in 'aouie')
-            if is_word_start or after_vowel:
-                result.append("Э" if c == 'E' else "э")
-            else:
-                result.append("Е" if c == 'E' else "е")
-            i += 1
-            continue
-
+            res.append("Э" if (i == 0 or not prev.isalpha() or prev.lower() in 'aouie') else "Е" if c == 'E' else "е")
+            i += 1; continue
         if c in APOSTROPHES:
-            if prev_char.isalpha():
-                result.append("ъ")
-            else:
-                result.append("'")
-            i += 1
-            continue
-
-        result.append(MAP_LAT_TO_CYR.get(c, c))
+            res.append("ъ" if prev.isalpha() else "'"); i += 1; continue
+        res.append(MAP_LAT_TO_CYR.get(c, c))
         i += 1
-    return "".join(result)
+    return "".join(res)
 
 def is_mostly_cyrillic(text: str) -> bool:
-    cyr_count = len(re.findall(r'[\u0400-\u04FF]', text))
-    lat_count = len(re.findall(r'[a-zA-Z]', text))
-    return cyr_count >= lat_count
+    return len(re.findall(r'[\u0400-\u04FF]', text)) >= len(re.findall(r'[a-zA-Z]', text))
 
 # =====================================================================
-# ÖZBEKİSTAN RESMİ BÖLGE HARİTASI & ALADHAN ENTEGRASYONU
+# NAMAZ VAKİTLERİ
 # =====================================================================
-UZ_OFFICIAL_REGIONS = {
-    "toshkent": "toshkent", "tashkent": "toshkent", "тошкент": "toshkent", "ташкент": "toshkent",
-    "qoqon": "qoqon-shahri", "qo'qon": "qoqon-shahri", "qoʻqon": "qoqon-shahri", "kokand": "qoqon-shahri",
-    "samarqand": "samarqand-shahri", "samarkand": "samarqand-shahri", "самарқанд": "samarqand-shahri",
-    "buxoro": "buxoro-shahri", "bukhara": "buxoro-shahri", "бухоро": "buxoro-shahri",
-    "andijon": "andijon-shahri", "andijan": "andijon-shahri", "андижон": "andijon-shahri",
-    "namangan": "namangan-shahri", "наманган": "namangan-shahri",
-    "fargona": "fargona-shahri", "farg'ona": "fargona-shahri", "fargʻona": "fargona-shahri", "fergana": "fargona-shahri",
-    "margilon": "marghilon-shahri", "urganch": "urganch-shahri", "xiva": "xiva-shahri",
-    "nukus": "nukus-shahri", "qarshi": "qarshi-shahri", "navoiy": "navoiy-shahri",
-    "termiz": "termiz-shahri", "denov": "denov", "guliston": "guliston-shahri",
-    "jizzax": "jizzax-shahri", "shahrisabz": "shahrisabz", "angren": "angren", "chirchiq": "chirchiq",
+UZ_REGIONS = {
+    "toshkent": "toshkent", "samarqand": "samarqand-shahri", "buxoro": "buxoro-shahri",
+    "andijon": "andijon-shahri", "namangan": "namangan-shahri", "fargona": "fargona-shahri",
+    "qoqon": "qoqon-shahri", "urganch": "urganch-shahri", "nukus": "nukus-shahri",
+    "qarshi": "qarshi-shahri", "navoiy": "navoiy-shahri", "termiz": "termiz-shahri",
+}
+GLOBAL_CITIES = {
+    "istanbul": "Istanbul", "ankara": "Ankara", "izmir": "Izmir", "bursa": "Bursa",
+    "moskva": "Moscow", "almaty": "Almaty", "makka": "Makkah", "madina": "Medina", "dubai": "Dubai"
 }
 
-GLOBAL_CITY_ALIASES = {
-    "istanbul": "Istanbul", "istnbul": "Istanbul", "istambul": "Istanbul", "stambul": "Istanbul",
-    "ankara": "Ankara", "izmir": "Izmir", "bursa": "Bursa", "antalya": "Antalya",
-    "adana": "Adana", "konya": "Konya", "gaziantep": "Gaziantep", "kayseri": "Kayseri",
-    "eskisehir": "Eskisehir", "samsun": "Samsun", "trabzon": "Trabzon",
-    "moskva": "Moscow", "moscow": "Moscow", "almaty": "Almaty", "olmaota": "Almaty",
-    "astana": "Astana", "bishkek": "Bishkek", "dushanbe": "Dushanbe", "baku": "Baku",
-    "makka": "Makkah", "mekke": "Makkah", "mecca": "Makkah",
-    "madina": "Medina", "medine": "Medina", "dubai": "Dubai", "dubay": "Dubai",
-    "london": "London", "berlin": "Berlin", "paris": "Paris"
-}
-
-ALL_KNOWN_CITIES = set(list(UZ_OFFICIAL_REGIONS.keys()) + list(GLOBAL_CITY_ALIASES.keys()))
-
-def is_valid_city_intent(text: str) -> bool:
-    clean = re.sub(r"['’`ʻʼ]", "", text.lower().strip())
-    clean = clean.replace('i̇', 'i').replace('ı', 'i')
-    if clean in ALL_KNOWN_CITIES:
-        return True
-    if len(clean) >= 4:
-        matches = difflib.get_close_matches(clean, list(ALL_KNOWN_CITIES), n=1, cutoff=0.78)
-        if matches:
-            return True
-    return False
-
-def normalize_key(text: str) -> str:
-    s = text.lower().strip()
-    s = re.sub(r"['’`ʻʼ]", "", s)
-    s = s.replace('i̇', 'i').replace('ı', 'i').replace('ö', 'o').replace('ü', 'u').replace('ş', 's').replace('ç', 'c').replace('ğ', 'g')
-    return s
-
-def clean_prayer_query(raw_text: str) -> str:
-    text = raw_text.strip()
-    text = re.sub(r"^/(?:namaz|namoz|prayer)\s*", "", text, flags=re.IGNORECASE)
-    if is_mostly_cyrillic(text):
-        text = cyrillic_to_latin(text)
-
-    noise_pattern = r"\b(?:namoz|namaz|vaqtlari|vakitleri|vaqti|vakti|vaqt|vakit|bugun|bugün|today|prayer|times|time|shahar|shahri|viloyat|viloyati|city|город|время|намаз|намаза|ili|ilcesi|ilçesi|uchun|dagi)\b"
-    cleaned = re.sub(noise_pattern, " ", text, flags=re.IGNORECASE)
-    cleaned = re.sub(r"[^\w\s'’`ʻʼ-]", "", cleaned).strip()
-    return cleaned if cleaned else text
+def clean_time_str(val: str) -> str:
+    m = re.search(r"\d{1,2}:\d{2}", str(val))
+    return m.group(0) if m else "--:--"
 
 async def fetch_prayer_times(city_input: str):
-    city_clean = clean_prayer_query(city_input)
-    if not city_clean:
-        return None, None, None, None, None
-
-    norm = normalize_key(city_clean)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-    }
+    c_norm = re.sub(r"['’`ʻʼ]", "", city_input.lower().strip()).replace('i̇', 'i').replace('ı', 'i')
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        uz_slug = UZ_OFFICIAL_REGIONS.get(norm)
-        if not uz_slug:
-            matches = difflib.get_close_matches(norm, list(UZ_OFFICIAL_REGIONS.keys()), n=1, cutoff=0.7)
+        slug = UZ_REGIONS.get(c_norm)
+        if not slug:
+            matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
             if matches:
-                uz_slug = UZ_OFFICIAL_REGIONS[matches[0]]
-
-        if uz_slug:
+                slug = UZ_REGIONS[matches[0]]
+        if slug:
             try:
-                uz_url = f"https://namoz-vaqti.uz/index.php?format=json&region={uz_slug}"
-                resp = await client.get(uz_url, headers=headers)
+                resp = await client.get(f"https://namoz-vaqti.uz/index.php?format=json&region={slug}", headers=headers)
                 if resp.status_code == 200:
-                    uz_json = resp.json()
-                    times = uz_json.get("today", {}).get("times")
-                    if times:
-                        timings = {
-                            "Fajr": times.get("bomdod", "--:--"),
-                            "Sunrise": times.get("quyosh", "--:--"),
-                            "Dhuhr": times.get("peshin", "--:--"),
-                            "Asr": times.get("asr", "--:--"),
-                            "Maghrib": times.get("shom", "--:--"),
-                            "Isha": times.get("xufton", "--:--"),
-                        }
-                        meta = uz_json.get("meta", {})
-                        city_disp = meta.get("region", {}).get("name", city_clean.title())
-                        date_str = meta.get("date", "")
-                        return timings, city_disp, date_str, "", "Oʻzbekiston Din ishlari boʻyicha qoʻmitasi (Rasmiy)"
+                    j = resp.json()
+                    t = j.get("today", {}).get("times", {})
+                    meta = j.get("meta", {})
+                    return {
+                        "Fajr": t.get("bomdod"), "Sunrise": t.get("quyosh"), "Dhuhr": t.get("peshin"),
+                        "Asr": t.get("asr"), "Maghrib": t.get("shom"), "Isha": t.get("xufton")
+                    }, meta.get("region", {}).get("name", city_input.title()), meta.get("date", ""), "", "Oʻzbekiston Din ishlari qoʻmitasi"
             except Exception:
                 pass
 
-        mapped_city = GLOBAL_CITY_ALIASES.get(norm)
-        if not mapped_city:
-            matches = difflib.get_close_matches(norm, list(GLOBAL_CITY_ALIASES.keys()), n=1, cutoff=0.7)
-            if matches:
-                mapped_city = GLOBAL_CITY_ALIASES[matches[0]]
-
-        cand_list = []
-        if mapped_city:
-            cand_list.append(mapped_city)
-        cand_list.append(city_clean)
-
-        for cand in cand_list:
-            url = f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(cand)}"
-            try:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("code") == 200 and "data" in data and "timings" in data["data"]:
-                        t = data["data"]["timings"]
-                        d = data["data"].get("date", {})
-                        g_date = d.get("gregorian", {}).get("date", d.get("readable", ""))
-                        hijri = d.get("hijri", {})
-                        h_str = f"{hijri.get('day', '')} {hijri.get('month', {}).get('en', '')} {hijri.get('year', '')}".strip()
-                        return t, cand, g_date, h_str, "Jonli AlAdhan API orqali olindi"
-            except Exception:
-                pass
+        target = GLOBAL_CITIES.get(c_norm, city_input)
+        try:
+            resp = await client.get(f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(target)}", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json().get("data", {})
+                d = data.get("date", {})
+                return data.get("timings", {}), target.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
+        except Exception:
+            pass
 
     return None, None, None, None, None
 
-def clean_time(time_str: str) -> str:
-    if not time_str:
-        return "--:--"
-    m = re.search(r"\d{1,2}:\d{2}", str(time_str))
-    return m.group(0) if m else "--:--"
-
-def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, greg_date: str, hijri_str: str, source_note: str, lang: str = 'uz') -> str:
-    t_fajr = clean_time(timings.get("Fajr"))
-    t_sunrise = clean_time(timings.get("Sunrise"))
-    t_dhuhr = clean_time(timings.get("Dhuhr"))
-    t_asr = clean_time(timings.get("Asr"))
-    t_maghrib = clean_time(timings.get("Maghrib"))
-    t_isha = clean_time(timings.get("Isha"))
-
-    clean_disp = re.sub(r"[*_`\[\]]", "", display_name)
-    clean_inp = re.sub(r"[*_`\[\]]", "", clean_prayer_query(user_input))
-    is_fuzzy = clean_inp.lower() != clean_disp.lower() and bool(clean_inp)
-
-    if lang == 'tr':
-        header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
-        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI"
-        footer = f"_{source_note}_"
-        fuzzy_note = f"\n_🎯 Arama: \"{clean_inp}\" ➔ *{clean_disp}* olarak belirlendi._\n" if is_fuzzy else ""
-    elif lang == 'ru':
-        header = "*NUN PROJECT // ВРЕМЯ НАМАЗА*"
-        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "ФАДЖР", "ВОСХОД", "ЗУХР", "АСР", "МАГРИБ", "ИША"
-        footer = f"_{source_note}_"
-        fuzzy_note = f"\n_🎯 Поиск: \"{clean_inp}\" ➔ *{clean_disp}* определено._\n" if is_fuzzy else ""
-    elif lang == 'en':
-        header = "*NUN PROJECT // PRAYER TIMES*"
-        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "FAJR", "SUNRISE", "DHUHR", "ASR", "MAGHRIB", "ISHA"
-        footer = f"_{source_note}_"
-        fuzzy_note = f"\n_🎯 Search: \"{clean_inp}\" ➔ Predicted as *{clean_disp}*._\n" if is_fuzzy else ""
-    else:  # 'uz'
-        header = "*NUN PROJECT // NAMOZ VAQTLARI*"
-        lbl_fajr, lbl_sunrise, lbl_dhuhr, lbl_asr, lbl_maghrib, lbl_isha = "BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON"
-        footer = f"_{source_note}_"
-        fuzzy_note = f"\n_🎯 Qidiruv: \"{clean_inp}\" ➔ *{clean_disp}* deb aniqlandi._\n" if is_fuzzy else ""
-
-    date_line = f"📅 `{greg_date}`" if greg_date else ""
-    if hijri_str:
-        date_line += f"  •  🌙 `{hijri_str}`" if date_line else f"🌙 `{hijri_str}`"
-
-    card = (
-        f"{header}\n"
-        f"📍 *[ {clean_disp.upper()} ]*\n"
-        f"{date_line}\n"
-        f"{fuzzy_note}\n"
+def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_str: str, source: str, lang: str = 'uz'):
+    t_f = clean_time_str(timings.get("Fajr"))
+    t_s = clean_time_str(timings.get("Sunrise"))
+    t_d = clean_time_str(timings.get("Dhuhr"))
+    t_a = clean_time_str(timings.get("Asr"))
+    t_m = clean_time_str(timings.get("Maghrib"))
+    t_i = clean_time_str(timings.get("Isha"))
+    lbls = ("BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON") if lang != 'tr' else ("İMSAK", "GÜNEŞ", "ÖĞLE", "İKİNDİ", "AKŞAM", "YATSI")
+    return (
+        f"*NUN PROJECT // NAMOZ VAQTLARI*\n"
+        f"📍 *[ {display_name.upper()} ]*\n"
+        f"📅 `{date_str}`\n\n"
         f"┌────────────────────────────┐\n"
-        f"  ▫️ *{lbl_fajr}:*{' ' * max(1, 9 - len(lbl_fajr))}`{t_fajr}`\n"
-        f"  ▫️ *{lbl_sunrise}:*{' ' * max(1, 9 - len(lbl_sunrise))}`{t_sunrise}`\n"
-        f"  ▫️ *{lbl_dhuhr}:*{' ' * max(1, 9 - len(lbl_dhuhr))}`{t_dhuhr}`\n"
-        f"  ▫️ *{lbl_asr}:*{' ' * max(1, 9 - len(lbl_asr))}`{t_asr}`\n"
-        f"  ▫️ *{lbl_maghrib}:*{' ' * max(1, 9 - len(lbl_maghrib))}`{t_maghrib}`\n"
-        f"  ▫️ *{lbl_isha}:*{' ' * max(1, 9 - len(lbl_isha))}`{t_isha}`\n"
+        f"  ▫️ *{lbls[0]}:*    `{t_f}`\n"
+        f"  ▫️ *{lbls}:*    `{t_s}`\n"
+        f"  ▫️ *{lbls}:*    `{t_d}`\n"
+        f"  ▫️ *{lbls}:*    `{t_a}`\n"
+        f"  ▫️ *{lbls}:*    `{t_m}`\n"
+        f"  ▫️ *{lbls}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
-        f"{footer}"
+        f"_{source}_"
     )
-    return card
 
 # =====================================================================
-# SAHİH ZİKİRLER VERİTABANI
+# CANLI İNTERAKTİF ZAMANLAYICI PANELİ & TAKVİM
 # =====================================================================
-ADHKAAR_DATA = {
-    'morning': [
-        {
-            'count': "1x",
-            'arabic': "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
-            'uz': "Biz ham, butun mulk ham Allohga tegishli boʻlgan holda tong ottirdik. Hamd Allohgadir. Allohdan oʻzga iloh yoʻq, U yagonadir va sherigi yoʻqdir.",
-            'tr': "Biz de mülk de Allah için sabaha erdik. Hamd Allah'adır. Allah'tan başka ilah yoktur, O tektir ve ortağı yoktur.",
-            'ru': "Мы дожили до утра, и утро встретила власть, принадлежащая Аллаху. Хвала Аллаху.",
-            'en': "We have entered the morning and the kingdom belongs to Allah. All praise is due to Allah."
-        }
-    ],
-    'evening': [
-        {
-            'count': "1x",
-            'arabic': "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
-            'uz': "Biz ham, butun mulk ham Allohga tegishli boʻlgan holda kechga yetdik. Hamd Allohgadir.",
-            'tr': "Biz de mülk de Allah için akşama erdik. Hamd Allah'adır.",
-            'ru': "Мы дожили до вечера, и вечер встретила власть, принадлежащая Аллаху. Хвала Аллаху.",
-            'en': "We have reached the evening and at this very time unto Allah belongs all dominion, and all praise is for Allah."
-        }
+def format_scheduler_card(title: str, dt: datetime, lang: str = 'uz') -> str:
+    month_names = ["", "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"]
+    clean_title = re.sub(r"[*_`\[\]]", "", title)
+    return (
+        f"*NUN PROJECT // VAQTNI SOZLASH*\n"
+        f"📌 Fan / Imtihon: *{clean_title}*\n\n"
+        f"┌──────────────────────────────┐\n"
+        f"  🗓 Sana:   `{dt.day} {month_names[dt.month]} {dt.year}`\n"
+        f"  ⏰ Vaqt:   `{dt.strftime('%H : %M')}`\n"
+        f"└──────────────────────────────┘\n"
+        f"_Quyidagi tugmalar orqali vaqtni sozlang:_"
+    )
+
+def build_scheduler_keyboard(lang: str = 'uz') -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Kun", callback_data="sched_day_prev"), InlineKeyboardButton("Kun ▶️", callback_data="sched_day_next")],
+        [InlineKeyboardButton("➖ 1 soat", callback_data="sched_hour_minus"), InlineKeyboardButton("➕ 1 soat", callback_data="sched_hour_plus")],
+        [InlineKeyboardButton("➖ 15 daq", callback_data="sched_min_minus"), InlineKeyboardButton("➕ 15 daq", callback_data="sched_min_plus")],
+        [InlineKeyboardButton("⚡ Bugun", callback_data="sched_jump_today"), InlineKeyboardButton("⚡ Ertaga", callback_data="sched_jump_tmrw"), InlineKeyboardButton("⚡ 1 hafta", callback_data="sched_jump_week")],
+        [InlineKeyboardButton("🗓 Taqvimdan tanlash", callback_data="sched_open_cal")],
+        [InlineKeyboardButton("✅ TASDIQLASH VA SAQLASH", callback_data="sched_confirm")],
+        [InlineKeyboardButton("❌ Bekor qilish", callback_data="sched_cancel")],
+    ])
+
+def build_month_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyboardMarkup:
+    m_names = ["", "Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"]
+    w_days = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"]
+    rows = [
+        [
+            InlineKeyboardButton("◀️", callback_data=f"cal_nav_{year if month > 1 else year - 1}_{month - 1 if month > 1 else 12}"),
+            InlineKeyboardButton(f"{m_names[month]} {year}", callback_data="cal_ignore"),
+            InlineKeyboardButton("▶️", callback_data=f"cal_nav_{year if month < 12 else year + 1}_{month + 1 if month < 12 else 1}"),
+        ],
+        [InlineKeyboardButton(d, callback_data="cal_ignore") for d in w_days]
     ]
-}
+    cal = calendar.monthcalendar(year, month)
+    today = datetime.now()
+    for week in cal:
+        r = []
+        for d in week:
+            if d == 0:
+                r.append(InlineKeyboardButton(" ", callback_data="cal_ignore"))
+            else:
+                label = f"•{d}•" if (today.year == year and today.month == month and today.day == d) else str(d)
+                r.append(InlineKeyboardButton(label, callback_data=f"cal_pick_{year:04d}-{month:02d}-{d:02d}"))
+        rows.append(r)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="cal_back_panel")])
+    return InlineKeyboardMarkup(rows)
 
-def format_adhkar_card(period: str, lang: str = 'uz') -> str:
-    items = ADHKAAR_DATA.get(period, [])
-    header = "*NUN PROJECT // TONGGI ZIKRLAR*\n" if period == 'morning' else "*NUN PROJECT // KECHKI ZIKRLAR*\n"
-    lines = [header]
-    for idx, item in enumerate(items, 1):
-        count_str = item.get('count', '1x')
-        arabic = item.get('arabic', '')
-        meaning = item.get(lang, item.get('uz', ''))
-        lines.append(f"▫️ *Zikr* `[{count_str}]`\n📖 {arabic}\n\n💬 _{meaning}_\n────────────────────────────")
-    return "\n".join(lines)
+async def safe_edit_text_markup(message, text: str, reply_markup=None, parse_mode=None):
+    try:
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception:
+        try:
+            await message.edit_text(text.replace("*", "").replace("_", "").replace("`", ""), reply_markup=reply_markup)
+        except Exception:
+            pass
 
 # =====================================================================
-# METİNLER
+# MENÜLER VE METİNLER
 # =====================================================================
 TEXTS = {
     'uz': {
-        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\n\nKerakli boʻlimni tanlang:",
+        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\nQuyidagi menyudan kerakli boʻlimni tanlang:",
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
         'btn_prayer': "🕌 Namoz vaqtlari",
+        'btn_pdf_hub': "📄 PDF & Hujjatlar",
+        'btn_exam': "🎓 Imtihon & Taymer",
+        'btn_schedule_img': "🗓️ Dars Jadvali (Rasm)",
+        'btn_pomodoro': "⏱️ Pomodoro & Eslatma",
         'btn_adhkar': "📿 Zikrlar",
         'btn_translit': "🔤 Krill ⇄ Lotin",
-        'btn_pdf': "📄 Rasm ➔ PDF",
-        'btn_exam': "🎓 Imtihon & Taymer",
         'btn_lang': "🌐 Tilni tanlash",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
-        'prompt_adhkar': "📿 *NUN PROJECT // ZIKRLAR*\n\nQaysi zikrlarni oʻqimoqchisiz? Tanlang:",
-        'btn_morning_adhkar': "🌅 Tonggi zikrlar",
-        'btn_evening_adhkar': "🌇 Kechki zikrlar",
-        'prompt_translit': "✍️ Matningizni yuboring. Bot uni avtomatik ravishda oʻgirib beradi:",
-        'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
-        'prompt_pdf': "📸 PDF formatiga oʻgirmoqchi boʻlgan rasmni yuboring (JPG, PNG):",
-        'pdf_processing': "⚙️ Rasm PDF formatiga oʻtkazilmoqda...",
-        'pdf_success': "✅ Rasm muvaffaqiyatli PDF hujjatiga aylantirildi!",
-        'pdf_error': "❌ Rasmni PDF-ga aylantirishda xatolik yuz berdi.",
-        'exam_title': "🎓 *NUN PROJECT // IMTIHONLAR VA DARS JADVALI*",
-        'exam_empty': "Sizda hali saqlangan imtihon yoki muhim sana yoʻq.\nQuyidagi tugma orqali yangi imtihon qoʻshishingiz mumkin:",
-        'exam_btn_add': "➕ Imtihon qoʻshish",
-        'exam_btn_del': "🗑️ Imtihonni oʻchirish",
-        'exam_prompt_title': "🎓 *NUN PROJECT // IMTIHON QO'SHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Oraliq*, *Ingliz tili Final*)_",
-        'exam_add_success': "✅ Imtihon muvaffaqiyatli saqlandi!",
-        'exam_choose_del': "🗑️ Oʻchirmoqchi boʻlgan imtihonni tanlang:",
-        'exam_deleted': "🗑️ Imtihon muvaffaqiyatli oʻchirildi.",
-        'downloading': "⏳ Video yuklab olinmoqda, iltimos kuting...",
-        'uploading': "📤 Telegramga yuklanmoqda...",
-        'error_size': "⚠️ Fayl hajmi Telegram cheklovidan (50 MB) katta.",
-        'error_general': "❌ Xatolik yuz berdi. Qaytadan urinib koʻring.",
-        'city_not_found': "❌ Shahar aniqlanmadi. Iltimos, shahar nomini toʻgʻri yozing.",
-        'lang_changed': "✅ Til muvaffaqiyatli oʻzgartirildi!",
     },
     'tr': {
-        'welcome': "Merhaba! Nun Bota hoş geldiniz.\n\nAşağıdaki menüden işlem seçiniz:",
+        'welcome': "Merhaba! Nun Bota hoş geldiniz.\nAşağıdaki menüden işlem seçiniz:",
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
         'btn_prayer': "🕌 Namaz Vakitleri",
+        'btn_pdf_hub': "📄 PDF & Belge Araçları",
+        'btn_exam': "🎓 Sınav & Geri Sayım",
+        'btn_schedule_img': "🗓️ Ders Programı (Görsel)",
+        'btn_pomodoro': "⏱️ Pomodoro & Hatırlatıcı",
         'btn_adhkar': "📿 Zikirler",
         'btn_translit': "🔤 Kiril ⇄ Latin",
-        'btn_pdf': "📄 Fotoğraf ➔ PDF",
-        'btn_exam': "🎓 Sınav & Geri Sayım",
         'btn_lang': "🌐 Dil Seçimi",
-        'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
-        'prompt_adhkar': "📿 *NUN PROJECT // ZİKİRLER*\n\nHangi zikirleri okumak istersiniz?",
-        'btn_morning_adhkar': "🌅 Sabah Zikirleri",
-        'btn_evening_adhkar': "🌇 Akşam Zikirleri",
-        'prompt_translit': "✍️ Metninizi gönderin. Bot otomatik olarak alfabeyi çevirecektir:",
-        'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
-        'prompt_pdf': "📸 PDF formatına dönüştürmek istediğiniz fotoğrafı gönderin (JPG, PNG):",
-        'pdf_processing': "⚙️ Fotoğraf PDF belgesine dönüştürülüyor...",
-        'pdf_success': "✅ Fotoğraf başarıyla PDF belgesine dönüştürüldü!",
-        'pdf_error': "❌ PDF dönüştürme işlemi sırasında bir hata oluştu.",
-        'exam_title': "🎓 *NUN PROJECT // SINAV TAKVİMİ & GERİ SAYIM*",
-        'exam_empty': "Henüz kayıtlı bir sınavınız bulunmuyor.\nAşağıdaki butona basarak yeni bir sınav ekleyebilirsiniz:",
-        'exam_btn_add': "➕ Sınav Ekle",
-        'exam_btn_del': "🗑️ Sınav Sil",
-        'exam_prompt_title': "🎓 *NUN PROJECT // SINAV EKLE*\n\n✍️ Sınav veya dersin adını yazıp gönderin:\n_(Örneğin: *Yüksek Matematik*, *Fizik Vize*, *İngilizce*)_",
-        'exam_add_success': "✅ Sınav başarıyla kaydedildi!",
-        'exam_choose_del': "🗑️ Silmek istediğiniz sınavı seçiniz:",
-        'exam_deleted': "🗑️ Sınav başarıyla silindi.",
-        'downloading': "⏳ Medya indiriliyor, lütfen bekleyin...",
-        'uploading': "📤 Telegram'a yükleniyor...",
-        'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
-        'error_general': "❌ Bir hata oluştu. Lütfen tekrar deneyin.",
-        'city_not_found': "❌ Şehir bulunamadı. Lütfen geçerli bir şehir adı yazın.",
-        'lang_changed': "✅ Dil başarıyla değiştirildi!",
-    },
-    'ru': {
-        'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\n\nВыберите действие в меню:",
-        'menu_title': "📋 Главное меню:",
-        'btn_video': "🎬 Скачать видео",
-        'btn_prayer': "🕌 Время намаза",
-        'btn_adhkar': "📿 Зикры",
-        'btn_translit': "🔤 Кириллица ⇄ Латиница",
-        'btn_pdf': "📄 Фото ➔ PDF",
-        'btn_exam': "🎓 Экзамены и Таймер",
-        'btn_lang': "🌐 Сменить язык",
-        'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*...)_",
-        'prompt_adhkar': "📿 *NUN PROJECT // ЗИКРЫ*\n\nВыберите категорию зикров:",
-        'btn_morning_adhkar': "🌅 Утренние зикры",
-        'btn_evening_adhkar': "🌇 Вечерние зикры",
-        'prompt_translit': "✍️ Отправьте текст для автоматического перевода:",
-        'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
-        'prompt_pdf': "📸 Отправьте фото для конвертации в PDF (JPG, PNG):",
-        'pdf_processing': "⚙️ Конвертация фото в PDF...",
-        'pdf_success': "✅ Фото успешно конвертировано в PDF!",
-        'pdf_error': "❌ Ошибка при конвертации фото в PDF.",
-        'exam_title': "🎓 *NUN PROJECT // РАСПИСАНИЕ И ТАЙМЕР ЭКЗАМЕНОВ*",
-        'exam_empty': "У вас пока нет сохраненных экзаменов.\nВы можете добавить новый ниже:",
-        'exam_btn_add': "➕ Добавить экзамен",
-        'exam_btn_del': "🗑️ Удалить экзамен",
-        'exam_prompt_title': "🎓 *NUN PROJECT // ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*)_",
-        'exam_add_success': "✅ Экзамен успешно сохранен!",
-        'exam_choose_del': "🗑️ Выберите экзамен для удаления:",
-        'exam_deleted': "🗑️ Экзамен успешно удален.",
-        'downloading': "⏳ Скачивается, пожалуйста подождите...",
-        'uploading': "📤 Отправка в Telegram...",
-        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
-        'error_general': "❌ Произошла ошибка. Попробуйте снова.",
-        'city_not_found': "❌ Город не распознан. Пожалуйста, напишите заново.",
-        'lang_changed': "✅ Язык успешно изменен!",
-    },
-    'en': {
-        'welcome': "Hello! Welcome to Nun Bot.\n\nChoose an action from the menu:",
-        'menu_title': "📋 Main Menu:",
-        'btn_video': "🎬 Download Video",
-        'btn_prayer': "🕌 Prayer Times",
-        'btn_adhkar': "📿 Adhkar",
-        'btn_translit': "🔤 Cyrillic ⇄ Latin",
-        'btn_pdf': "📄 Photo ➔ PDF",
-        'btn_exam': "🎓 Exams & Countdown",
-        'btn_lang': "🌐 Change Language",
-        'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name to get prayer times:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*...)_",
-        'prompt_adhkar': "📿 *NUN PROJECT // ADHKAR*\n\nChoose category:",
-        'btn_morning_adhkar': "🌅 Morning Adhkar",
-        'btn_evening_adhkar': "🌇 Evening Adhkar",
-        'prompt_translit': "✍️ Send your text to convert:",
-        'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
-        'prompt_pdf': "📸 Send the photo you want to convert to PDF (JPG, PNG):",
-        'pdf_processing': "⚙️ Converting photo to PDF...",
-        'pdf_success': "✅ Photo successfully converted to PDF!",
-        'pdf_error': "❌ An error occurred during PDF conversion.",
-        'exam_title': "🎓 *NUN PROJECT // EXAM COUNTDOWN & SCHEDULE*",
-        'exam_empty': "You don't have any saved exams yet.\nUse the button below to add one:",
-        'exam_btn_add': "➕ Add Exam",
-        'exam_btn_del': "🗑️ Delete Exam",
-        'exam_prompt_title': "🎓 *NUN PROJECT // ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*)_",
-        'exam_add_success': "✅ Exam successfully saved!",
-        'exam_choose_del': "🗑️ Select an exam to delete:",
-        'exam_deleted': "🗑️ Exam successfully deleted.",
-        'downloading': "⏳ Downloading media, please wait...",
-        'uploading': "📤 Uploading to Telegram...",
-        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
-        'error_general': "❌ An error occurred. Please try again.",
-        'city_not_found': "❌ City could not be detected. Please try again.",
-        'lang_changed': "✅ Language updated successfully!",
     }
 }
 
-DOWNLOAD_SEMAPHORE = asyncio.Semaphore(1)
-
-def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE = None) -> str:
+def get_text(user_id, key, context=None):
     lang = get_user_lang(user_id, context)
     return TEXTS.get(lang, TEXTS['uz']).get(key, '')
 
 def get_reply_menu(user_id, context=None):
     lang = get_user_lang(user_id, context)
+    t = TEXTS.get(lang, TEXTS['uz'])
     return ReplyKeyboardMarkup([
-        [KeyboardButton(TEXTS[lang]['btn_video']), KeyboardButton(TEXTS[lang]['btn_prayer'])],
-        [KeyboardButton(TEXTS[lang]['btn_adhkar']), KeyboardButton(TEXTS[lang]['btn_translit'])],
-        [KeyboardButton(TEXTS[lang]['btn_pdf']), KeyboardButton(TEXTS[lang]['btn_exam'])],
-        [KeyboardButton(TEXTS[lang]['btn_lang'])]
+        [KeyboardButton(t['btn_video']), KeyboardButton(t['btn_prayer'])],
+        [KeyboardButton(t['btn_pdf_hub']), KeyboardButton(t['btn_exam'])],
+        [KeyboardButton(t['btn_pomodoro']), KeyboardButton(t['btn_schedule_img'])],
+        [KeyboardButton(t['btn_adhkar']), KeyboardButton(t['btn_translit'])],
+        [KeyboardButton(t['btn_lang'])]
     ], resize_keyboard=True)
 
-def get_language_keyboard():
+def get_pdf_hub_keyboard(lang: str = 'uz'):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
-        [InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+        [InlineKeyboardButton("📸 Rasm / Word / Excel ➔ PDF", callback_data="pdf_act_to_pdf")],
+        [InlineKeyboardButton("📑 PDF ➔ Word (.docx)", callback_data="pdf_act_to_word")],
+        [InlineKeyboardButton("🗂️ PDF Birlashtirish (Merge)", callback_data="pdf_act_merge")],
+        [InlineKeyboardButton("✂️ PDF Ajratish (Split)", callback_data="pdf_act_split")],
+        [InlineKeyboardButton("🔍 Rasmdan Matn Olish (OCR)", callback_data="pdf_act_ocr")],
     ])
 
-def get_adhkar_selection_keyboard(user_id, context=None):
+def get_pomodoro_keyboard():
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(get_text(user_id, 'btn_morning_adhkar', context), callback_data="adhkar_morning"),
-            InlineKeyboardButton(get_text(user_id, 'btn_evening_adhkar', context), callback_data="adhkar_evening"),
-        ]
-    ])
-
-def get_exam_management_keyboard(user_id, context=None):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add"),
-            InlineKeyboardButton(get_text(user_id, 'exam_btn_del', context), callback_data="exam_del_menu"),
-        ]
+        [InlineKeyboardButton("🍅 25 Dk Ish", callback_data="pomo_25"), InlineKeyboardButton("☕ 5 Dk Mola", callback_data="pomo_5")],
+        [InlineKeyboardButton("🍅 50 Dk Ish", callback_data="pomo_50"), InlineKeyboardButton("☕ 10 Dk Mola", callback_data="pomo_10")],
+        [InlineKeyboardButton("⏰ Yangi Eslatma Qoʻshish", callback_data="remind_add"), InlineKeyboardButton("📋 Eslatmalarim", callback_data="remind_list")]
     ])
 
 # =====================================================================
 # VİDEO İNDİRME MOTORU
 # =====================================================================
-SUPPORTED_PLATFORMS = [
-    r'(?:instagram\.com)',
-    r'(?:tiktok\.com)',
-    r'(?:facebook\.com|fb\.watch|fb\.gg)',
-    r'(?:twitter\.com|x\.com)',
-]
+SUPPORTED_PLATFORMS = [r'(?:instagram\.com)', r'(?:tiktok\.com)', r'(?:facebook\.com|fb\.watch|fb\.gg)', r'(?:twitter\.com|x\.com)']
 
 def is_supported_url(url: str) -> bool:
     return any(re.search(p, url, re.IGNORECASE) for p in SUPPORTED_PLATFORMS)
 
-def get_downloaded_media_file(directory: str):
-    valid_files = []
-    for f in os.listdir(directory):
-        full_path = os.path.join(directory, f)
-        if os.path.isfile(full_path):
-            if not f.endswith(('.part', '.ytdl', '.temp', '.aria2', '.json', '.jpg', '.jpeg', '.png', '.webp', '.vtt', '.srt')):
-                if os.path.getsize(full_path) > 10 * 1024:
-                    valid_files.append(full_path)
-    if not valid_files:
-        return None
-    valid_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
-    return valid_files[0]
-
-async def safe_edit_text(msg, text):
-    try:
-        await msg.edit_text(text)
-    except Exception:
-        pass
-
 def download_media_sync(url: str, download_dir: str):
-    has_ffmpeg = shutil.which('ffmpeg') is not None
     opts = {
         'outtmpl': os.path.join(download_dir, 'media_%(id)s.%(ext)s'),
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'socket_timeout': 30,
-        'retries': 5,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
+        'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
         'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio/best',
     }
-    if has_ffmpeg:
+    if shutil.which('ffmpeg'):
         opts['merge_output_format'] = 'mp4'
-
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         title = info.get('title', 'Video') if info else 'Video'
-        final_file = get_downloaded_media_file(download_dir)
-        if not final_file:
-            raise RuntimeError("Dosya indirilemedi.")
-        return final_file, title
-
-async def process_download(status_msg, user_id, chat_id, url, context):
-    async with DOWNLOAD_SEMAPHORE:
-        try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                file_path, title = await asyncio.to_thread(download_media_sync, url, tmp_dir)
-
-                size_mb = os.path.getsize(file_path) / (1024 * 1024)
-                if size_mb > 49.5:
-                    await safe_edit_text(status_msg, get_text(user_id, 'error_size', context))
-                    return
-
-                await safe_edit_text(status_msg, get_text(user_id, 'uploading', context))
-                clean_title = re.sub(r'[\\/*?:"<>|]', '', title)[:60]
-
-                try:
-                    with open(file_path, 'rb') as f:
-                        await context.bot.send_video(
-                            chat_id=chat_id,
-                            video=f,
-                            caption=f"🎬 {clean_title}",
-                            supports_streaming=True,
-                            read_timeout=300,
-                            write_timeout=300,
-                            connect_timeout=60,
-                        )
-                except Exception:
-                    with open(file_path, 'rb') as f:
-                        await context.bot.send_document(
-                            chat_id=chat_id,
-                            document=f,
-                            caption=f"🎬 {clean_title}",
-                            read_timeout=300,
-                            write_timeout=300,
-                            connect_timeout=60,
-                        )
-
-                try:
-                    await status_msg.delete()
-                except Exception:
-                    pass
-
-        except Exception as e:
-            print(f"İndirme Hatası [{url}]: {e}")
-            await safe_edit_text(status_msg, get_text(user_id, 'error_general', context))
+        for f in os.listdir(download_dir):
+            p = os.path.join(download_dir, f)
+            if os.path.isfile(p) and os.path.getsize(p) > 10 * 1024:
+                return p, title
+    raise RuntimeError("Dosya indirilemedi.")
 
 # =====================================================================
-# TELEGRAM ETKİLEŞİM İŞLEYİCİLERİ
+# TELEGRAM HANDLERS
 # =====================================================================
-async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: int, lang: str):
-    commands_map = {
-        'uz': [
-            BotCommand("start", "Botni ishga tushirish"),
-            BotCommand("menu", "Asosiy menyu"),
-            BotCommand("namoz", "Namoz vaqtlari"),
-            BotCommand("zikr", "Tonggi va kechki zikrlar"),
-            BotCommand("pdf", "Rasm ➔ PDF aylantirish"),
-            BotCommand("imtihon", "Imtihonlar taymeri"),
-        ],
-        'ru': [
-            BotCommand("start", "Запустить бота"),
-            BotCommand("menu", "Главное меню"),
-            BotCommand("namaz", "Время намаза"),
-            BotCommand("zikr", "Утренние и вечерние зикры"),
-            BotCommand("pdf", "Конвертировать фото в PDF"),
-            BotCommand("exam", "Таймер экзаменов"),
-        ],
-        'en': [
-            BotCommand("start", "Start the bot"),
-            BotCommand("menu", "Main menu"),
-            BotCommand("prayer", "Prayer times"),
-            BotCommand("zikr", "Morning and evening adhkar"),
-            BotCommand("pdf", "Convert photo to PDF"),
-            BotCommand("exam", "Exam countdown timer"),
-        ],
-        'tr': [
-            BotCommand("start", "Botu başlat"),
-            BotCommand("menu", "Ana menü"),
-            BotCommand("namaz", "Namaz vakitleri"),
-            BotCommand("zikr", "Sabah ve akşam zikirleri"),
-            BotCommand("pdf", "Fotoğraf ➔ PDF dönüştürücü"),
-            BotCommand("sinav", "Sınav takvimi & Geri sayım"),
-        ],
-    }
-    try:
-        cmds = commands_map.get(lang, commands_map['uz'])
-        await context.bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id=user_id))
-    except Exception:
-        pass
-
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
     if str(user_id) not in USER_LANGS:
-        tele_lang = update.effective_user.language_code or 'uz'
-        if tele_lang.startswith('tr'):
-            init_lang = 'tr'
-        elif tele_lang.startswith('ru'):
-            init_lang = 'ru'
-        elif tele_lang.startswith('en'):
-            init_lang = 'en'
-        else:
-            init_lang = 'uz'
-        save_user_lang(user_id, init_lang)
-        if context and context.user_data is not None:
-            context.user_data['lang'] = init_lang
-
-    current_lang = get_user_lang(user_id, context)
-    await update_user_bot_commands(context, user_id, current_lang)
-    await update.message.reply_text(
-        "Tilni tanlang / Lütfen dil seçin / Выберите язык / Select language:",
-        reply_markup=get_language_keyboard()
-    )
+        save_user_lang(user_id, 'uz')
+    await update.message.reply_text(get_text(user_id, 'welcome', context), reply_markup=get_reply_menu(user_id, context))
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if context.user_data:
         context.user_data['mode'] = 'auto'
-        context.user_data.pop('exam_draft_title', None)
-        context.user_data.pop('exam_draft_dt', None)
-
-    await update.message.reply_text(
-        get_text(user_id, 'menu_title', context),
-        reply_markup=get_reply_menu(user_id, context)
-    )
-
-async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_lang = get_user_lang(user_id, context)
-
-    if context.args:
-        city_query = " ".join(context.args)
-        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(city_query)
-        if timings:
-            disp_name = resolved_name.title() if resolved_name else city_query.title()
-            card = format_nun_prayer_card(disp_name, city_query, timings, g_date, h_str, source_note, user_lang)
-            try:
-                await update.message.reply_text(card, parse_mode="Markdown")
-            except Exception:
-                await update.message.reply_text(card)
-            context.user_data['mode'] = 'prayer'
-            return
-        else:
-            await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
-            return
-
-    context.user_data['mode'] = 'prayer'
-    await update.message.reply_text(
-        get_text(user_id, 'prompt_prayer', context),
-        parse_mode="Markdown"
-    )
-
-async def adhkar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    await update.message.reply_text(
-        get_text(user_id, 'prompt_adhkar', context),
-        reply_markup=get_adhkar_selection_keyboard(user_id, context),
-        parse_mode="Markdown"
-    )
-
-async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    context.user_data['mode'] = 'pdf'
-    await update.message.reply_text(get_text(user_id, 'prompt_pdf', context))
-
-async def exam_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_lang = get_user_lang(user_id, context)
-    exams = get_user_exams(user_id)
-
-    header = get_text(user_id, 'exam_title', context)
-    if not exams:
-        body = get_text(user_id, 'exam_empty', context)
-        text = f"{header}\n\n{body}"
-    else:
-        cards = [format_exam_countdown(e, user_lang) for e in exams]
-        text = f"{header}\n\n" + "\n".join(cards)
-
-    msg = update.message if update.message else update.callback_query.message
-    await msg.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=get_exam_management_keyboard(user_id, context)
-    )
+    await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1325,264 +788,293 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_lang = get_user_lang(user_id, context)
 
-    # 1. DİL DEĞİŞİMİ
+    # 1. DİL DEĞİŞTİRME
     if data.startswith("lang_"):
-        selected_lang = data.replace("lang_", "", 1).strip()
-        if selected_lang not in TEXTS:
-            selected_lang = 'uz'
-
-        save_user_lang(user_id, selected_lang)
-        if context and context.user_data is not None:
-            context.user_data['lang'] = selected_lang
-
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-        await update_user_bot_commands(context, user_id, selected_lang)
-        new_menu = get_reply_menu(user_id, context)
-        welcome_text = TEXTS[selected_lang]['welcome']
-        changed_text = TEXTS[selected_lang]['lang_changed']
-
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ {changed_text}\n\n{welcome_text}",
-            reply_markup=new_menu
-        )
+        l_code = data.replace("lang_", "", 1).strip()
+        save_user_lang(user_id, l_code)
+        try: await query.message.delete()
+        except Exception: pass
+        await context.bot.send_message(chat_id=user_id, text=f"✅ {get_text(user_id, 'welcome', context)}", reply_markup=get_reply_menu(user_id, context))
         return
 
-    # 2. ZİKİR SEÇİMİ
-    if data in ("adhkar_morning", "adhkar_evening"):
-        period = "morning" if data == "adhkar_morning" else "evening"
-        card = format_adhkar_card(period, user_lang)
-        other_period = "evening" if period == "morning" else "morning"
-        other_btn_text = get_text(user_id, f'btn_{other_period}_adhkar', context)
-        nav_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"➡️ {other_btn_text}", callback_data=f"adhkar_{other_period}")]
-        ])
-        try:
-            await query.message.reply_text(card, parse_mode="Markdown", reply_markup=nav_keyboard)
-        except Exception:
-            await query.message.reply_text(card, reply_markup=nav_keyboard)
+    # 2. PDF ARAÇLARI MERKEZİ
+    if data == "pdf_act_to_pdf":
+        context.user_data['mode'] = 'convert_to_pdf'
+        await query.message.reply_text("📸 PDF formatiga oʻtkazmoqchi boʻlgan faylni yuboring (Rasm, Word, Excel yoki TXT):")
+        return
+    if data == "pdf_act_to_word":
+        context.user_data['mode'] = 'pdf_to_word'
+        await query.message.reply_text("📑 Word (.docx) formatiga oʻtkazmoqchi boʻlgan PDF faylni yuboring:")
+        return
+    if data == "pdf_act_merge":
+        context.user_data['mode'] = 'pdf_merge'
+        context.user_data['merge_files'] = []
+        await query.message.reply_text("🗂️ Birlashtirmoqchi boʻlgan PDF fayllarni birin-ketin yuboring.\nTugatgach, [ ✅ Birlashtirish ] tugmasini bosing:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Birlashtirish", callback_data="do_pdf_merge")]]))
+        return
+    if data == "pdf_act_split":
+        context.user_data['mode'] = 'pdf_split_wait_file'
+        await query.message.reply_text("✂️ Sahifalarini ajratmoqchi boʻlgan PDF faylni yuboring:")
+        return
+    if data == "pdf_act_ocr":
+        context.user_data['mode'] = 'ocr'
+        await query.message.reply_text("🔍 Matnini oʻqib olmoqchi boʻlgan kitob yoki taxta rasmini yuboring:")
         return
 
-    # 3. YENİ SINAV EKLEME: SADECE ADINI İSTE
+    # 3. PDF MERGE İŞLEMİ ÇALIŞTIRMA
+    if data == "do_pdf_merge":
+        files = context.user_data.get('merge_files', [])
+        if len(files) < 2:
+            await query.message.reply_text("⚠️ Kamida 2 ta PDF fayl yuborishingiz kerak.")
+            return
+        status = await query.message.reply_text("⚙️ PDF hujjatlari birlashtirilmoqda...")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pdf = os.path.join(tmp_dir, "nun_birlashtirilgan.pdf")
+            if merge_pdfs(files, out_pdf):
+                with open(out_pdf, "rb") as f:
+                    await query.message.reply_document(document=f, filename="nun_birlashtirilgan.pdf", caption="✅ PDF muvaffaqiyatli birlashtirildi!")
+            else:
+                await query.message.reply_text("❌ PDF fayllarini birlashtirishda xatolik yuz berdi.")
+        context.user_data.pop('merge_files', None)
+        context.user_data['mode'] = 'auto'
+        try: await status.delete()
+        except Exception: pass
+        return
+
+    # 4. POMODORO ZAMANLAYICISI
+    if data.startswith("pomo_"):
+        mins = int(data.replace("pomo_", "", 1))
+        is_break = mins in (5, 10)
+        end_time = datetime.now() + timedelta(minutes=mins)
+        label = "Dam olish" if is_break else "Odaklanish darsi"
+        await query.message.reply_text(f"🍅 *POMODORO BOSHLANDI*\n\n📌 *Rejim:* {label}\n⏳ *Davomiyligi:* `{mins} daqiqa`\n🏁 *Tugash vaqti:* `{end_time.strftime('%H:%M')}`", parse_mode="Markdown")
+        asyncio.create_task(pomodoro_timer_task(context.bot, user_id, mins, is_break, user_lang))
+        return
+
+    if data == "remind_add":
+        context.user_data['mode'] = 'remind_input'
+        await query.message.reply_text("⏰ Eslatmani quyidagi formatda yuboring:\n\n`Vazifa - Sana Soat` yoki `Vazifa - Daqiqa`\n\n*Namuna:*\n`Kitob o'qish - 18:30`\nyoki\n`Choyni o'chirish - 20 daqiqa`", parse_mode="Markdown")
+        return
+
+    if data == "remind_list":
+        rems = get_user_reminders(user_id)
+        if not rems:
+            await query.message.reply_text("Sizda faol eslatmalar yoʻq.")
+            return
+        lines = ["📋 *FAOL ESLATMALAR:*\n"]
+        btns = []
+        for r in rems:
+            lines.append(f"▫️ {r.get('text')} — `{r.get('time')}`")
+            btns.append([InlineKeyboardButton(f"❌ Oʻchirish: {r.get('text')[:15]}", callback_data=f"del_rem_{r.get('id')}")])
+        await query.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns))
+        return
+
+    if data.startswith("del_rem_"):
+        r_id = data.replace("del_rem_", "", 1)
+        delete_user_reminder(user_id, r_id)
+        try: await query.message.delete()
+        except Exception: pass
+        await query.message.reply_text("🗑️ Eslatma oʻchirildi.")
+        return
+
+    # 5. SINAV EKLEME & ZAMANLAYICI PANELİ (SEÇENEK A)
     if data == "exam_add":
         context.user_data['mode'] = 'exam_title_input'
-        await query.message.reply_text(
-            get_text(user_id, 'exam_prompt_title', context),
-            parse_mode="Markdown"
-        )
+        await query.message.reply_text("🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_", parse_mode="Markdown")
         return
 
-    # 4. CANLI ZAMANLAYICI PANELİ ETKİLEŞİMLERİ (SEÇENEK A)
     if data.startswith("sched_"):
-        cur_dt = context.user_data.get('exam_draft_dt')
-        if not cur_dt:
-            now = datetime.now()
-            cur_dt = (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
-            context.user_data['exam_draft_dt'] = cur_dt
-
+        cur_dt = context.user_data.get('exam_draft_dt') or ((datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0))
         title = context.user_data.get('exam_draft_title', 'Imtihon')
-
-        # Gün Arttır / Azalt
-        if data == "sched_day_prev":
-            cur_dt = cur_dt - timedelta(days=1)
-        elif data == "sched_day_next":
-            cur_dt = cur_dt + timedelta(days=1)
-        # Saat Arttır / Azalt
-        elif data == "sched_hour_minus":
-            cur_dt = cur_dt - timedelta(hours=1)
-        elif data == "sched_hour_plus":
-            cur_dt = cur_dt + timedelta(hours=1)
-        # Dakika Arttır / Azalt (15 Dakikalık adımlarla kaydırma)
-        elif data == "sched_min_minus":
-            cur_dt = cur_dt - timedelta(minutes=15)
-        elif data == "sched_min_plus":
-            cur_dt = cur_dt + timedelta(minutes=15)
-        # Kısayollar
-        elif data == "sched_jump_today":
-            now = datetime.now()
-            cur_dt = cur_dt.replace(year=now.year, month=now.month, day=now.day)
-        elif data == "sched_jump_tmrw":
-            tmrw = datetime.now() + timedelta(days=1)
-            cur_dt = cur_dt.replace(year=tmrw.year, month=tmrw.month, day=tmrw.day)
-        elif data == "sched_jump_week":
-            nxt = datetime.now() + timedelta(days=7)
-            cur_dt = cur_dt.replace(year=nxt.year, month=nxt.month, day=nxt.day)
-        # Resim 2'deki Tam Aylık Takvimi Aç
+        if data == "sched_day_prev": cur_dt -= timedelta(days=1)
+        elif data == "sched_day_next": cur_dt += timedelta(days=1)
+        elif data == "sched_hour_minus": cur_dt -= timedelta(hours=1)
+        elif data == "sched_hour_plus": cur_dt += timedelta(hours=1)
+        elif data == "sched_min_minus": cur_dt -= timedelta(minutes=15)
+        elif data == "sched_min_plus": cur_dt += timedelta(minutes=15)
+        elif data == "sched_jump_today": now = datetime.now(); cur_dt = cur_dt.replace(year=now.year, month=now.month, day=now.day)
+        elif data == "sched_jump_tmrw": tmrw = datetime.now() + timedelta(days=1); cur_dt = cur_dt.replace(year=tmrw.year, month=tmrw.month, day=tmrw.day)
+        elif data == "sched_jump_week": nxt = datetime.now() + timedelta(days=7); cur_dt = cur_dt.replace(year=nxt.year, month=nxt.month, day=nxt.day)
         elif data == "sched_open_cal":
-            month_kb = build_month_calendar(cur_dt.year, cur_dt.month, user_lang)
-            cal_title = "🗓 *NUN PROJECT // TAQVIM*" if user_lang == 'uz' else "*NUN PROJECT // TAKVİM*"
-            await safe_edit_text_markup(query.message, f"{cal_title}\n📌 Fan: *{title}*", month_kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, f"🗓 *TAQVIM*\n📌 Fan: *{title}*", build_month_calendar(cur_dt.year, cur_dt.month, user_lang), parse_mode="Markdown")
             return
-        # ONAYLA VE KAYDET
         elif data == "sched_confirm":
-            full_datetime_str = cur_dt.strftime("%Y-%m-%d %H:%M")
-            exam_id = add_user_exam(user_id, title, full_datetime_str)
+            full_dt = cur_dt.strftime("%Y-%m-%d %H:%M")
+            exam_id = add_user_exam(user_id, title, full_dt)
             context.user_data['mode'] = 'auto'
-            context.user_data.pop('exam_draft_title', None)
-            context.user_data.pop('exam_draft_dt', None)
-
-            success_text = get_text(user_id, 'exam_add_success', context)
-            exam_obj = {'id': exam_id, 'title': title, 'date': full_datetime_str}
-            card = format_exam_countdown(exam_obj, user_lang)
-
-            list_lbl = "📋 Ro'yxat" if user_lang == 'uz' else ("📋 Liste" if user_lang == 'tr' else "📋 List")
-            kb = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add"),
-                    InlineKeyboardButton(list_lbl, callback_data="exam_list")
-                ]
-            ])
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"{success_text}\n\n{card}",
-                parse_mode="Markdown",
-                reply_markup=kb
-            )
+            try: await query.message.delete()
+            except Exception: pass
+            card = format_exam_countdown({'id': exam_id, 'title': title, 'date': full_dt}, user_lang)
+            await context.bot.send_message(chat_id=user_id, text=f"✅ *Imtihon saqlandi!*\n\n{card}", parse_mode="Markdown")
             return
-        # İPTAL
         elif data == "sched_cancel":
             context.user_data['mode'] = 'auto'
-            context.user_data.pop('exam_draft_title', None)
-            context.user_data.pop('exam_draft_dt', None)
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            await exam_command(update, context)
+            try: await query.message.delete()
+            except Exception: pass
             return
 
         context.user_data['exam_draft_dt'] = cur_dt
-        new_card = format_scheduler_card(title, cur_dt, user_lang)
-        new_kb = build_scheduler_keyboard(user_lang)
-        await safe_edit_text_markup(query.message, new_card, new_kb, parse_mode="Markdown")
-        return
-
-    # 5. RESİM 2'DEKİ TAM AYLIK TAKVİM ETKİLEŞİMLERİ
-    if data.startswith("cal_nav_"):
-        parts = data.split("_")
-        _, _, nav_y, nav_m = parts
-        title = context.user_data.get('exam_draft_title', 'Imtihon')
-        kb = build_month_calendar(int(nav_y), int(nav_m), user_lang)
-        cal_title = "🗓 *NUN PROJECT // TAQVIM*" if user_lang == 'uz' else "*NUN PROJECT // TAKVİM*"
-        await safe_edit_text_markup(query.message, f"{cal_title}\n📌 Fan: *{title}*", kb, parse_mode="Markdown")
+        await safe_edit_text_markup(query.message, format_scheduler_card(title, cur_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
         return
 
     if data.startswith("cal_pick_"):
-        date_str = data.replace("cal_pick_", "", 1).strip()
-        y_str, m_str, d_str = date_str.split("-")
-        cur_dt = context.user_data.get('exam_draft_dt')
-        if not cur_dt:
-            cur_dt = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
-        new_dt = cur_dt.replace(year=int(y_str), month=int(m_str), day=int(d_str))
+        d_str = data.replace("cal_pick_", "", 1).strip()
+        y, m, d = [int(x) for x in d_str.split("-")]
+        cur_dt = context.user_data.get('exam_draft_dt') or datetime.now().replace(hour=10, minute=0)
+        new_dt = cur_dt.replace(year=y, month=m, day=d)
         context.user_data['exam_draft_dt'] = new_dt
-
         title = context.user_data.get('exam_draft_title', 'Imtihon')
-        card = format_scheduler_card(title, new_dt, user_lang)
-        kb = build_scheduler_keyboard(user_lang)
-        await safe_edit_text_markup(query.message, card, kb, parse_mode="Markdown")
+        await safe_edit_text_markup(query.message, format_scheduler_card(title, new_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
         return
 
     if data == "cal_back_panel":
-        cur_dt = context.user_data.get('exam_draft_dt')
-        if not cur_dt:
-            now = datetime.now()
-            cur_dt = (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
-            context.user_data['exam_draft_dt'] = cur_dt
+        cur_dt = context.user_data.get('exam_draft_dt') or datetime.now()
         title = context.user_data.get('exam_draft_title', 'Imtihon')
-        card = format_scheduler_card(title, cur_dt, user_lang)
-        kb = build_scheduler_keyboard(user_lang)
-        await safe_edit_text_markup(query.message, card, kb, parse_mode="Markdown")
+        await safe_edit_text_markup(query.message, format_scheduler_card(title, cur_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
         return
 
-    # 6. DİĞER LİSTE VE SİLME İŞLEMLERİ
-    if data == "exam_list":
-        await exam_command(update, context)
-        return
-
-    if data == "exam_del_menu":
-        exams = get_user_exams(user_id)
-        if not exams:
-            await query.message.reply_text(get_text(user_id, 'exam_empty', context))
-            return
-
-        buttons = []
-        for e in exams:
-            buttons.append([InlineKeyboardButton(f"❌ {e.get('title', 'Sınav')}", callback_data=f"exam_del_{e.get('id')}")])
-
-        await query.message.reply_text(
-            get_text(user_id, 'exam_choose_del', context),
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-
-    if data.startswith("exam_del_"):
-        target_id = data.replace("exam_del_", "", 1).strip()
-        delete_user_exam(user_id, target_id)
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=get_text(user_id, 'exam_deleted', context)
-        )
-        await exam_command(update, context)
+    if data.startswith("cal_nav_"):
+        parts = data.split("_")
+        _, _, ny, nm = parts
+        title = context.user_data.get('exam_draft_title', 'Imtihon')
+        await safe_edit_text_markup(query.message, f"🗓 *TAQVIM*\n📌 Fan: *{title}*", build_month_calendar(int(ny), int(nm), user_lang), parse_mode="Markdown")
         return
 
 # =====================================================================
-# FOTOĞRAF ➔ PDF DÖNÜŞTÜRÜCÜ MOTORU
+# DOSYA & FOTOĞRAF YÜKLEME İŞLEYİCİSİ
 # =====================================================================
-async def handle_photo_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
-    if update.message.photo:
-        file_obj = await update.message.photo[-1].get_file()
-    elif update.message.document and update.message.document.mime_type and update.message.document.mime_type.startswith("image/"):
-        file_obj = await update.message.document.get_file()
-    else:
+    mode = context.user_data.get('mode', 'auto')
+    doc = update.message.document
+    if not doc:
         return
 
-    status_msg = await update.message.reply_text(get_text(user_id, 'pdf_processing', context))
+    fname = doc.file_name or "fayl"
+    ext = os.path.splitext(fname).lower()
+    status = await update.message.reply_text("⚙️ Fayl qabul qilindi, ishlov berilmoqda...")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            input_path = os.path.join(tmp_dir, "input_photo.jpg")
-            output_pdf = os.path.join(tmp_dir, "nun_belge.pdf")
-
+            file_obj = await doc.get_file()
+            input_path = os.path.join(tmp_dir, fname)
             await file_obj.download_to_drive(input_path)
 
-            success = convert_image_to_pdf_safe(input_path, output_pdf)
-            if not success or not os.path.exists(output_pdf):
-                raise RuntimeError("PDF oluşturulamadı.")
+            # PDF'den Word'e Dönüştürme
+            if ext == ".pdf" and mode == 'pdf_to_word':
+                out_docx = os.path.join(tmp_dir, "nun_hujjat.docx")
+                if await asyncio.to_thread(pdf_to_docx, input_path, out_docx):
+                    with open(out_docx, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_hujjat.docx", caption="✅ PDF muvaffaqiyatli Word (.docx) formatiga aylantirildi!")
+                else:
+                    await update.message.reply_text("❌ PDF ichidan metn topilmadi (skanerlangan rasm boʻlishi mumkin).")
 
-            with open(output_pdf, "rb") as f:
-                await update.message.reply_document(
-                    document=f,
-                    filename="nun_belge.pdf",
-                    caption=get_text(user_id, 'pdf_success', context)
-                )
+            # PDF Birleştirme Sırasına Ekleme
+            elif ext == ".pdf" and mode == 'pdf_merge':
+                if 'merge_files' not in context.user_data:
+                    context.user_data['merge_files'] = []
+                # Kalıcı bir geçici dizine kopyala
+                perm_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                with open(input_path, "rb") as src, open(perm_tmp.name, "wb") as dst:
+                    dst.write(src.read())
+                context.user_data['merge_files'].append(perm_tmp.name)
+                count = len(context.user_data['merge_files'])
+                await update.message.reply_text(f"📥 {count}-fayl qabul qilindi! Yana yuboring yoki quyidagi tugmani bosing:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"✅ Birlashtirish ({count} ta fayl)", callback_data="do_pdf_merge")]]))
 
-            try:
-                await status_msg.delete()
-            except Exception:
-                pass
+            # PDF Sayfa Ayırma
+            elif ext == ".pdf" and mode == 'pdf_split_wait_file':
+                reader = PdfReader(input_path)
+                p_cnt = len(reader.pages)
+                perm_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                with open(input_path, "rb") as src, open(perm_tmp.name, "wb") as dst:
+                    dst.write(src.read())
+                context.user_data['split_file_path'] = perm_tmp.name
+                context.user_data['split_max_pages'] = p_cnt
+                context.user_data['mode'] = 'pdf_split_wait_range'
+                await update.message.reply_text(f"📄 PDF qabul qilindi! Unda jami *{p_cnt}* ta sahifa bor.\n\nQaysi sahifalarni ajratmoqchisiz?\n_(Masalan: `1-3` yoki `2, 4, 5` yoki `1`):_", parse_mode="Markdown")
+
+            # Word (.docx) ➔ PDF
+            elif ext in (".docx", ".doc"):
+                out_pdf = os.path.join(tmp_dir, "nun_hujjat.pdf")
+                if await asyncio.to_thread(docx_to_pdf, input_path, out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_hujjat.pdf", caption="✅ Word hujjati PDF formatiga oʻtkazildi!")
+                else:
+                    await update.message.reply_text("❌ Word faylini oʻgirishda xatolik yuz berdi.")
+
+            # Excel (.xlsx) ➔ PDF
+            elif ext in (".xlsx", ".xls"):
+                out_pdf = os.path.join(tmp_dir, "nun_jadval.pdf")
+                if await asyncio.to_thread(xlsx_to_pdf, input_path, out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_jadval.pdf", caption="✅ Excel jadvali PDF formatiga oʻtkazildi!")
+                else:
+                    await update.message.reply_text("❌ Excel faylini oʻgirishda xatolik yuz berdi.")
+
+            # Metin (.txt) ➔ PDF
+            elif ext == ".txt":
+                out_pdf = os.path.join(tmp_dir, "nun_matn.pdf")
+                if await asyncio.to_thread(txt_to_pdf, input_path, out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_matn.pdf", caption="✅ Matn hujjati PDF formatiga oʻtkazildi!")
+
+            # Belge Olarak Gönderilen Görseller ➔ PDF
+            elif ext in (".jpg", ".jpeg", ".png"):
+                out_pdf = os.path.join(tmp_dir, "nun_rasm.pdf")
+                with Image.open(input_path) as im:
+                    if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                    im.save(out_pdf, format="PDF")
+                with open(out_pdf, "rb") as f:
+                    await update.message.reply_document(document=f, filename="nun_rasm.pdf", caption="✅ Rasm PDF formatiga oʻtkazildi!")
+
+            else:
+                await update.message.reply_text("⚠️ Nomaʼlum fayl formati. PDF, DOCX, XLSX, TXT yoki Rasm yuboring.")
 
     except Exception as e:
-        print(f"PDF Dönüştürme Hatası: {e}")
-        await safe_edit_text(status_msg, get_text(user_id, 'pdf_error', context))
+        print(f"Hujjat ishlash xatosi: {e}")
+        await update.message.reply_text("❌ Faylni qayta ishlashda xatolik yuz berdi.")
+    finally:
+        try: await status.delete()
+        except Exception: pass
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    mode = context.user_data.get('mode', 'auto')
+    photo = update.message.photo[-1]
+    status = await update.message.reply_text("⚙️ Rasm qabul qilindi...")
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_obj = await photo.get_file()
+            img_path = os.path.join(tmp_dir, "photo.jpg")
+            await file_obj.download_to_drive(img_path)
+
+            # OCR Modu
+            if mode == 'ocr':
+                text = await asyncio.to_thread(extract_text_from_image, img_path)
+                if text:
+                    await update.message.reply_text(f"🔍 *RASMDAN OʻQIB OLINGAN MATN:*\n\n`{text}`", parse_mode="Markdown")
+                else:
+                    await update.message.reply_text("❌ Rasmdan tushunarli matn topilmadi.")
+                context.user_data['mode'] = 'auto'
+
+            # Varsayılan: Fotoğraf ➔ PDF
+            else:
+                out_pdf = os.path.join(tmp_dir, "nun_hujjat.pdf")
+                with Image.open(img_path) as im:
+                    if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                    im.save(out_pdf, format="PDF")
+                with open(out_pdf, "rb") as f:
+                    await update.message.reply_document(document=f, filename="nun_hujjat.pdf", caption="✅ Rasm PDF formatiga muvaffaqiyatli aylantirildi!")
+
+    except Exception as e:
+        print(f"Rasm ishlash xatosi: {e}")
+        await update.message.reply_text("❌ Rasmni qayta ishlashda xatolik yuz berdi.")
+    finally:
+        try: await status.delete()
+        except Exception: pass
 
 # =====================================================================
-# KORUMALI MESAJ YÖNLENDİRİCİSİ (STATE ROUTER)
+# METİN MESAJ YÖNLENDİRİCİSİ (STATE ROUTER)
 # =====================================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -1593,183 +1085,166 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları (Durumları anında sıfırlar ve istenen menüyü açar)
-    btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
-    btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
-    btn_adh = [TEXTS[l]['btn_adhkar'] for l in TEXTS]
-    btn_trn = [TEXTS[l]['btn_translit'] for l in TEXTS]
-    btn_pdf = [TEXTS[l]['btn_pdf'] for l in TEXTS]
-    btn_exm = [TEXTS[l]['btn_exam'] for l in TEXTS]
-    btn_lng = [TEXTS[l]['btn_lang'] for l in TEXTS]
-
-    if raw_text in btn_vid:
-        context.user_data['mode'] = 'video'
-        context.user_data.pop('exam_draft_title', None)
-        await update.message.reply_text(get_text(user_id, 'prompt_video', context))
-        return
-
-    if raw_text in btn_pry:
-        context.user_data['mode'] = 'prayer'
-        context.user_data.pop('exam_draft_title', None)
-        await update.message.reply_text(
-            get_text(user_id, 'prompt_prayer', context),
-            parse_mode="Markdown"
-        )
-        return
-
-    if raw_text in btn_adh:
-        context.user_data['mode'] = 'adhkar'
-        context.user_data.pop('exam_draft_title', None)
-        await update.message.reply_text(
-            get_text(user_id, 'prompt_adhkar', context),
-            reply_markup=get_adhkar_selection_keyboard(user_id, context),
-            parse_mode="Markdown"
-        )
-        return
-
-    if raw_text in btn_trn:
-        context.user_data['mode'] = 'translit'
-        context.user_data.pop('exam_draft_title', None)
-        await update.message.reply_text(get_text(user_id, 'prompt_translit', context))
-        return
-
-    if raw_text in btn_pdf:
-        context.user_data['mode'] = 'pdf'
-        context.user_data.pop('exam_draft_title', None)
-        await update.message.reply_text(get_text(user_id, 'prompt_pdf', context))
-        return
-
-    if raw_text in btn_exm:
-        context.user_data['mode'] = 'auto'
-        context.user_data.pop('exam_draft_title', None)
-        await exam_command(update, context)
-        return
-
-    if raw_text in btn_lng:
-        await update.message.reply_text(
-            "Tilni tanlang / Lütfen dil seçin / Выберите язык / Select language:",
-            reply_markup=get_language_keyboard()
-        )
-        return
-
-    # 2. Medya İndirme Linki (Öncelikli)
-    url_match = re.search(r'https?://[^\s]+', raw_text)
-    if url_match:
-        url = url_match.group(0)
-        if is_supported_url(url):
-            status_msg = await update.message.reply_text(get_text(user_id, 'downloading', context))
-            asyncio.create_task(process_download(status_msg, user_id, chat_id, url, context))
+    # 1. Menü Butonları Tıklamaları
+    btn_keys = {
+        'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_pdf_hub': 'pdf_hub',
+        'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img', 'btn_pomodoro': 'pomodoro',
+        'btn_adhkar': 'adhkar', 'btn_translit': 'translit', 'btn_lang': 'lang'
+    }
+    for b_key, mode_val in btn_keys.items():
+        if raw_text in [TEXTS[l].get(b_key, '') for l in TEXTS]:
+            context.user_data['mode'] = 'auto'
+            context.user_data.pop('exam_draft_title', None)
+            if mode_val == 'video':
+                await update.message.reply_text("🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:")
+            elif mode_val == 'prayer':
+                context.user_data['mode'] = 'prayer'
+                await update.message.reply_text("🕌 Namoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozing:")
+            elif mode_val == 'pdf_hub':
+                await update.message.reply_text("📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nQuyidagi amallardan birini tanlang:", parse_mode="Markdown", reply_markup=get_pdf_hub_keyboard(user_lang))
+            elif mode_val == 'exam':
+                exams = get_user_exams(user_id)
+                cards = [format_exam_countdown(e, user_lang) for e in exams] if exams else ["Sizda hali saqlangan imtihon yoʻq."]
+                await update.message.reply_text("🎓 *IMTIHONLAR VA TAYMER*\n\n" + "\n".join(cards), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Imtihon qoʻshish", callback_data="exam_add")]]))
+            elif mode_val == 'schedule_img':
+                context.user_data['mode'] = 'schedule_img_input'
+                await update.message.reply_text("🗓️ *HAFTALIK DARS JADVALI GÖRSELİ*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 telefon kilit ekrani formatiga aylantirib beradi.", parse_mode="Markdown")
+            elif mode_val == 'pomodoro':
+                await update.message.reply_text("⏱️ *POMODORO & ESLATMA MARKAZI*", parse_mode="Markdown", reply_markup=get_pomodoro_keyboard())
+            elif mode_val == 'adhkar':
+                await update.message.reply_text("📿 Zikrlarni tanlang:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌅 Tonggi zikrlar", callback_data="adhkar_morning"), InlineKeyboardButton("🌇 Kechki zikrlar", callback_data="adhkar_evening")]]))
+            elif mode_val == 'translit':
+                context.user_data['mode'] = 'translit'
+                await update.message.reply_text("✍️ Matningizni yuboring, avtomatik Kirill ⇄ Lotin oʻgirib beraman:")
+            elif mode_val == 'lang':
+                await update.message.reply_text("Tilni tanlang:", reply_markup=get_language_keyboard())
             return
 
-    current_mode = context.user_data.get('mode', 'auto')
-    lower_text = raw_text.lower().strip()
-
-    # 3. KORUMALI SINAV GİRİŞİ: KULLANICI DERS ADINI YAZDIĞINDA (Örn: Nothing, Oneplus, Matematik)
-    if current_mode == 'exam_title_input':
-        # Tek satırda yazıldıysa (Örn: Matematika - 15.11.2026 10:00)
-        if "-" in raw_text and any(c.isdigit() for c in raw_text):
-            title, _, date_part = raw_text.partition("-")
-            title = title.strip()
-            date_part = date_part.strip()
-            parsed_dt = parse_flexible_date(date_part)
-            if parsed_dt:
-                exam_id = add_user_exam(user_id, title, parsed_dt.strftime("%Y-%m-%d %H:%M"))
-                context.user_data['mode'] = 'auto'
-                await update.message.reply_text(get_text(user_id, 'exam_add_success', context))
-                await exam_command(update, context)
-                return
-
-        # Sadece ders adını yazdıysa ➔ CANLI ZAMANLAYICI PANELİNİ AÇ (SEÇENEK A)
-        title_clean = raw_text.strip()
-        context.user_data['exam_draft_title'] = title_clean
-        context.user_data['mode'] = 'exam_schedule_panel'
-
-        # Varsayılan başlangıç: Yarın saat 10:00
-        now = datetime.now()
-        initial_dt = (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
-        context.user_data['exam_draft_dt'] = initial_dt
-
-        card = format_scheduler_card(title_clean, initial_dt, user_lang)
-        kb = build_scheduler_keyboard(user_lang)
+    # 2. Medya Linki Kontrolü
+    if is_supported_url(raw_text):
+        url = re.search(r'https?://[^\s]+', raw_text).group(0)
+        status = await update.message.reply_text("⏳ Video yuklab olinmoqda...")
         try:
-            await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
-        except Exception:
-            clean_card = card.replace("*", "").replace("_", "").replace("`", "")
-            await update.message.reply_text(clean_card, reply_markup=kb)
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                f_path, title = await asyncio.to_thread(download_media_sync, url, tmp_dir)
+                clean_t = re.sub(r'[\\/*?:"<>|]', '', title)[:60]
+                with open(f_path, 'rb') as f:
+                    await context.bot.send_video(chat_id=chat_id, video=f, caption=f"🎬 {clean_t}", supports_streaming=True)
+            await status.delete()
+        except Exception as e:
+            print(f"Video xatosi: {e}")
+            await status.edit_text("❌ Videoni yuklab olishda xatolik yuz berdi.")
         return
 
-    # Panel açıkken yazı yazılırsa paneli tekrar hatırlat (Asla başka menülere düşmez)
-    if current_mode == 'exam_schedule_panel':
-        cur_dt = context.user_data.get('exam_draft_dt')
-        if not cur_dt:
-            now = datetime.now()
-            cur_dt = (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
-            context.user_data['exam_draft_dt'] = cur_dt
+    mode = context.user_data.get('mode', 'auto')
+
+    # 3. SINAV ADI GİRİŞİ ➔ CANLI ZAMAN PANELİNİ AÇ (SEÇENEK A)
+    if mode == 'exam_title_input':
+        context.user_data['exam_draft_title'] = raw_text.strip()
+        context.user_data['mode'] = 'exam_schedule_panel'
+        init_dt = (datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        context.user_data['exam_draft_dt'] = init_dt
+        await update.message.reply_text(format_scheduler_card(raw_text.strip(), init_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
+        return
+
+    if mode == 'exam_schedule_panel':
+        cur_dt = context.user_data.get('exam_draft_dt', datetime.now())
         title = context.user_data.get('exam_draft_title', 'Imtihon')
-        card = format_scheduler_card(title, cur_dt, user_lang)
-        kb = build_scheduler_keyboard(user_lang)
-        await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
+        await update.message.reply_text(format_scheduler_card(title, cur_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
         return
 
-    # 4. KULLANICI AÇIKÇA ZİKİR İSTEDİĞİNDE
-    if bool(re.search(r'\b(zikr|zikirlar|zikirler|adhkar|azkar|зикры|зикр)\b', lower_text)):
-        await update.message.reply_text(
-            get_text(user_id, 'prompt_adhkar', context),
-            reply_markup=get_adhkar_selection_keyboard(user_id, context),
-            parse_mode="Markdown"
-        )
+    # 4. HAFTALIK DERS PROGRAMI GÖRSELİ OLUŞTURMA
+    if mode == 'schedule_img_input':
+        status = await update.message.reply_text("⚙️ Kilit ekrani fon rasmi tayyorlanmoqda...")
+        parsed_data = parse_schedule_text(raw_text)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_img = os.path.join(tmp_dir, "timetable_wallpaper.png")
+            generate_schedule_wallpaper(parsed_data, out_img, "DARS JADVALI")
+            with open(out_img, "rb") as f_photo, open(out_img, "rb") as f_doc:
+                await update.message.reply_photo(photo=f_photo, caption="📱 *Dars Jadvali (Kilit Ekrani)*", parse_mode="Markdown")
+                await update.message.reply_document(document=f_doc, filename="dars_jadvali_1080x1920.png", caption="🖼️ Asl sifatdagi rasm")
+        context.user_data['mode'] = 'auto'
+        try: await status.delete()
+        except Exception: pass
         return
 
-    # 5. KULLANICI AÇIKÇA NAMAZ VAKTİ İSTEDİĞİNDE
-    is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
-    if current_mode == 'prayer' or is_prayer_intent:
-        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
-        if timings:
-            disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
-            card = format_nun_prayer_card(disp_name, raw_text, timings, g_date, h_str, source_note, user_lang)
-            try:
-                await update.message.reply_text(card, parse_mode="Markdown")
-            except Exception:
-                await update.message.reply_text(card)
+    # 5. PDF SAYFA AYIRMA ARALIĞI GİRİŞİ
+    if mode == 'pdf_split_wait_range':
+        file_path = context.user_data.get('split_file_path')
+        max_p = context.user_data.get('split_max_pages', 1)
+        if file_path and os.path.exists(file_path):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, "nun_ajratilgan.pdf")
+                if split_pdf(file_path, raw_text, out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_ajratilgan.pdf", caption=f"✅ {raw_text} sahifalari muvaffaqiyatli ajratib olindi!")
+                else:
+                    await update.message.reply_text("❌ Sahifa oraligʻi notoʻgʻri kiritildi. Masalan: `1-3` yoki `2, 4`")
+            try: os.remove(file_path)
+            except Exception: pass
+            context.user_data.pop('split_file_path', None)
             context.user_data['mode'] = 'auto'
             return
-        else:
-            await update.message.reply_text(get_text(user_id, 'city_not_found', context), parse_mode="Markdown")
-            return
 
-    # 6. SADECE GERÇEK BİR ŞEHİR ADI YAZILDIYSA NAMAZ VAKTİ VER (Ha, Oneplus, Yaramaz ASLA tetiklemez)
-    if is_valid_city_intent(raw_text):
-        timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
-        if timings:
-            disp_name = resolved_name.title() if resolved_name else clean_prayer_query(raw_text).title()
-            card = format_nun_prayer_card(disp_name, raw_text, timings, g_date, h_str, source_note, user_lang)
-            try:
-                await update.message.reply_text(card, parse_mode="Markdown")
-            except Exception:
-                await update.message.reply_text(card)
-            return
+    # 6. HATIRLATICI EKLEME METNİ
+    if mode == 'remind_input':
+        target_dt = None
+        rem_text = raw_text
+        if "-" in raw_text:
+            rem_text, _, time_part = raw_text.partition("-")
+            rem_text = rem_text.strip()
+            time_part = time_part.strip()
+            # "20 daqiqa"
+            m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m)", time_part, re.IGNORECASE)
+            if m_min:
+                target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
+            else:
+                m_time = re.search(r"(\d{1,2})[:.](\d{2})", time_part)
+                if m_time:
+                    h, mn = int(m_time.group(1)), int(m_time.group(2))
+                    now = datetime.now()
+                    target_dt = now.replace(hour=h, minute=mn, second=0)
+                    if target_dt < now: target_dt += timedelta(days=1)
 
-    # 7. METİN ÇEVİRİSİ (Sadece çeviri modundaysa veya uzun cümlelerde)
-    if current_mode == 'translit' or len(raw_text.split()) >= 3:
-        if is_mostly_cyrillic(raw_text):
-            converted = cyrillic_to_latin(raw_text)
-            await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
+        if not target_dt:
+            m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m)", raw_text, re.IGNORECASE)
+            if m_min:
+                target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
+                rem_text = re.sub(r"(\d+)\s*(?:daqiqa|dakika|min|m)", "", raw_text, flags=re.IGNORECASE).strip()
+
+        if target_dt:
+            dt_str = target_dt.strftime("%Y-%m-%d %H:%M")
+            add_user_reminder(user_id, rem_text, dt_str)
+            context.user_data['mode'] = 'auto'
+            await update.message.reply_text(f"✅ *Eslatma oʻrnatildi!*\n\n📌 *Vazifa:* {rem_text}\n⏰ *Vaqt:* `{dt_str}`", parse_mode="Markdown")
         else:
-            converted = latin_to_cyrillic(raw_text)
-            await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
+            await update.message.reply_text("⚠️ Vaqtni aniqlab boʻlmadi. Masalan:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`", parse_mode="Markdown")
         return
 
-    # 8. Tanınmayan kısa yazılarda ana menüyü göster
-    await update.message.reply_text(
-        get_text(user_id, 'menu_title', context),
-        reply_markup=get_reply_menu(user_id, context)
-    )
+    # 7. NAMAZ VAKTİ
+    if mode == 'prayer':
+        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text)
+        if timings:
+            await update.message.reply_text(format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang), parse_mode="Markdown")
+            context.user_data['mode'] = 'auto'
+            return
+        await update.message.reply_text("❌ Shahar topilmadi.")
+        return
+
+    # 8. METİN ÇEVİRİSİ
+    if mode == 'translit' or len(raw_text.split()) >= 3:
+        if is_mostly_cyrillic(raw_text):
+            await update.message.reply_text(f"🔤 *Lotin:*\n\n{cyrillic_to_latin(raw_text)}", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"🔤 *Кирилл:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
+        return
+
+    # Genel Menü Hatırlatması
+    await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
 
 def main():
     token = os.environ.get("BOT_TOKEN")
-    if not token:
-        raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
-
+    if not token: raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
     load_databases()
 
     threading.Thread(target=run_health_server, daemon=True).start()
@@ -1778,18 +1253,16 @@ def main():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
-    app.add_handler(CommandHandler("namoz", prayer_command))
-    app.add_handler(CommandHandler("namaz", prayer_command))
-    app.add_handler(CommandHandler("zikr", adhkar_command))
-    app.add_handler(CommandHandler("pdf", pdf_command))
-    app.add_handler(CommandHandler("sinav", exam_command))
-    app.add_handler(CommandHandler("imtihon", exam_command))
-    app.add_handler(CommandHandler("exam", exam_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo_to_pdf))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot aktif; Seçenek A Canlı Zamanlayıcı Paneli Devrede!")
+    # Arka plan hatırlatıcı denetleyicisi
+    loop = asyncio.get_event_loop()
+    loop.create_task(reminders_worker(app))
+
+    print("Nun Bot devasa özellik paketiyle aktif!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

@@ -4,9 +4,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     ca-certificates \
     tesseract-ocr \
+    tesseract-ocr-ara \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-chi-tra \
     tesseract-ocr-tur \
     tesseract-ocr-rus \
     tesseract-ocr-eng \
+    tesseract-ocr-uzb \
+    tesseract-ocr-uzb-cyrl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

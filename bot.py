@@ -71,17 +71,13 @@ def run_keep_alive_pinger():
     target_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL")
     if not target_url:
         return
-
     if not target_url.startswith("http"):
         target_url = f"https://{target_url}"
 
     while True:
         time.sleep(540)
         try:
-            req = urllib.request.Request(
-                target_url,
-                headers={'User-Agent': 'NunBot-KeepAlive/1.0'}
-            )
+            req = urllib.request.Request(target_url, headers={'User-Agent': 'NunBot-KeepAlive/1.0'})
             with urllib.request.urlopen(req, timeout=20) as resp:
                 pass
         except Exception:
@@ -167,6 +163,34 @@ def delete_user_reminder(user_id, rem_id: str):
     if uid_str in USER_REMINDERS:
         USER_REMINDERS[uid_str] = [r for r in USER_REMINDERS[uid_str] if r.get('id') != rem_id]
         save_json(REMINDERS_FILE, USER_REMINDERS)
+
+def cleanup_user_temp_files(context, user_id):
+    if not context or not context.user_data:
+        return
+    for f in context.user_data.get('merge_files', []):
+        try:
+            if os.path.exists(f): os.remove(f)
+        except Exception: pass
+    context.user_data.pop('merge_files', None)
+
+    sp = context.user_data.get('split_file_path')
+    if sp:
+        try:
+            if os.path.exists(sp): os.remove(sp)
+        except Exception: pass
+    context.user_data.pop('split_file_path', None)
+    context.user_data.pop('split_max_pages', None)
+
+    dp = context.user_data.get('direct_file_path')
+    if dp:
+        try:
+            if os.path.exists(dp): os.remove(dp)
+        except Exception: pass
+    context.user_data.pop('direct_file_path', None)
+
+    context.user_data.pop('exam_draft_title', None)
+    context.user_data.pop('exam_draft_dt', None)
+    context.user_data['mode'] = 'auto'
 
 # =====================================================================
 # PDF & BELGE DÖNÜŞTÜRME MOTORLARI
@@ -307,7 +331,7 @@ def split_pdf(input_pdf: str, range_str: str, output_pdf: str) -> bool:
         return False
 
 # =====================================================================
-# TESSERACT OCR (GÖRSELDEN METİN ÇIKARMA)
+# TESSERACT OCR MOTORU
 # =====================================================================
 def extract_text_from_image(image_path: str) -> str:
     try:
@@ -326,7 +350,7 @@ def extract_text_from_image(image_path: str) -> str:
         return ""
 
 # =====================================================================
-# HAFTALIK DERS PROGRAMI DUVAR KAĞIDI (PILLOW / 1080x1920)
+# HAFTALIK DERS PROGRAMI GÖRSELİ (PILLOW / 1080x1920)
 # =====================================================================
 def parse_schedule_text(text: str):
     day_keywords = {
@@ -334,7 +358,7 @@ def parse_schedule_text(text: str):
         "seshanba": "SESHANBA", "sali": "SALI", "tuesday": "TUESDAY", "вторник": "ВТОРНИК",
         "chorshanba": "CHORSHANBA", "carsamba": "ÇARŞAMBA", "wednesday": "WEDNESDAY", "среда": "СРЕДА",
         "payshanba": "PAYSHANBA", "persembe": "PERŞEMBE", "thursday": "THURSDAY", "четверг": "ЧЕТВЕРГ",
-        "juma": "JUMA", "cuma": "CUMA", "friday": "FRIDAY", "пятница": "ПЯТНИЦА",
+        "juma": "JUMA", "cuma": "CUMA", "friday": "FRIDAY", "пятница": "ПЯТНИЦA",
         "shanba": "SHANBA", "cumartesi": "CUMARTESİ", "saturday": "SATURDAY", "суббота": "СУББОТА",
         "yakshanba": "YAKSHANBA", "pazar": "PAZAR", "sunday": "SUNDAY", "воскресенье": "ВОСКРЕСЕНЬЕ",
     }
@@ -372,13 +396,11 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, title: st
     except Exception:
         font_large = font_med = font_sub = font_item = ImageFont.load_default()
 
-    # Arkaplan çizgileri
     for x in range(0, width, 80):
         draw.line([(x, 0), (x, height)], fill=(18, 18, 18), width=1)
     for y in range(0, height, 80):
         draw.line([(0, y), (width, y)], fill=(18, 18, 18), width=1)
 
-    # Başlık Kutusu
     draw.rectangle([(60, 80), (width - 60, 220)], fill=(18, 18, 18), outline=(60, 60, 60), width=2)
     draw.text((100, 105), "NUN PROJECT // ACADEMIC", fill=(160, 160, 160), font=font_sub)
     draw.text((100, 140), title.upper(), fill=(255, 255, 255), font=font_large)
@@ -403,7 +425,7 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, title: st
     return True
 
 # =====================================================================
-# POMODORO & HATIRLATICI ARKAPLAN MOTORU
+# POMODORO & HATIRLATICI MOTORU
 # =====================================================================
 async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
     await asyncio.sleep(duration_mins * 60)
@@ -412,7 +434,7 @@ async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: b
         btn_text = "🍅 25 Dk Pomodoro"
         cb = "pomo_25"
     else:
-        msg = f"🎉 *POMODORO TUGADI!* 🍅\n\n`{duration_mins}` daqiqalik dars muvaffaqiyatli yakunlandi!\nEndi 5 daqiqa dam oling." if user_lang == 'uz' else f"🎉 *SÜRE BİTTİ!* 🍅\n\n`{duration_mins}` dakikalık seans tamamlandı!\nŞimdi 5 dakika mola vakti."
+        msg = f"🎉 *POMODORO TUGADI!* 🍅\n\n`{duration_mins}` daqiqalik dars yakunlandi!\nEndi 5 daqiqa dam oling." if user_lang == 'uz' else f"🎉 *SÜRE BİTTİ!* 🍅\n\n`{duration_mins}` dakikalık seans tamamlandı!\nŞimdi 5 dakika mola vakti."
         btn_text = "☕ 5 Dk Mola"
         cb = "pomo_5"
 
@@ -566,8 +588,7 @@ async def fetch_prayer_times(city_input: str):
         slug = UZ_REGIONS.get(c_norm)
         if not slug:
             matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
-            if matches:
-                slug = UZ_REGIONS[matches[0]]
+            if matches: slug = UZ_REGIONS[matches[0]]
         if slug:
             try:
                 resp = await client.get(f"https://namoz-vaqti.uz/index.php?format=json&region={slug}", headers=headers)
@@ -579,8 +600,7 @@ async def fetch_prayer_times(city_input: str):
                         "Fajr": t.get("bomdod"), "Sunrise": t.get("quyosh"), "Dhuhr": t.get("peshin"),
                         "Asr": t.get("asr"), "Maghrib": t.get("shom"), "Isha": t.get("xufton")
                     }, meta.get("region", {}).get("name", city_input.title()), meta.get("date", ""), "", "Oʻzbekiston Din ishlari qoʻmitasi"
-            except Exception:
-                pass
+            except Exception: pass
 
         target = GLOBAL_CITIES.get(c_norm, city_input)
         try:
@@ -589,8 +609,7 @@ async def fetch_prayer_times(city_input: str):
                 data = resp.json().get("data", {})
                 d = data.get("date", {})
                 return data.get("timings", {}), target.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
-        except Exception:
-            pass
+        except Exception: pass
 
     return None, None, None, None, None
 
@@ -641,7 +660,7 @@ def build_scheduler_keyboard(lang: str = 'uz') -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⚡ Bugun", callback_data="sched_jump_today"), InlineKeyboardButton("⚡ Ertaga", callback_data="sched_jump_tmrw"), InlineKeyboardButton("⚡ 1 hafta", callback_data="sched_jump_week")],
         [InlineKeyboardButton("🗓 Taqvimdan tanlash", callback_data="sched_open_cal")],
         [InlineKeyboardButton("✅ TASDIQLASH VA SAQLASH", callback_data="sched_confirm")],
-        [InlineKeyboardButton("❌ Bekor qilish", callback_data="sched_cancel")],
+        [InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")],
     ])
 
 def build_month_calendar(year: int, month: int, lang: str = 'uz') -> InlineKeyboardMarkup:
@@ -771,15 +790,20 @@ def download_media_sync(url: str, download_dir: str):
 # =====================================================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    cleanup_user_temp_files(context, user_id)
     if str(user_id) not in USER_LANGS:
         save_user_lang(user_id, 'uz')
     await update.message.reply_text(get_text(user_id, 'welcome', context), reply_markup=get_reply_menu(user_id, context))
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if context.user_data:
-        context.user_data['mode'] = 'auto'
+    cleanup_user_temp_files(context, user_id)
     await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    cleanup_user_temp_files(context, user_id)
+    await update.message.reply_text("✅ Joriy amal bekor qilindi.", reply_markup=get_reply_menu(user_id, context))
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -788,7 +812,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_lang = get_user_lang(user_id, context)
 
-    # 1. DİL DEĞİŞTİRME
+    # İPTAL VE TEMİZLİK
+    if data == "cancel_action":
+        cleanup_user_temp_files(context, user_id)
+        try: await query.message.delete()
+        except Exception: pass
+        await context.bot.send_message(chat_id=user_id, text="✅ Amal bekor qilindi.", reply_markup=get_reply_menu(user_id, context))
+        return
+
+    # DİL DEĞİŞTİRME
     if data.startswith("lang_"):
         l_code = data.replace("lang_", "", 1).strip()
         save_user_lang(user_id, l_code)
@@ -797,30 +829,35 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=f"✅ {get_text(user_id, 'welcome', context)}", reply_markup=get_reply_menu(user_id, context))
         return
 
-    # 2. PDF ARAÇLARI MERKEZİ
+    # PDF ARAÇLARI SEÇİMLERİ (KESİN MOD KİLİTLENİR)
     if data == "pdf_act_to_pdf":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'convert_to_pdf'
-        await query.message.reply_text("📸 PDF formatiga oʻtkazmoqchi boʻlgan faylni yuboring (Rasm, Word, Excel yoki TXT):")
+        await query.message.reply_text("📸 *PDF'GA OʻGIRISH REJIMI FAOL*\n\nPDF formatiga oʻtkazmoqchi boʻlgan faylni yuboring (Rasm, Word, Excel yoki TXT):", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
     if data == "pdf_act_to_word":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'pdf_to_word'
-        await query.message.reply_text("📑 Word (.docx) formatiga oʻtkazmoqchi boʻlgan PDF faylni yuboring:")
+        await query.message.reply_text("📑 *PDF ➔ WORD REJIMI FAOL*\n\nWord (.docx) formatiga oʻtkazmoqchi boʻlgan PDF faylni yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
     if data == "pdf_act_merge":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'pdf_merge'
         context.user_data['merge_files'] = []
-        await query.message.reply_text("🗂️ Birlashtirmoqchi boʻlgan PDF fayllarni birin-ketin yuboring.\nTugatgach, [ ✅ Birlashtirish ] tugmasini bosing:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Birlashtirish", callback_data="do_pdf_merge")]]))
+        await query.message.reply_text("🗂️ *PDF BIRLASHTIRISH REJIMI FAOL*\n\nBirlashtirmoqchi boʻlgan PDF fayllarni birin-ketin yuboring (kamida 2 ta).\nTugatgach, quyidagi tugmani bosing:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
     if data == "pdf_act_split":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'pdf_split_wait_file'
-        await query.message.reply_text("✂️ Sahifalarini ajratmoqchi boʻlgan PDF faylni yuboring:")
+        await query.message.reply_text("✂️ *PDF AJRATISH REJIMI FAOL*\n\nSahifalarini ajratmoqchi boʻlgan PDF faylni yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
     if data == "pdf_act_ocr":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'ocr'
-        await query.message.reply_text("🔍 Matnini oʻqib olmoqchi boʻlgan kitob yoki taxta rasmini yuboring:")
+        await query.message.reply_text("🔍 *RASMDAN MATN CHIQARISH (OCR) FAOL*\n\nMatnini oʻqib olmoqchi boʻlgan rasm yoki hujjatni yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
 
-    # 3. PDF MERGE İŞLEMİ ÇALIŞTIRMA
+    # PDF MERGE İŞLEMİ ÇALIŞTIRMA
     if data == "do_pdf_merge":
         files = context.user_data.get('merge_files', [])
         if len(files) < 2:
@@ -834,25 +871,76 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await query.message.reply_document(document=f, filename="nun_birlashtirilgan.pdf", caption="✅ PDF muvaffaqiyatli birlashtirildi!")
             else:
                 await query.message.reply_text("❌ PDF fayllarini birlashtirishda xatolik yuz berdi.")
-        context.user_data.pop('merge_files', None)
-        context.user_data['mode'] = 'auto'
+        cleanup_user_temp_files(context, user_id)
         try: await status.delete()
         except Exception: pass
         return
 
-    # 4. POMODORO ZAMANLAYICISI
+    # DOĞRUDAN YÜKLENEN GÖRSEL İŞLEM SEÇİMİ
+    if data == "direct_img_pdf":
+        img_p = context.user_data.get('direct_file_path')
+        if img_p and os.path.exists(img_p):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_p = os.path.join(tmp_dir, "nun_rasm.pdf")
+                with Image.open(img_p) as im:
+                    if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                    im.save(out_p, format="PDF")
+                with open(out_p, "rb") as f:
+                    await query.message.reply_document(document=f, filename="nun_rasm.pdf", caption="✅ Rasm PDF formatiga oʻtkazildi!")
+        cleanup_user_temp_files(context, user_id)
+        return
+
+    if data == "direct_img_ocr":
+        img_p = context.user_data.get('direct_file_path')
+        if img_p and os.path.exists(img_p):
+            txt = await asyncio.to_thread(extract_text_from_image, img_p)
+            if txt:
+                await query.message.reply_text(f"🔍 *RASMDAN OʻQIB OLINGAN MATN:*\n\n`{txt}`", parse_mode="Markdown")
+            else:
+                await query.message.reply_text("❌ Rasmdan tushunarli matn topilmadi.")
+        cleanup_user_temp_files(context, user_id)
+        return
+
+    # DOĞRUDAN YÜKLENEN PDF İŞLEM SEÇİMİ
+    if data == "direct_pdf_word":
+        pdf_p = context.user_data.get('direct_file_path')
+        if pdf_p and os.path.exists(pdf_p):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_docx = os.path.join(tmp_dir, "nun_hujjat.docx")
+                if await asyncio.to_thread(pdf_to_docx, pdf_p, out_docx):
+                    with open(out_docx, "rb") as f:
+                        await query.message.reply_document(document=f, filename="nun_hujjat.docx", caption="✅ PDF muvaffaqiyatli Word formatiga oʻgirildi!")
+                else:
+                    await query.message.reply_text("❌ PDF ichidan metn topilmadi (skanerlangan boʻlishi mumkin).")
+        cleanup_user_temp_files(context, user_id)
+        return
+
+    if data == "direct_pdf_split":
+        pdf_p = context.user_data.get('direct_file_path')
+        if pdf_p and os.path.exists(pdf_p):
+            reader = PdfReader(pdf_p)
+            p_cnt = len(reader.pages)
+            context.user_data['split_file_path'] = pdf_p
+            context.user_data['split_max_pages'] = p_cnt
+            context.user_data['mode'] = 'pdf_split_wait_range'
+            context.user_data.pop('direct_file_path', None)
+            await query.message.reply_text(f"📄 PDF qabul qilindi! Jami *{p_cnt}* ta sahifa bor.\n\nQaysi sahifalarni ajratmoqchisiz?\n_(Masalan: `1-3` yoki `2, 4`):_", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
+            return
+
+    # POMODORO
     if data.startswith("pomo_"):
         mins = int(data.replace("pomo_", "", 1))
         is_break = mins in (5, 10)
         end_time = datetime.now() + timedelta(minutes=mins)
-        label = "Dam olish" if is_break else "Odaklanish darsi"
-        await query.message.reply_text(f"🍅 *POMODORO BOSHLANDI*\n\n📌 *Rejim:* {label}\n⏳ *Davomiyligi:* `{mins} daqiqa`\n🏁 *Tugash vaqti:* `{end_time.strftime('%H:%M')}`", parse_mode="Markdown")
+        label = "Dam olish" if is_break else "Dars qilish"
+        await query.message.reply_text(f"🍅 *POMODORO BOSHLANDI*\n\n📌 *Rejim:* {label}\n⏳ *Vaqt:* `{mins} daqiqa`\n🏁 *Tugash:* `{end_time.strftime('%H:%M')}`", parse_mode="Markdown")
         asyncio.create_task(pomodoro_timer_task(context.bot, user_id, mins, is_break, user_lang))
         return
 
     if data == "remind_add":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'remind_input'
-        await query.message.reply_text("⏰ Eslatmani quyidagi formatda yuboring:\n\n`Vazifa - Sana Soat` yoki `Vazifa - Daqiqa`\n\n*Namuna:*\n`Kitob o'qish - 18:30`\nyoki\n`Choyni o'chirish - 20 daqiqa`", parse_mode="Markdown")
+        await query.message.reply_text("⏰ Eslatmani quyidagicha yuboring:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
 
     if data == "remind_list":
@@ -876,10 +964,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🗑️ Eslatma oʻchirildi.")
         return
 
-    # 5. SINAV EKLEME & ZAMANLAYICI PANELİ (SEÇENEK A)
+    # SINAV VE TAKVİM İŞLEMLERİ (SEÇENEK A)
     if data == "exam_add":
+        cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'exam_title_input'
-        await query.message.reply_text("🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_", parse_mode="Markdown")
+        await query.message.reply_text("🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
         return
 
     if data.startswith("sched_"):
@@ -900,16 +989,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data == "sched_confirm":
             full_dt = cur_dt.strftime("%Y-%m-%d %H:%M")
             exam_id = add_user_exam(user_id, title, full_dt)
-            context.user_data['mode'] = 'auto'
+            cleanup_user_temp_files(context, user_id)
             try: await query.message.delete()
             except Exception: pass
             card = format_exam_countdown({'id': exam_id, 'title': title, 'date': full_dt}, user_lang)
             await context.bot.send_message(chat_id=user_id, text=f"✅ *Imtihon saqlandi!*\n\n{card}", parse_mode="Markdown")
-            return
-        elif data == "sched_cancel":
-            context.user_data['mode'] = 'auto'
-            try: await query.message.delete()
-            except Exception: pass
             return
 
         context.user_data['exam_draft_dt'] = cur_dt
@@ -940,7 +1024,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 # =====================================================================
-# DOSYA & FOTOĞRAF YÜKLEME İŞLEYİCİSİ
+# DOSYA & FOTOĞRAF İŞLEYİCİSİ (KESİN MOD KİLİDİ)
 # =====================================================================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -951,86 +1035,141 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     fname = doc.file_name or "fayl"
     ext = os.path.splitext(fname).lower()
-    status = await update.message.reply_text("⚙️ Fayl qabul qilindi, ishlov berilmoqda...")
+    status = await update.message.reply_text("⚙️ Fayl qabul qilindi...")
 
     try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            file_obj = await doc.get_file()
-            input_path = os.path.join(tmp_dir, fname)
-            await file_obj.download_to_drive(input_path)
+        file_obj = await doc.get_file()
+        perm_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        perm_tmp.close()
+        await file_obj.download_to_drive(perm_tmp.name)
 
-            # PDF'den Word'e Dönüştürme
-            if ext == ".pdf" and mode == 'pdf_to_word':
-                out_docx = os.path.join(tmp_dir, "nun_hujjat.docx")
-                if await asyncio.to_thread(pdf_to_docx, input_path, out_docx):
-                    with open(out_docx, "rb") as f:
-                        await update.message.reply_document(document=f, filename="nun_hujjat.docx", caption="✅ PDF muvaffaqiyatli Word (.docx) formatiga aylantirildi!")
-                else:
-                    await update.message.reply_text("❌ PDF ichidan metn topilmadi (skanerlangan rasm boʻlishi mumkin).")
-
-            # PDF Birleştirme Sırasına Ekleme
-            elif ext == ".pdf" and mode == 'pdf_merge':
-                if 'merge_files' not in context.user_data:
-                    context.user_data['merge_files'] = []
-                # Kalıcı bir geçici dizine kopyala
-                perm_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                with open(input_path, "rb") as src, open(perm_tmp.name, "wb") as dst:
-                    dst.write(src.read())
-                context.user_data['merge_files'].append(perm_tmp.name)
-                count = len(context.user_data['merge_files'])
-                await update.message.reply_text(f"📥 {count}-fayl qabul qilindi! Yana yuboring yoki quyidagi tugmani bosing:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"✅ Birlashtirish ({count} ta fayl)", callback_data="do_pdf_merge")]]))
-
-            # PDF Sayfa Ayırma
-            elif ext == ".pdf" and mode == 'pdf_split_wait_file':
-                reader = PdfReader(input_path)
-                p_cnt = len(reader.pages)
-                perm_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                with open(input_path, "rb") as src, open(perm_tmp.name, "wb") as dst:
-                    dst.write(src.read())
-                context.user_data['split_file_path'] = perm_tmp.name
-                context.user_data['split_max_pages'] = p_cnt
-                context.user_data['mode'] = 'pdf_split_wait_range'
-                await update.message.reply_text(f"📄 PDF qabul qilindi! Unda jami *{p_cnt}* ta sahifa bor.\n\nQaysi sahifalarni ajratmoqchisiz?\n_(Masalan: `1-3` yoki `2, 4, 5` yoki `1`):_", parse_mode="Markdown")
-
-            # Word (.docx) ➔ PDF
-            elif ext in (".docx", ".doc"):
-                out_pdf = os.path.join(tmp_dir, "nun_hujjat.pdf")
-                if await asyncio.to_thread(docx_to_pdf, input_path, out_pdf):
-                    with open(out_pdf, "rb") as f:
-                        await update.message.reply_document(document=f, filename="nun_hujjat.pdf", caption="✅ Word hujjati PDF formatiga oʻtkazildi!")
-                else:
-                    await update.message.reply_text("❌ Word faylini oʻgirishda xatolik yuz berdi.")
-
-            # Excel (.xlsx) ➔ PDF
-            elif ext in (".xlsx", ".xls"):
-                out_pdf = os.path.join(tmp_dir, "nun_jadval.pdf")
-                if await asyncio.to_thread(xlsx_to_pdf, input_path, out_pdf):
-                    with open(out_pdf, "rb") as f:
-                        await update.message.reply_document(document=f, filename="nun_jadval.pdf", caption="✅ Excel jadvali PDF formatiga oʻtkazildi!")
-                else:
-                    await update.message.reply_text("❌ Excel faylini oʻgirishda xatolik yuz berdi.")
-
-            # Metin (.txt) ➔ PDF
-            elif ext == ".txt":
-                out_pdf = os.path.join(tmp_dir, "nun_matn.pdf")
-                if await asyncio.to_thread(txt_to_pdf, input_path, out_pdf):
-                    with open(out_pdf, "rb") as f:
-                        await update.message.reply_document(document=f, filename="nun_matn.pdf", caption="✅ Matn hujjati PDF formatiga oʻtkazildi!")
-
-            # Belge Olarak Gönderilen Görseller ➔ PDF
-            elif ext in (".jpg", ".jpeg", ".png"):
-                out_pdf = os.path.join(tmp_dir, "nun_rasm.pdf")
-                with Image.open(input_path) as im:
-                    if im.mode in ("RGBA", "P"): im = im.convert("RGB")
-                    im.save(out_pdf, format="PDF")
-                with open(out_pdf, "rb") as f:
-                    await update.message.reply_document(document=f, filename="nun_rasm.pdf", caption="✅ Rasm PDF formatiga oʻtkazildi!")
-
+        # 1. OCR MODUNDA BELGE OLARAK GÖNDERİLEN GÖRSELLER
+        if mode == 'ocr' and ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):
+            txt = await asyncio.to_thread(extract_text_from_image, perm_tmp.name)
+            if txt:
+                await update.message.reply_text(f"🔍 *RASMDAN OʻQIB OLINGAN MATN:*\n\n`{txt}`", parse_mode="Markdown")
             else:
-                await update.message.reply_text("⚠️ Nomaʼlum fayl formati. PDF, DOCX, XLSX, TXT yoki Rasm yuboring.")
+                await update.message.reply_text("❌ Rasmdan tushunarli matn topilmadi.")
+            cleanup_user_temp_files(context, user_id)
+            try: os.remove(perm_tmp.name)
+            except Exception: pass
+            return
+
+        # 2. PDF MERGE MODUNDA GÖNDERİLEN DOSYA
+        if mode == 'pdf_merge' and ext == ".pdf":
+            if 'merge_files' not in context.user_data:
+                context.user_data['merge_files'] = []
+            context.user_data['merge_files'].append(perm_tmp.name)
+            cnt = len(context.user_data['merge_files'])
+            await update.message.reply_text(
+                f"📥 *{cnt}-PDF fayli qabul qilindi!*\n_(Nomi: {fname})_\n\nYana PDF yuborishingiz mumkin yoki birlashtirishni boshlang:",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"✅ Birlashtirish ({cnt} ta PDF)", callback_data="do_pdf_merge")],
+                    [InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]
+                ])
+            )
+            return
+
+        # 3. PDF SPLIT MODUNDA GÖNDERİLEN DOSYA
+        if mode == 'pdf_split_wait_file' and ext == ".pdf":
+            reader = PdfReader(perm_tmp.name)
+            p_cnt = len(reader.pages)
+            context.user_data['split_file_path'] = perm_tmp.name
+            context.user_data['split_max_pages'] = p_cnt
+            context.user_data['mode'] = 'pdf_split_wait_range'
+            await update.message.reply_text(
+                f"📄 *PDF qabul qilindi!*\nJami sahifalar soni: *{p_cnt}* ta.\n\nQaysi sahifalarni ajratmoqchisiz?\nMasalan:\n▫️ `1-3`\n▫️ `2, 4`\n▫️ `1`",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]])
+            )
+            return
+
+        # 4. PDF TO WORD MODUNDA GÖNDERİLEN DOSYA
+        if mode == 'pdf_to_word' and ext == ".pdf":
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_docx = os.path.join(tmp_dir, "nun_hujjat.docx")
+                if await asyncio.to_thread(pdf_to_docx, perm_tmp.name, out_docx):
+                    with open(out_docx, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_hujjat.docx", caption="✅ PDF Word formatiga oʻtkazildi!")
+                else:
+                    await update.message.reply_text("❌ PDF ichida matn topilmadi.")
+            cleanup_user_temp_files(context, user_id)
+            try: os.remove(perm_tmp.name)
+            except Exception: pass
+            return
+
+        # 5. CONVERT TO PDF MODUNDA GELEN DOSYALAR
+        if mode == 'convert_to_pdf':
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, "nun_hujjat.pdf")
+                ok = False
+                if ext in (".docx", ".doc"): ok = await asyncio.to_thread(docx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext in (".xlsx", ".xls"): ok = await asyncio.to_thread(xlsx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext == ".txt": ok = await asyncio.to_thread(txt_to_pdf, perm_tmp.name, out_pdf)
+                elif ext in (".jpg", ".jpeg", ".png"):
+                    with Image.open(perm_tmp.name) as im:
+                        if im.mode in ("RGBA", "P"): im = im.convert("RGB")
+                        im.save(out_pdf, format="PDF")
+                    ok = True
+                if ok and os.path.exists(out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_hujjat.pdf", caption="✅ PDF hujjati muvaffaqiyatli tayyorlandi!")
+                else:
+                    await update.message.reply_text("❌ Faylni PDF ga oʻgirishda xatolik yuz berdi.")
+            cleanup_user_temp_files(context, user_id)
+            try: os.remove(perm_tmp.name)
+            except Exception: pass
+            return
+
+        # 6. HİÇBİR MOD SEÇİLMEDEN DOĞRUDAN ATILAN BELGELER
+        if ext == ".pdf":
+            context.user_data['direct_file_path'] = perm_tmp.name
+            await update.message.reply_text(
+                f"📑 *PDF hujjati qabul qilindi* (`{fname}`).\nNima qilmoqchisiz?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📄 Word (.docx) ga oʻgirish", callback_data="direct_pdf_word")],
+                    [InlineKeyboardButton("✂️ Sahifalarni ajratish (Split)", callback_data="direct_pdf_split")],
+                    [InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]
+                ])
+            )
+            return
+
+        if ext in (".jpg", ".jpeg", ".png", ".webp"):
+            context.user_data['direct_file_path'] = perm_tmp.name
+            await update.message.reply_text(
+                f"📸 *Rasm qabul qilindi* (`{fname}`).\nQaysi amalni bajarmoqchisiz?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📄 PDF ga aylantirish", callback_data="direct_img_pdf")],
+                    [InlineKeyboardButton("🔍 Matnni oʻqish (OCR)", callback_data="direct_img_ocr")],
+                    [InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]
+                ])
+            )
+            return
+
+        # Word, Excel, TXT doğrudan PDF'e çevrilir
+        if ext in (".docx", ".xlsx", ".txt"):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, "nun_hujjat.pdf")
+                ok = False
+                if ext == ".docx": ok = await asyncio.to_thread(docx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext == ".xlsx": ok = await asyncio.to_thread(xlsx_to_pdf, perm_tmp.name, out_pdf)
+                elif ext == ".txt": ok = await asyncio.to_thread(txt_to_pdf, perm_tmp.name, out_pdf)
+                if ok and os.path.exists(out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_hujjat.pdf", caption="✅ PDF hujjati tayyorlandi!")
+            try: os.remove(perm_tmp.name)
+            except Exception: pass
+            return
+
+        try: os.remove(perm_tmp.name)
+        except Exception: pass
+        await update.message.reply_text("⚠️ Nomaʼlum fayl formati.")
 
     except Exception as e:
-        print(f"Hujjat ishlash xatosi: {e}")
+        print(f"Hujjat xatosi: {e}")
         await update.message.reply_text("❌ Faylni qayta ishlashda xatolik yuz berdi.")
     finally:
         try: await status.delete()
@@ -1043,38 +1182,58 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = await update.message.reply_text("⚙️ Rasm qabul qilindi...")
 
     try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            file_obj = await photo.get_file()
-            img_path = os.path.join(tmp_dir, "photo.jpg")
-            await file_obj.download_to_drive(img_path)
+        file_obj = await photo.get_file()
+        perm_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        perm_tmp.close()
+        await file_obj.download_to_drive(perm_tmp.name)
 
-            # OCR Modu
-            if mode == 'ocr':
-                text = await asyncio.to_thread(extract_text_from_image, img_path)
-                if text:
-                    await update.message.reply_text(f"🔍 *RASMDAN OʻQIB OLINGAN MATN:*\n\n`{text}`", parse_mode="Markdown")
-                else:
-                    await update.message.reply_text("❌ Rasmdan tushunarli matn topilmadi.")
-                context.user_data['mode'] = 'auto'
-
-            # Varsayılan: Fotoğraf ➔ PDF
+        # 1. OCR MODU AKTİFSE DOĞRUDAN METNİ OKU
+        if mode == 'ocr':
+            txt = await asyncio.to_thread(extract_text_from_image, perm_tmp.name)
+            if txt:
+                await update.message.reply_text(f"🔍 *RASMDAN OʻQIB OLINGAN MATN:*\n\n`{txt}`", parse_mode="Markdown")
             else:
-                out_pdf = os.path.join(tmp_dir, "nun_hujjat.pdf")
-                with Image.open(img_path) as im:
+                await update.message.reply_text("❌ Rasmdan tushunarli matn topilmadi.")
+            cleanup_user_temp_files(context, user_id)
+            try: os.remove(perm_tmp.name)
+            except Exception: pass
+            return
+
+        # 2. PDF DÖNÜŞTÜRME MODU AKTİFSE
+        if mode == 'convert_to_pdf':
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, "nun_rasm.pdf")
+                with Image.open(perm_tmp.name) as im:
                     if im.mode in ("RGBA", "P"): im = im.convert("RGB")
                     im.save(out_pdf, format="PDF")
                 with open(out_pdf, "rb") as f:
-                    await update.message.reply_document(document=f, filename="nun_hujjat.pdf", caption="✅ Rasm PDF formatiga muvaffaqiyatli aylantirildi!")
+                    await update.message.reply_document(document=f, filename="nun_rasm.pdf", caption="✅ Rasm PDF formatiga oʻtkazildi!")
+            cleanup_user_temp_files(context, user_id)
+            try: os.remove(perm_tmp.name)
+            except Exception: pass
+            return
+
+        # 3. MOD SEÇİLMEDEN ATILDIYSA SOR
+        context.user_data['direct_file_path'] = perm_tmp.name
+        await update.message.reply_text(
+            "📸 *Rasm qabul qilindi.*\nQaysi amalni bajarmoqchisiz?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📄 PDF ga aylantirish", callback_data="direct_img_pdf")],
+                [InlineKeyboardButton("🔍 Matnni oʻqish (OCR)", callback_data="direct_img_ocr")],
+                [InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]
+            ])
+        )
 
     except Exception as e:
-        print(f"Rasm ishlash xatosi: {e}")
+        print(f"Rasm xatosi: {e}")
         await update.message.reply_text("❌ Rasmni qayta ishlashda xatolik yuz berdi.")
     finally:
         try: await status.delete()
         except Exception: pass
 
 # =====================================================================
-# METİN MESAJ YÖNLENDİRİCİSİ (STATE ROUTER)
+# METİN MESAJ YÖNLENDİRİCİSİ (KATI KORUMALI)
 # =====================================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -1085,42 +1244,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları
-    btn_keys = {
-        'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_pdf_hub': 'pdf_hub',
-        'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img', 'btn_pomodoro': 'pomodoro',
-        'btn_adhkar': 'adhkar', 'btn_translit': 'translit', 'btn_lang': 'lang'
+    # 1. Menü Butonları (Her tıklandığında önceki geçici modları temizler)
+    btn_actions = {
+        'btn_video': lambda: update.message.reply_text("🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:"),
+        'btn_prayer': lambda: set_mode_and_reply(context, 'prayer', update, "🕌 Namoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozing:"),
+        'btn_pdf_hub': lambda: update.message.reply_text("📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:", parse_mode="Markdown", reply_markup=get_pdf_hub_keyboard(user_lang)),
+        'btn_exam': lambda: show_exams_ui(user_id, user_lang, update),
+        'btn_schedule_img': lambda: set_mode_and_reply(context, 'schedule_img_input', update, "🗓️ *DARS JADVALI GÖRSELİ*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot 1080x1920 kilit ekrani formatiga aylantiradi.", parse_mode="Markdown"),
+        'btn_pomodoro': lambda: update.message.reply_text("⏱️ *POMODORO & ESLATMA MARKAZI*", parse_mode="Markdown", reply_markup=get_pomodoro_keyboard()),
+        'btn_adhkar': lambda: update.message.reply_text("📿 Zikrlarni tanlang:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌅 Tonggi zikrlar", callback_data="adhkar_morning"), InlineKeyboardButton("🌇 Kechki zikrlar", callback_data="adhkar_evening")]])),
+        'btn_translit': lambda: set_mode_and_reply(context, 'translit', update, "✍️ Matningizni yuboring, avtomatik Kirill ⇄ Lotin oʻgirib beraman:"),
+        'btn_lang': lambda: update.message.reply_text("Tilni tanlang:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")], [InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]]))
     }
-    for b_key, mode_val in btn_keys.items():
+
+    for b_key, action_func in btn_actions.items():
         if raw_text in [TEXTS[l].get(b_key, '') for l in TEXTS]:
-            context.user_data['mode'] = 'auto'
-            context.user_data.pop('exam_draft_title', None)
-            if mode_val == 'video':
-                await update.message.reply_text("🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:")
-            elif mode_val == 'prayer':
-                context.user_data['mode'] = 'prayer'
-                await update.message.reply_text("🕌 Namoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozing:")
-            elif mode_val == 'pdf_hub':
-                await update.message.reply_text("📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nQuyidagi amallardan birini tanlang:", parse_mode="Markdown", reply_markup=get_pdf_hub_keyboard(user_lang))
-            elif mode_val == 'exam':
-                exams = get_user_exams(user_id)
-                cards = [format_exam_countdown(e, user_lang) for e in exams] if exams else ["Sizda hali saqlangan imtihon yoʻq."]
-                await update.message.reply_text("🎓 *IMTIHONLAR VA TAYMER*\n\n" + "\n".join(cards), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Imtihon qoʻshish", callback_data="exam_add")]]))
-            elif mode_val == 'schedule_img':
-                context.user_data['mode'] = 'schedule_img_input'
-                await update.message.reply_text("🗓️ *HAFTALIK DARS JADVALI GÖRSELİ*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 telefon kilit ekrani formatiga aylantirib beradi.", parse_mode="Markdown")
-            elif mode_val == 'pomodoro':
-                await update.message.reply_text("⏱️ *POMODORO & ESLATMA MARKAZI*", parse_mode="Markdown", reply_markup=get_pomodoro_keyboard())
-            elif mode_val == 'adhkar':
-                await update.message.reply_text("📿 Zikrlarni tanlang:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌅 Tonggi zikrlar", callback_data="adhkar_morning"), InlineKeyboardButton("🌇 Kechki zikrlar", callback_data="adhkar_evening")]]))
-            elif mode_val == 'translit':
-                context.user_data['mode'] = 'translit'
-                await update.message.reply_text("✍️ Matningizni yuboring, avtomatik Kirill ⇄ Lotin oʻgirib beraman:")
-            elif mode_val == 'lang':
-                await update.message.reply_text("Tilni tanlang:", reply_markup=get_language_keyboard())
+            cleanup_user_temp_files(context, user_id)
+            await action_func()
             return
 
-    # 2. Medya Linki Kontrolü
+    # 2. Medya İndirme Linki
     if is_supported_url(raw_text):
         url = re.search(r'https?://[^\s]+', raw_text).group(0)
         status = await update.message.reply_text("⏳ Video yuklab olinmoqda...")
@@ -1138,7 +1281,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mode = context.user_data.get('mode', 'auto')
 
-    # 3. SINAV ADI GİRİŞİ ➔ CANLI ZAMAN PANELİNİ AÇ (SEÇENEK A)
+    # 3. KORUMALI AKTİF MODLAR (ASLA BAŞKA YERE SIZAMAZ)
     if mode == 'exam_title_input':
         context.user_data['exam_draft_title'] = raw_text.strip()
         context.user_data['mode'] = 'exam_schedule_panel'
@@ -1153,7 +1296,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(format_scheduler_card(title, cur_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
         return
 
-    # 4. HAFTALIK DERS PROGRAMI GÖRSELİ OLUŞTURMA
+    if mode == 'pdf_split_wait_range':
+        file_path = context.user_data.get('split_file_path')
+        if file_path and os.path.exists(file_path):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, "nun_ajratilgan.pdf")
+                if split_pdf(file_path, raw_text, out_pdf):
+                    with open(out_pdf, "rb") as f:
+                        await update.message.reply_document(document=f, filename="nun_ajratilgan.pdf", caption=f"✅ `{raw_text}` sahifalari ajratib olindi!", parse_mode="Markdown")
+                else:
+                    await update.message.reply_text("❌ Sahifa oraligʻi notoʻgʻri. Masalan: `1-3` yoki `2, 4`")
+                    return
+        cleanup_user_temp_files(context, user_id)
+        return
+
     if mode == 'schedule_img_input':
         status = await update.message.reply_text("⚙️ Kilit ekrani fon rasmi tayyorlanmoqda...")
         parsed_data = parse_schedule_text(raw_text)
@@ -1163,30 +1319,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(out_img, "rb") as f_photo, open(out_img, "rb") as f_doc:
                 await update.message.reply_photo(photo=f_photo, caption="📱 *Dars Jadvali (Kilit Ekrani)*", parse_mode="Markdown")
                 await update.message.reply_document(document=f_doc, filename="dars_jadvali_1080x1920.png", caption="🖼️ Asl sifatdagi rasm")
-        context.user_data['mode'] = 'auto'
+        cleanup_user_temp_files(context, user_id)
         try: await status.delete()
         except Exception: pass
         return
 
-    # 5. PDF SAYFA AYIRMA ARALIĞI GİRİŞİ
-    if mode == 'pdf_split_wait_range':
-        file_path = context.user_data.get('split_file_path')
-        max_p = context.user_data.get('split_max_pages', 1)
-        if file_path and os.path.exists(file_path):
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                out_pdf = os.path.join(tmp_dir, "nun_ajratilgan.pdf")
-                if split_pdf(file_path, raw_text, out_pdf):
-                    with open(out_pdf, "rb") as f:
-                        await update.message.reply_document(document=f, filename="nun_ajratilgan.pdf", caption=f"✅ {raw_text} sahifalari muvaffaqiyatli ajratib olindi!")
-                else:
-                    await update.message.reply_text("❌ Sahifa oraligʻi notoʻgʻri kiritildi. Masalan: `1-3` yoki `2, 4`")
-            try: os.remove(file_path)
-            except Exception: pass
-            context.user_data.pop('split_file_path', None)
-            context.user_data['mode'] = 'auto'
-            return
-
-    # 6. HATIRLATICI EKLEME METNİ
     if mode == 'remind_input':
         target_dt = None
         rem_text = raw_text
@@ -1194,17 +1331,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rem_text, _, time_part = raw_text.partition("-")
             rem_text = rem_text.strip()
             time_part = time_part.strip()
-            # "20 daqiqa"
             m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m)", time_part, re.IGNORECASE)
-            if m_min:
-                target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
+            if m_min: target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
             else:
-                m_time = re.search(r"(\d{1,2})[:.](\d{2})", time_part)
-                if m_time:
-                    h, mn = int(m_time.group(1)), int(m_time.group(2))
-                    now = datetime.now()
-                    target_dt = now.replace(hour=h, minute=mn, second=0)
-                    if target_dt < now: target_dt += timedelta(days=1)
+                m_t = re.search(r"(\d{1,2})[:.](\d{2})", time_part)
+                if m_t:
+                    target_dt = datetime.now().replace(hour=int(m_t.group(1)), minute=int(m_t.group(2)), second=0)
+                    if target_dt < datetime.now(): target_dt += timedelta(days=1)
 
         if not target_dt:
             m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m)", raw_text, re.IGNORECASE)
@@ -1215,23 +1348,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if target_dt:
             dt_str = target_dt.strftime("%Y-%m-%d %H:%M")
             add_user_reminder(user_id, rem_text, dt_str)
-            context.user_data['mode'] = 'auto'
+            cleanup_user_temp_files(context, user_id)
             await update.message.reply_text(f"✅ *Eslatma oʻrnatildi!*\n\n📌 *Vazifa:* {rem_text}\n⏰ *Vaqt:* `{dt_str}`", parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ Vaqtni aniqlab boʻlmadi. Masalan:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`", parse_mode="Markdown")
         return
 
-    # 7. NAMAZ VAKTİ
     if mode == 'prayer':
         timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text)
         if timings:
             await update.message.reply_text(format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang), parse_mode="Markdown")
-            context.user_data['mode'] = 'auto'
+            cleanup_user_temp_files(context, user_id)
             return
-        await update.message.reply_text("❌ Shahar topilmadi.")
+        await update.message.reply_text("❌ Shahar topilmadi. Shahar nomini toʻgʻri yozing.")
         return
 
-    # 8. METİN ÇEVİRİSİ
     if mode == 'translit' or len(raw_text.split()) >= 3:
         if is_mostly_cyrillic(raw_text):
             await update.message.reply_text(f"🔤 *Lotin:*\n\n{cyrillic_to_latin(raw_text)}", parse_mode="Markdown")
@@ -1239,8 +1370,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🔤 *Кирилл:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
         return
 
-    # Genel Menü Hatırlatması
+    # Tanınmayan metinlerde menüyü göster
     await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
+
+async def set_mode_and_reply(context, mode_name, update, text, parse_mode=None):
+    context.user_data['mode'] = mode_name
+    await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_action")]]))
+
+async def show_exams_ui(user_id, user_lang, update):
+    exams = get_user_exams(user_id)
+    cards = [format_exam_countdown(e, user_lang) for e in exams] if exams else ["Sizda hali saqlangan imtihon yoʻq."]
+    await update.message.reply_text("🎓 *IMTIHONLAR VA TAYMER*\n\n" + "\n".join(cards), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Imtihon qoʻshish", callback_data="exam_add")]]))
 
 def main():
     token = os.environ.get("BOT_TOKEN")
@@ -1253,16 +1393,16 @@ def main():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
+    app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Arka plan hatırlatıcı denetleyicisi
     loop = asyncio.get_event_loop()
     loop.create_task(reminders_worker(app))
 
-    print("Nun Bot devasa özellik paketiyle aktif!")
+    print("Nun Bot korumalı durum mimarisi ve tam PDF paketiyle devrede!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

@@ -674,7 +674,7 @@ def latin_to_cyrillic(text: str) -> str:
             res.append("Ц" if c.isupper() else "ц"); i += 2; continue
         if c in ('y', 'Y') and nxt in ('o', 'O'): res.append("Ё" if c.isupper() else "ё"); i += 2; continue
         if c in ('y', 'Y') and nxt in ('u', 'U'): res.append("Ю" if c.isupper() else "ю"); i += 2; continue
-        if c in ('y', 'Y') and nxt in ('a', 'A'): res.append("Я" if c.isupper() else "я"); i += 2; continue
+        if c in ('y', 'Y') and nxt in ('a', 'A'): res.append("Ya" if c.isupper() else "я"); i += 2; continue
         if c in ('y', 'Y') and nxt in ('e', 'E'): res.append("Е" if c.isupper() else "е"); i += 2; continue
         if c in ('e', 'E'):
             res.append("Э" if (i == 0 or not prev.isalpha() or prev.lower() in 'aouie') else "Е" if c == 'E' else "е")
@@ -769,10 +769,10 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         f"📅 `{date_str}`\n\n"
         f"┌────────────────────────────┐\n"
         f"  ▫️ *{lbls[0]}:*    `{t_f}`\n"
-        f"  ▫️ *{lbls}:*    `{t_s}`\n"
-        f"  ▫️ *{lbls}:*    `{t_d}`\n"
-        f"  ▫️ *{lbls}:*    `{t_a}`\n"
-        f"  ▫️ *{lbls}:*    `{t_m}`\n"
+        f"  ▫️ *{lbls[1]}:*    `{t_s}`\n"
+        f"  ▫️ *{lbls[2]}:*    `{t_d}`\n"
+        f"  ▫️ *{lbls[3]}:*    `{t_a}`\n"
+        f"  ▫️ *{lbls[4]}:*    `{t_m}`\n"
         f"  ▫️ *{lbls[5]}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
         f"_{source}_"
@@ -982,7 +982,7 @@ TEXTS = {
         'btn_lang': "🌐 Tilni tanlash",
         'btn_timezone': "🕒 Vaqt mintaqasi",
         'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
-        'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
+        'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) yoki YouTube havolasini yuboring:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:",
         'prompt_schedule_img': "🗓️ *DARS JADVALI RASMI*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 qulflangan ekran formatiga aylantiradi.",
@@ -1039,14 +1039,14 @@ TEXTS = {
         'lang_changed': "Til muvaffaqiyatli oʻzgartirildi!",
         'tz_changed': "Vaqt mintaqasi muvaffaqiyatli saqlandi!",
         'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
-        'downloading': "Video yuklab olinmoqda, iltimos kuting...",
+        'downloading': "Media yuklab olinmoqda, iltimos kuting...",
         'uploading': "Telegramga yuklanmoqda...",
-        'error_size': "Fayl hajmi Telegram cheklovidan (50 MB) katta.",
+        'error_size': "⚠️ Fayl hajmi Telegram Bot cheklovidan (50 MB) katta. Iltimos, qisqaroq yoki pastroq sifatdagi video yuboring.",
         'error_general': "Xatolik yuz berdi. Qaytadan urinib koʻring.",
         'schedule_processing': "Qulflangan ekran fon rasmi tayyorlanmoqda...",
         'schedule_ready_caption': "Dars jadvali (Qulflangan ekran)",
         'doc_processing': "Fayl qabul qilindi, ishlov berilmoqda...",
-        'video_error': "Videoni yuklab olishda xatolik yuz berdi.",
+        'video_error': "Videoni yuklab olishda xatolik yuz berdi. Havola yopiq (private) boʻlishi yoki bot himoyasiga uchragan boʻlishi mumkin.",
         'adhkar_morning_btn': "🌅 Tonggi zikrlar",
         'adhkar_evening_btn': "🌇 Kechki zikrlar",
         'adhkar_morning_text': (
@@ -1080,7 +1080,7 @@ TEXTS = {
         'btn_lang': "🌐 Dil Seçimi",
         'btn_timezone': "🕒 Saat Dilimi",
         'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
-        'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
+        'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) veya YouTube linki gönderin:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & BELGE ARAÇLARI*\n\nİşlem seçiniz:",
         'prompt_schedule_img': "🗓️ *HAFTALIK DERS PROGRAMI GÖRSELİ*\n\nDers programınızı gün gün yazıp gönderin (Örn: Pazartesi: 09:00 Matematik...):\nBot 1080x1920 telefon kilit ekranı formatına dönüştürecektir.",
@@ -1139,12 +1139,12 @@ TEXTS = {
         'city_not_found': "Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
         'downloading': "Medya indiriliyor, lütfen bekleyin...",
         'uploading': "Telegram'a yükleniyor...",
-        'error_size': "Dosya boyutu Telegram'ın 50 MB sınırından daha büyük.",
+        'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından büyük olduğu için gönderilemiyor.",
         'error_general': "Bir hata oluştu. Lütfen tekrar deneyin.",
         'schedule_processing': "Kilit ekranı duvar kağıdı hazırlanıyor...",
         'schedule_ready_caption': "Ders Programı (Kilit Ekranı)",
         'doc_processing': "Dosya alındı, işleniyor...",
-        'video_error': "Video indirilirken bir hata oluştu.",
+        'video_error': "Video indirilirken bir hata oluştu. Bağlantı gizli hesapta olabilir veya platform korumasına takılmış olabilir.",
         'adhkar_morning_btn': "🌅 Sabah Zikirleri",
         'adhkar_evening_btn': "🌇 Akşam Zikirleri",
         'adhkar_morning_text': (
@@ -1178,7 +1178,7 @@ TEXTS = {
         'btn_lang': "🌐 Сменить язык",
         'btn_timezone': "🕒 Часовой пояс",
         'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
-        'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
+        'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook, X (Twitter) или YouTube:",
         'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*, *Стамбул*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & ДОКУМЕНТЫ*\n\nВыберите действие:",
         'prompt_schedule_img': "🗓️ *РАСПИСАНИЕ ЗАНЯТИЙ (ОБОИ)*\n\nОтправьте расписание по дням (Напр: Понедельник: 09:00 Математика...):\nБот создаст стильные обои 1080x1920 для экрана блокировки.",
@@ -1237,7 +1237,7 @@ TEXTS = {
         'city_not_found': "Город не найден. Напишите правильное название.",
         'downloading': "Скачивается, пожалуйста подождите...",
         'uploading': "Отправка в Telegram...",
-        'error_size': "Размер файла превышает лимит Telegram (50 МБ).",
+        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
         'error_general': "Произошла ошибка. Попробуйте снова.",
         'schedule_processing': "Создаются обои для экрана блокировки...",
         'schedule_ready_caption': "Расписание занятий (Экран блокировки)",
@@ -1276,7 +1276,7 @@ TEXTS = {
         'btn_lang': "🌐 Change Language",
         'btn_timezone': "🕒 Timezone",
         'btn_auto_loc': "📍 Auto-Detect (Location / City)",
-        'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
+        'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, X (Twitter), or YouTube:",
         'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & DOCUMENTS HUB*\n\nChoose an action:",
         'prompt_schedule_img': "🗓️ *WEEKLY SCHEDULE WALLPAPER*\n\nSend your schedule line by line (e.g. Monday: 09:00 Math...):\nThe bot will generate an aesthetic 1080x1920 lock-screen wallpaper.",
@@ -1335,12 +1335,12 @@ TEXTS = {
         'city_not_found': "City not found. Please enter a valid city name.",
         'downloading': "Downloading media, please wait...",
         'uploading': "Uploading to Telegram...",
-        'error_size': "File exceeds Telegram's 50 MB limit.",
+        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
         'error_general': "An error occurred. Please try again.",
         'schedule_processing': "Generating lock-screen wallpaper...",
         'schedule_ready_caption': "Class Schedule (Lock Screen)",
         'doc_processing': "File received, processing...",
-        'video_error': "An error occurred during video download.",
+        'video_error': "An error occurred during video download. The content might be private or restricted by platform protection.",
         'adhkar_morning_btn': "🌅 Morning Adhkar",
         'adhkar_evening_btn': "🌇 Evening Adhkar",
         'adhkar_morning_text': (
@@ -1378,29 +1378,98 @@ def get_reply_menu(user_id, context=None):
     ], resize_keyboard=True)
 
 # =====================================================================
-# VİDEO İNDİRME MOTORU
+# GELİŞMİŞ VİDEO & MEDYA İNDİRME MOTORU (INSTA, TIKTOK, X, FB, YT)
 # =====================================================================
-SUPPORTED_PLATFORMS = [r'(?:instagram\.com)', r'(?:tiktok\.com)', r'(?:facebook\.com|fb\.watch|fb\.gg)', r'(?:twitter\.com|x\.com)']
+SUPPORTED_PLATFORMS = [
+    r'(?:instagram\.com|instagr\.am|threads\.net)',
+    r'(?:tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)',
+    r'(?:facebook\.com|fb\.watch|fb\.gg|fb\.me|m\.facebook\.com)',
+    r'(?:twitter\.com|x\.com)',
+    r'(?:youtube\.com|youtu\.be)'
+]
 
 def is_supported_url(url: str) -> bool:
     return any(re.search(p, url, re.IGNORECASE) for p in SUPPORTED_PLATFORMS)
 
-def download_media_sync(url: str, download_dir: str):
-    opts = {
-        'outtmpl': os.path.join(download_dir, 'media_%(id)s.%(ext)s'),
-        'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
-        'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio/best',
+class FileTooLargeError(Exception):
+    def __init__(self, size_mb: float):
+        self.size_mb = size_mb
+        super().__init__(f"File size ({size_mb:.1f} MB) exceeds Telegram 50 MB limit.")
+
+def download_media_sync(url: str, download_dir: str) -> dict:
+    """
+    Instagram, TikTok, X (Twitter), Facebook ve YouTube için optimize edilmiş
+    hataya dayanıklı indirme fonksiyonu.
+    """
+    out_tmpl = os.path.join(download_dir, 'media_%(id)s.%(ext)s')
+    
+    # 50 MB Telegram Bot API limiti için format hiyerarşisi
+    ydl_opts = {
+        'outtmpl': out_tmpl,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'noplaylist': True,
+        'socket_timeout': 25,
+        'retries': 3,
+        # 48 MB altındaki en kaliteli formatı hedefler, aşarsa en iyi video akışını çeker
+        'format': 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
     }
+
+    # ffmpeg varsa MP4 olarak birleştir
     if shutil.which('ffmpeg'):
-        opts['merge_output_format'] = 'mp4'
-    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl_opts['merge_output_format'] = 'mp4'
+
+    # Varsa cookies.txt dosyasını bağla
+    cookie_path = os.environ.get("COOKIE_FILE", "cookies.txt")
+    if os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        title = info.get('title', 'Video') if info else 'Video'
+        title = (info.get('title') or 'Video').strip() if info else 'Video'
+        duration = info.get('duration', 0) if info else 0
+        width = info.get('width') if info else None
+        height = info.get('height') if info else None
+
+        # İndirilen dosyalar arasından geçici (.part, .ytdl) olmayan en uygun dosyayı seç
+        valid_files = []
         for f in os.listdir(download_dir):
-            p = os.path.join(download_dir, f)
-            if os.path.isfile(p) and os.path.getsize(p) > 10 * 1024:
-                return p, title
-    raise RuntimeError("Dosya indirilemedi.")
+            full_p = os.path.join(download_dir, f)
+            if os.path.isfile(full_p):
+                ext = os.path.splitext(f)[1].lower()
+                if ext not in ('.part', '.ytdl', '.temp') and os.path.getsize(full_p) > 1024:
+                    valid_files.append(full_p)
+
+        if not valid_files:
+            raise RuntimeError("Dosya indirilemedi veya platform içeriği kısıtladı.")
+
+        # Boyuta göre sırala (ana medya dosyasını al)
+        valid_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
+        chosen_file = valid_files[0]
+        size_mb = os.path.getsize(chosen_file) / (1024 * 1024)
+
+        if size_mb > 49.5:
+            raise FileTooLargeError(size_mb)
+
+        ext = os.path.splitext(chosen_file)[1].lower()
+        is_video = ext in ('.mp4', '.mov', '.mkv', '.webm', '.avi')
+        is_photo = ext in ('.jpg', '.jpeg', '.png', '.webp')
+
+        return {
+            'path': chosen_file,
+            'title': title,
+            'duration': duration,
+            'width': width,
+            'height': height,
+            'size_mb': size_mb,
+            'is_video': is_video,
+            'is_photo': is_photo
+        }
 
 # =====================================================================
 # DİNAMİK BOT KOMUTLARI
@@ -1547,7 +1616,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("settz_"):
         parts = data.split("_")
         try:
-            val = int(parts)
+            val = int(parts[1])
             save_user_timezone(user_id, val, locked=True)
             try: await query.message.delete()
             except Exception: pass
@@ -1940,7 +2009,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for b_key, mode_val in btn_keys.items():
         allowed_texts = [TEXTS[l].get(b_key, '') for l in TEXTS]
         if b_key == 'btn_translit':
-            allowed_texts.append("🔤 Krill ⇄ Lotin")  # Eski typo uyumluluğu
+            allowed_texts.append("🔤 Krill ⇄ Lotin")
         if raw_text in allowed_texts:
             cleanup_user_temp_files(context, user_id)
             if mode_val == 'video':
@@ -1969,21 +2038,61 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Tilni tanlang / Dil seçimi / Выберите язык / Select language:", reply_markup=get_language_keyboard())
             return
 
-    # 2. Medya Linki Kontrolü
+    # 2. Medya Linki Kontrolü (Gelişmiş & Çökmez)
     if is_supported_url(raw_text):
-        url = re.search(r'https?://[^\s]+', raw_text).group(0)
-        status = await update.message.reply_text(get_text(user_id, 'downloading', context))
-        try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                f_path, title = await asyncio.to_thread(download_media_sync, url, tmp_dir)
-                clean_t = re.sub(r'[\\/*?:"<>|]', '', title)[:60]
-                with open(f_path, 'rb') as f:
-                    await context.bot.send_video(chat_id=chat_id, video=f, caption=f"🎬 {clean_t}", supports_streaming=True)
-            await status.delete()
-        except Exception as e:
-            print(f"Video hatasi: {e}")
-            await status.edit_text(get_text(user_id, 'video_error', context))
-        return
+        m_url = re.search(r'https?://[^\s]+', raw_text)
+        if m_url:
+            clean_url = m_url.group(0).rstrip('.,!?()[]"\'')
+            status = await update.message.reply_text(get_text(user_id, 'downloading', context))
+            try:
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    media_res = await asyncio.to_thread(download_media_sync, clean_url, tmp_dir)
+                    f_path = media_res['path']
+                    title = media_res['title']
+                    clean_t = re.sub(r'[\\/*?:"<>|]', '', title)[:60]
+
+                    await status.edit_text(get_text(user_id, 'uploading', context))
+
+                    if media_res['is_photo']:
+                        with open(f_path, 'rb') as f:
+                            await context.bot.send_photo(
+                                chat_id=chat_id,
+                                photo=f,
+                                caption=f"📸 {clean_t}"
+                            )
+                    else:
+                        with open(f_path, 'rb') as f:
+                            await context.bot.send_video(
+                                chat_id=chat_id,
+                                video=f,
+                                caption=f"🎬 {clean_t}",
+                                duration=media_res.get('duration'),
+                                width=media_res.get('width'),
+                                height=media_res.get('height'),
+                                supports_streaming=True
+                            )
+
+                try:
+                    await status.delete()
+                except Exception:
+                    pass
+
+            except FileTooLargeError:
+                try:
+                    await status.edit_text(get_text(user_id, 'error_size', context))
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"[MEDIA_DOWNLOAD_ERROR] {e}")
+                err_msg = get_text(user_id, 'video_error', context)
+                err_str = str(e).lower()
+                if "sign in" in err_str or "bot" in err_str or "login" in err_str:
+                    err_msg += "\n\n⚠️ (Platform oturum veya çerez doğrulaması talep ediyor)."
+                try:
+                    await status.edit_text(err_msg)
+                except Exception:
+                    pass
+            return
 
     mode = context.user_data.get('mode', 'auto')
 
@@ -2091,6 +2200,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Genel Menü Hatırlatması
     await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
 
+async def post_init_setup(application):
+    """
+    python-telegram-bot v20+ için güvenli arka plan zamanlayıcı başlatıcısı.
+    """
+    asyncio.create_task(reminders_worker(application))
+
 def main():
     token = os.environ.get("BOT_TOKEN")
     if not token: raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
@@ -2100,7 +2215,7 @@ def main():
     threading.Thread(target=run_health_server, daemon=True).start()
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).post_init(post_init_setup).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
@@ -2109,9 +2224,6 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    loop = asyncio.get_event_loop()
-    loop.create_task(reminders_worker(app))
 
     print("Nun Bot 7/24 Kesintisiz Modda Devrede!")
     app.run_polling(drop_pending_updates=True, timeout=30)

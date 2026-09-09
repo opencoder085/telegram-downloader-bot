@@ -192,21 +192,24 @@ TZ_FILE = "user_timezones.json"
 TZ_LOCK_FILE = "user_tz_locked.json"
 EXAMS_FILE = "user_exams.json"
 REMINDERS_FILE = "user_reminders.json"
+CITY_FILE = "user_cities.json"
 
 USER_LANGS = {}
 USER_TIMEZONES = {}
 USER_TZ_LOCKED = {}
 USER_EXAMS = {}
 USER_REMINDERS = {}
+USER_CITIES = {}
 
 def load_databases():
-    global USER_LANGS, USER_TIMEZONES, USER_TZ_LOCKED, USER_EXAMS, USER_REMINDERS
+    global USER_LANGS, USER_TIMEZONES, USER_TZ_LOCKED, USER_EXAMS, USER_REMINDERS, USER_CITIES
     for fname, var_ref in [
         (LANG_FILE, USER_LANGS),
         (TZ_FILE, USER_TIMEZONES),
         (TZ_LOCK_FILE, USER_TZ_LOCKED),
         (EXAMS_FILE, USER_EXAMS),
-        (REMINDERS_FILE, USER_REMINDERS)
+        (REMINDERS_FILE, USER_REMINDERS),
+        (CITY_FILE, USER_CITIES)
     ]:
         if os.path.exists(fname):
             try:
@@ -244,6 +247,14 @@ def save_user_timezone(user_id, offset_hours: int, locked: bool = False):
         USER_TZ_LOCKED[uid_str] = True
         save_json(TZ_LOCK_FILE, USER_TZ_LOCKED)
 
+def save_user_city(user_id, city_name: str):
+    uid_str = str(user_id)
+    USER_CITIES[uid_str] = city_name.strip().title()
+    save_json(CITY_FILE, USER_CITIES)
+
+def get_user_city(user_id) -> str:
+    return USER_CITIES.get(str(user_id))
+
 def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code: str = None):
     uid_str = str(user_id)
     if USER_TZ_LOCKED.get(uid_str):
@@ -264,13 +275,14 @@ def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code
                 pattern = r"\b" + re.escape(city) + r"(?:daman|dasan|damiz|dayam|dayik|da|de|dan|den|ga|ge|ya|ye|a|e|ni|ning|lik|li)?\b"
                 if re.search(pattern, text_clean):
                     detected_tz = tz
+                    save_user_city(user_id, city.title())
                     break
 
     if detected_tz is None and uid_str not in USER_TIMEZONES and user_lang_code:
         code = user_lang_code.lower()
-        if code.startswith('tr'): detected_tz = 3
-        elif code.startswith('ru'): detected_tz = 3
-        elif code.startswith('uz'): detected_tz = 5
+        if code.startswith('tr'): detected_tz = 3; save_user_city(user_id, "Istanbul")
+        elif code.startswith('ru'): detected_tz = 3; save_user_city(user_id, "Moskva")
+        elif code.startswith('uz'): detected_tz = 5; save_user_city(user_id, "Toshkent")
 
     if detected_tz is not None:
         save_user_timezone(user_id, detected_tz, locked=False)
@@ -313,6 +325,34 @@ def delete_user_exam(user_id, exam_id: str) -> bool:
 
 def get_user_exams(user_id) -> list:
     return USER_EXAMS.get(str(user_id), [])
+
+def format_exam_countdown(exam_date_str: str, now: datetime, lang: str = 'uz') -> str:
+    try:
+        exam_dt = datetime.strptime(exam_date_str, '%Y-%m-%d %H:%M')
+        diff = exam_dt - now
+        if diff.total_seconds() <= 0:
+            labels = {
+                'uz': "Imtihon vaqti oʻtgan",
+                'tr': "Sınav vakti geçti",
+                'ru': "Время экзамена прошло",
+                'en': "Exam date has passed"
+            }
+            return f"🏁 _{labels.get(lang, labels['uz'])}_"
+        days = diff.days
+        hours = diff.seconds // 3600
+        mins = (diff.seconds % 3600) // 60
+        if days > 0:
+            lbl_days = {'uz': "kun", 'tr': "gün", 'ru': "дн.", 'en': "days"}.get(lang, "kun")
+            lbl_hours = {'uz': "soat", 'tr': "saat", 'ru': "ч.", 'en': "hours"}.get(lang, "soat")
+            lbl_left = {'uz': "qoldi", 'tr': "kaldı", 'ru': "осталось", 'en': "left"}.get(lang, "qoldi")
+            return f"⏳ `{days} {lbl_days}, {hours} {lbl_hours} {lbl_left}`"
+        else:
+            lbl_hours = {'uz': "soat", 'tr': "saat", 'ru': "ч.", 'en': "hours"}.get(lang, "soat")
+            lbl_mins = {'uz': "daq", 'tr': "dk", 'ru': "мин.", 'en': "mins"}.get(lang, "daq")
+            lbl_left = {'uz': "qoldi", 'tr': "kaldı", 'ru': "осталось", 'en': "left"}.get(lang, "qoldi")
+            return f"⏳ `{hours} {lbl_hours}, {mins} {lbl_mins} {lbl_left}`"
+    except Exception:
+        return ""
 
 def add_user_reminder(user_id, text: str, target_dt_str: str) -> str:
     uid_str = str(user_id)
@@ -546,7 +586,7 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, user_lang
     return True
 
 # =====================================================================
-# POMODORO & HATIRLATICI MOTORU (GERÇEK KULLANICI YEREL SAATİ)
+# POMODORO & HATIRLATICI MOTORU (SADE VE TAM SENKRONİZE)
 # =====================================================================
 async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
     await asyncio.sleep(duration_mins * 60)
@@ -592,7 +632,7 @@ async def reminders_worker(app):
                         pass
 
 # =====================================================================
-# KUSURSUZ ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU (DÜZELTİLMİŞ)
+# KUSURSUZ ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
 # =====================================================================
 APOSTROPHES = set(["'", "’", "‘", "`", "ʻ", "ʼ", "\u02bb", "\u02bc"])
 VOWELS_CYR = set("аоуиэеёюяўАОУИЭЕЁЮЯЎ")
@@ -604,7 +644,7 @@ MAP_CYR_TO_LAT = {
     'З': 'Z', 'з': 'z', 'И': 'I', 'и': 'i', 'Й': 'Y', 'й': 'y',
     'К': 'K', 'к': 'k', 'Қ': 'Q', 'қ': 'q', 'Л': 'L', 'л': 'l',
     'М': 'M', 'м': 'm', 'Н': 'N', 'н': 'n', 'О': 'O', 'о': 'o',
-    'П': 'P', 'п': 'p', 'Р': 'R', 'р': 'r', 'С': 'S', 'с': 's',
+    'П': 'P', 'п': 'p', 'Р': 'R', 'r': 'r', 'С': 'S', 'с': 's',
     'Т': 'T', 'т': 't', 'У': 'U', 'у': 'u', 'Ф': 'F', 'ф': 'f',
     'Х': 'X', 'х': 'x', 'Ҳ': 'H', 'ҳ': 'h', 'Э': 'E', 'э': 'e',
 }
@@ -628,13 +668,11 @@ def cyrillic_to_latin(text: str) -> str:
         prev = text[i-1] if i > 0 else " "
         nxt = text[i+1] if i+1 < n else ""
         
-        # S-H birikmasi (СҲ / сҳ)
         if c in ('С', 'с') and nxt in ('Ҳ', 'ҳ'):
             res.append("S'H" if (c.isupper() and nxt.isupper()) else ("S'h" if c.isupper() else "s'h"))
             i += 2
             continue
             
-        # E / е
         if c in ('Е', 'е'):
             if i == 0 or not prev.isalpha() or prev in VOWELS_CYR or prev in 'ъЪьЬ':
                 res.append("YE" if (c.isupper() and nxt.isupper()) else ("Ye" if c.isupper() else "ye"))
@@ -643,7 +681,6 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
-        # Ё, Ю, Я
         if c in ('Ё', 'ё'):
             res.append("YO" if (c.isupper() and nxt.isupper()) else ("Yo" if c.isupper() else "yo"))
             i += 1
@@ -657,54 +694,27 @@ def cyrillic_to_latin(text: str) -> str:
             i += 1
             continue
             
-        # Ч / ч (Kusursuz düzeltildi)
         if c in ('Ч', 'ч'):
             res.append("CH" if (c.isupper() and nxt.isupper()) else ("Ch" if c.isupper() else "ch"))
             i += 1
             continue
             
-        # Ш / ш, Щ / щ
         if c in ('Ш', 'ш', 'Щ', 'щ'):
             res.append("SH" if (c.isupper() and nxt.isupper()) else ("Sh" if c.isupper() else "sh"))
             i += 1
             continue
             
-        # Ц / ц
         if c in ('Ц', 'ц'):
             res.append("TS" if (c.isupper() and nxt.isupper()) else ("Ts" if c.isupper() else "ts"))
             i += 1
             continue
             
-        # Ў / ў
-        if c == 'Ў':
-            res.append("Oʻ")
-            i += 1
-            continue
-        if c == 'ў':
-            res.append("oʻ")
-            i += 1
-            continue
-            
-        # Ғ / ғ
-        if c == 'Ғ':
-            res.append("Gʻ")
-            i += 1
-            continue
-        if c == 'ғ':
-            res.append("gʻ")
-            i += 1
-            continue
-            
-        # Ъ / ъ (tutuq belgisi)
-        if c in ('Ъ', 'ъ'):
-            res.append("'")
-            i += 1
-            continue
-            
-        # Ь / ь
-        if c in ('Ь', 'ь'):
-            i += 1
-            continue
+        if c == 'Ў': res.append("Oʻ"); i += 1; continue
+        if c == 'ў': res.append("oʻ"); i += 1; continue
+        if c == 'Ғ': res.append("Gʻ"); i += 1; continue
+        if c == 'ғ': res.append("gʻ"); i += 1; continue
+        if c in ('Ъ', 'ъ'): res.append("'"); i += 1; continue
+        if c in ('Ь', 'ь'): i += 1; continue
             
         res.append(MAP_CYR_TO_LAT.get(c, c))
         i += 1
@@ -720,73 +730,61 @@ def latin_to_cyrillic(text: str) -> str:
         nxt2 = text[i+2] if i+2 < n else ""
         prev = text[i-1] if i > 0 else " "
         
-        # S'h / s'h (Сҳ)
         if c in ('s', 'S') and nxt in APOSTROPHES and nxt2 in ('h', 'H'):
             res.append("СҲ" if (c.isupper() and nxt2.isupper()) else ("Сҳ" if c.isupper() else "сҳ"))
             i += 3
             continue
 
-        # Yo'l / yo'q / yo'nalish (y + o' = йў, ёъл emas!)
         if c in ('y', 'Y') and nxt in ('o', 'O') and nxt2 in APOSTROPHES:
             res.append("ЙЎ" if (c.isupper() and nxt.isupper()) else ("Йў" if c.isupper() else "йў"))
             i += 3
             continue
             
-        # Oʻ / oʻ (Ў / ў)
         if c in ('o', 'O') and nxt in APOSTROPHES:
             res.append("Ў" if c.isupper() else "ў")
             i += 2
             continue
             
-        # Gʻ / gʻ (Ғ / ғ)
         if c in ('g', 'G') and nxt in APOSTROPHES:
             res.append("Ғ" if c.isupper() else "ғ")
             i += 2
             continue
             
-        # Sh / sh (Ш / ш)
         if c in ('s', 'S') and nxt in ('h', 'H'):
             res.append("Ш" if (c.isupper() and nxt.isupper()) else ("Ш" if c.isupper() else "ш"))
             i += 2
             continue
             
-        # Ch / ch (Ч / ч - Hatasız Kirilceye dönüştürme)
         if c in ('c', 'C') and nxt in ('h', 'H'):
             res.append("Ч" if (c.isupper() and nxt.isupper()) else ("Ч" if c.isupper() else "ч"))
             i += 2
             continue
             
-        # Yo / yo (Ё / ё)
         if c in ('y', 'Y') and nxt in ('o', 'O'):
             res.append("Ё" if (c.isupper() and nxt.isupper()) else ("Ё" if c.isupper() else "ё"))
             i += 2
             continue
             
-        # Yu / yu (Ю / ю)
         if c in ('y', 'Y') and nxt in ('u', 'U'):
             res.append("Ю" if (c.isupper() and nxt.isupper()) else ("Ю" if c.isupper() else "ю"))
             i += 2
             continue
             
-        # Ya / ya (Я / я)
         if c in ('y', 'Y') and nxt in ('a', 'A'):
             res.append("Я" if (c.isupper() and nxt.isupper()) else ("Я" if c.isupper() else "я"))
             i += 2
             continue
             
-        # Ye / ye (Е / е)
         if c in ('y', 'Y') and nxt in ('e', 'E'):
             res.append("Е" if (c.isupper() and nxt.isupper()) else ("Е" if c.isupper() else "е"))
             i += 2
             continue
             
-        # Ts / ts (Ц / ц)
         if c in ('t', 'T') and nxt in ('s', 'S'):
             res.append("Ц" if (c.isupper() and nxt.isupper()) else ("Ц" if c.isupper() else "ц"))
             i += 2
             continue
             
-        # E / e (Boshda bo'lsa yoki unlidan keyin bo'lsa Э/э, undoshdan keyin bo'lsa Е/е)
         if c in ('e', 'E'):
             if i == 0 or not prev.isalpha() or prev.lower() in VOWELS_LAT:
                 res.append("Э" if c.isupper() else "э")
@@ -795,7 +793,6 @@ def latin_to_cyrillic(text: str) -> str:
             i += 1
             continue
             
-        # Tutuq belgisi (')
         if c in APOSTROPHES:
             res.append("ъ" if prev.isalpha() else "'")
             i += 1
@@ -1037,7 +1034,7 @@ async def safe_edit_text_markup(message, text: str, reply_markup=None, parse_mod
             pass
 
 # =====================================================================
-# SADELEŞTİRİLMİŞ ARAYÜZLER (PDF, POMODORO, ZİKİRLER, SAAT DİLİMİ)
+# SADELEŞTİRİLMİŞ ARAYÜZLER (POMODORO, PDF, ZİKİRLER, SAAT DİLİMİ)
 # =====================================================================
 def get_pdf_hub_keyboard(lang: str = 'uz'):
     t = TEXTS.get(lang, TEXTS['uz'])
@@ -1047,16 +1044,15 @@ def get_pdf_hub_keyboard(lang: str = 'uz'):
     ])
 
 def get_pomodoro_keyboard(user_id: int, lang: str = 'uz'):
+    """
+    Kullanıcı isteği doğrultusunda saat/mekan butonu Pomodoro altından
+    tamamen kaldırılmıştır; menüdeki müstakil butona ve otomatik senkrona bağlanmıştır.
+    """
     t = TEXTS.get(lang, TEXTS['uz'])
-    tz_off = get_user_tz_offset(user_id)
-    tz_btn_lbl = f"🕒 UTC+{tz_off}" if tz_off >= 0 else f"🕒 UTC{tz_off}"
-    cur_time = get_user_now(user_id).strftime("%H:%M")
-
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t['pomo_btn_work25'], callback_data="pomo_25"), InlineKeyboardButton(t['pomo_btn_break5'], callback_data="pomo_5")],
         [InlineKeyboardButton(t['pomo_btn_work50'], callback_data="pomo_50"), InlineKeyboardButton(t['pomo_btn_break10'], callback_data="pomo_10")],
         [InlineKeyboardButton(t['pomo_btn_add_remind'], callback_data="remind_add"), InlineKeyboardButton(t['pomo_btn_my_reminds'], callback_data="remind_list")],
-        [InlineKeyboardButton(f"{t['btn_timezone']}: {tz_btn_lbl} ({cur_time})", callback_data="open_tz_selector")]
     ])
 
 def get_adhkar_selection_keyboard(lang: str = 'uz'):
@@ -1085,7 +1081,7 @@ def get_timezone_keyboard(lang: str = 'uz'):
     ])
 
 # =====================================================================
-# 4 DİLLİ TAM VE EKSİKSİZ SÖZLÜK (GENİŞLETİLMİŞ ZİKİRLER VE SALAVATLAR)
+# 4 DİLLİ TAM VE EKSİKSİZ SÖZLÜK
 # =====================================================================
 TEXTS = {
     'uz': {
@@ -1102,7 +1098,9 @@ TEXTS = {
         'btn_timezone_hub': "🕒 Vaqt & Joylashuv",
         'btn_lang': "🌐 Tilni tanlash",
         'btn_timezone': "🕒 Vaqt mintaqasi",
+        'btn_city_label': "Shahar",
         'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
+        'btn_change_prayer_city': "🔄 Shaharni oʻzgartirish",
         'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) yoki YouTube havolasini yuboring:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:",
@@ -1178,7 +1176,7 @@ TEXTS = {
         'adhkar_morning_text': (
             "🌅 *TONGGI ZIKRLAR (ARABCHA, OʻQILISHI VA MAʼNOSI)*\n\n"
             "1️⃣ *Oyatal Kursiy*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ لَّهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ...\n"
+            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ...\n"
             "📖 _«Allohu laa ilaaha illa huval hayyul qoyyuum...»_\n"
             "🇺🇿 *Maʼnosi:* «Alloh, Undan oʻzga iloh yoʻqdir. U doim tirik va barchani idora qilib turuvchidir...»\n\n"
             "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
@@ -1206,41 +1204,37 @@ TEXTS = {
         'adhkar_evening_text': (
             "🌇 *KECHKI ZIKRLAR (ARABCHA, OʻQILISHI VA MAʼNOSI)*\n\n"
             "1️⃣ *Oyatal Kursiy*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ...\n"
-            "📖 _«Allohu laa ilaaha illa huval hayyul qoyyuum...»_\n\n"
+            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ...\n\n"
             "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n\n"
-            "3️⃣ *Sayyidul Istigʻfor*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ...\n\n"
+            "3️⃣ *Sayyidul Istigʻfor*\n\n"
             "4️⃣ *Kechki shukronalik zikri*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ\n"
-            "📖 _«Amsaynaa va amsal mulku lillaah, valhamdu lillaah, laa ilaaha illallohu vahdahu laa shariyka lah...»_\n"
-            "🇺🇿 *Maʼnosi:* «Biz ham, butun mulk ham Allohga tegishli boʻlgan holda kechga yetdik. Hamd Allohgadir...»\n\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ...\n"
+            "📖 _«Amsaynaa va amsal mulku lillaah, valhamdu lillaah...»_\n\n"
             "5️⃣ *Panoh soʻrash duosi (3 marta)*\n"
             "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
             "📖 _«A'uuzu bi kalimaatillaahit taammaati min sharri maa xolaq.»_\n"
             "🇺🇿 *Maʼnosi:* «Yaratilgan narsalarning yomonligidan Allohning mukammal kalimalari bilan panoh tilayman.»\n\n"
-            "6️⃣ *Zararlardan omonda boʻlish zikri (3 marta)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "6️⃣ *Zararlardan omonda boʻlish (3 marta)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ...\n\n"
             "7️⃣ *Tasbeh (100 marta)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n"
-            "📖 _«Subhaanallohi va bihamdih»_"
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_salawat_text': (
             "🤲 *ENG MUTEBAR SALOVATLAR VA ULARNING MAʼNOLARI*\n\n"
             "1️⃣ *Salovati Ibrohimiyya (Namozdagi salovat)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
-            "📖 _«Allohumma solli 'alaa Muhammadiv-va 'alaa aali Muhammad, kamaa sollayta 'alaa Ibrohiyma va 'alaa aali Ibrohiym, innaka hamiydum-majiyd...»_\n"
+            "📖 _«Allohumma solli 'alaa Muhammadiv-va 'alaa aali Muhammad, kamaa sollayta 'alaa Ibrohiyma va 'alaa aali Ibrohiym...»_\n"
             "🇺🇿 *Maʼnosi:* «Ey Allohim! Ibrohimga va uning oilasiga rahmat yogʻdirganingdek, Muhammadga va uning oilasiga ham rahmat yogʻdir...»\n\n"
             "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin tibbil quluubi va davaa'ihaa, va 'aafiyatil abdaani va shifaa'ihaa, va nuuril absori va diyaa'ihaa, va 'alaa aalihii va sohbihii va sallim.»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Qalblarning tabibi va davosi, tanlarning shifosi, koʻzlarning nuri boʻlgan Muhammad alayhissalomga, u zotning oilasi va sahobalariga salotu salom yoʻlla.»\n\n"
             "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin solaatan tunjiynaa bihaa min jamiy'il ahvaali val aafaat...»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Bizga shunday salovat yuborginki, uning sharofati bilan bizni barcha ofatlardan qutqar, ehtiyojlarimizni ravo qil, barcha yomonliklardan pokla va eng oliy darajalarga koʻtar...»\n\n"
             "4️⃣ *Salovati Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
             "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadinil faatihi limaa ughliq, val xootimi limaa sabaq, naasiril haqqi bil haqq...»_\n"
             "🇺🇿 *Maʼnosi:* «Allohim! Yopiqlarni ochuvchi, oʻtganlarning xotimasi, haqiqatni himoya qiluvchi va toʻgʻri yoʻlga yetaklovchi Muhammadga salovat ayla.»\n\n"
             "5️⃣ *Qisqa va Fazilatli Salovat*\n"
@@ -1262,7 +1256,9 @@ TEXTS = {
         'btn_timezone_hub': "🕒 Saat & Konum Ayarı",
         'btn_lang': "🌐 Dil Seçimi",
         'btn_timezone': "🕒 Saat Dilimi",
+        'btn_city_label': "Şehir",
         'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
+        'btn_change_prayer_city': "🔄 Şehri Değiştir",
         'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) veya YouTube linki gönderin:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & BELGE ARAÇLARI*\n\nİşlem seçiniz:",
@@ -1338,49 +1334,43 @@ TEXTS = {
         'adhkar_morning_text': (
             "🌅 *SABAH ZİKİRLERİ (ARAPÇA METİN, OKUNUŞ VE MEAL)*\n\n"
             "1️⃣ *Ayet-el Kürsi*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ لَّهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ...\n"
+            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ...\n"
             "📖 _«Allâhü lâ ilâhe illâ hüve’l-hayyü’l-kayyûm...»_\n"
-            "🇹🇷 *Meali:* «Allah, O'ndan başka ilah yoktur. Hayy'dır (daima diridir), Kayyûm'dur (bütün varlığı ayakta tutandır)...»\n\n"
+            "🇹🇷 *Meali:* «Allah, O'ndan başka ilah yoktur. Hayy'dır, Kayyûm'dur...»\n\n"
             "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n"
             "📖 _Sabah ve akşam üçer defa okuyan kimse her türlü kötülükten korunur._\n\n"
             "3️⃣ *Seyyidü'l-İstiğfar (En Faziletli İstiğfar)*\n"
             "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
             "📖 _«Allâhümme ente Rabbî lâ ilâhe illâ ente halaktenî ve ene ‘abdüke ve ene ‘alâ ‘ahdike ve va‘dike mesteta‘tü...»_\n"
-            "🇹🇷 *Meali:* «Allah'ım! Sen benim Rabbimsin. İlah ancak Sensin. Beni Sen yarattın, ben Senin kulunum. Gücüm yettiğince Sana verdiğim sözde durmaktayım... Beni bağışla, şüphesiz günahları ancak Sen bağışlarsın.»\n\n"
+            "🇹🇷 *Meali:* «Allah'ım! Sen benim Rabbimsin. İlah ancak Sensin. Beni Sen yarattın, ben Senin kulunum... Beni bağışla, şüphesiz günahları ancak Sen bağışlarsın.»\n\n"
             "4️⃣ *Sabah Hamd ve Tevhid Zikri*\n"
             "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ\n"
             "📖 _«Esbahnâ ve esbaha’l-mülkü lillâhi vel-hamdü lillâh, lâ ilâhe illallâhü vahdehû lâ şerîke leh...»_\n"
-            "🇹🇷 *Meali:* «Sabaha çıktık; mülk de Allah'ın olarak sabaha çıktı. Hamd Allah'a mahsustur. O tektir, ortağı yoktur...»\n\n"
+            "🇹🇷 *Meali:* «Sabaha çıktık; mülk de Allah'ın olarak sabaha çıktı. Hamd Allah'a mahsustur...»\n\n"
             "5️⃣ *Kötülüklerden Korunma Duası (3 defa)*\n"
             "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
             "📖 _«Bismillâhillezî lâ yedurru ma‘asmihî şey’ün fi’l-ardı ve lâ fi’s-semâi ve hüve’s-semî‘u’l-‘alîm.»_\n"
-            "🇹🇷 *Meali:* «İsmiyle yerde ve gökte hiçbir şeyin zarar veremeyeceği Allah'ın adıyla başlarım. O her şeyi hakkıyla işitendir, bilendir.»\n\n"
+            "🇹🇷 *Meali:* «İsmiyle yerde ve gökte hiçbir şeyin zarar veremeyeceği Allah'ın adıyla başlarım...»\n\n"
             "6️⃣ *Rıza Zikri (3 defa)*\n"
             "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n"
-            "📖 _«Radîtü billâhi Rabben ve bi’l-İslâmi dînen ve bi-Muhammedin sallallâhü ‘aleyhi ve selleme nebiyyâ.»_\n"
-            "🇹🇷 *Meali:* «Rab olarak Allah'tan, din olarak İslam'dan, peygamber olarak Muhammed (s.a.v.)'den razı oldum.»\n\n"
+            "📖 _«Radîtü billâhi Rabben ve bi’l-İslâmi dînen ve bi-Muhammedin sallallâhü ‘aleyhi ve selleme nebiyyâ.»_\n\n"
             "7️⃣ *Tesbih (100 defa)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n"
-            "📖 _«Sübhânallâhi ve bi-hamdihî»_ (Allah'ı hamd ile tüm noksanlıklardan tenzih ederim)."
+            "📖 _«Sübhânallâhi ve bi-hamdihî»_"
         ),
         'adhkar_evening_text': (
             "🌇 *AKŞAM ZİKİRLERİ (ARAPÇA METİN, OKUNUŞ VE MEAL)*\n\n"
             "1️⃣ *Ayet-el Kürsi*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ...\n"
-            "📖 _«Allâhü lâ ilâhe illâ hüve’l-hayyü’l-kayyûm...»_\n\n"
-            "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n\n"
+            "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n"
             "3️⃣ *Seyyidü'l-İstiğfar*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ...\n\n"
             "4️⃣ *Akşam Hamd Zikri*\n"
             "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ...\n"
-            "📖 _«Emseynâ ve emse’l-mülkü lillâhi vel-hamdü lillâh...»_\n"
-            "🇹🇷 *Meali:* «Akşama erdik; mülk de Allah'ın olarak akşama erdi. Hamd Allah'a mahsustur...»\n\n"
             "5️⃣ *Yaratılanların Şerrinden Sığınma (3 defa)*\n"
             "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
             "📖 _«E‘ûzü bi-kelimâtillâhi’t-tâmmâti min şerri mâ halak.»_\n"
-            "🇹🇷 *Meali:* «Yarattıklarının şerrinden Allah'ın eksiksiz mükemmel kelimelerine sığınırım.»\n\n"
+            "🇹🇷 *Meali:* «Yarattıklarının şerrinden Allah'ın eksiksiz kelimelerine sığınırım.»\n\n"
             "6️⃣ *Zararlardan Korunma (3 defa)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ...\n\n"
             "7️⃣ *Tesbih (100 defa)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
@@ -1388,18 +1378,18 @@ TEXTS = {
             "🤲 *EN MUTEBER SALAVATLAR VE MEALLERİ*\n\n"
             "1️⃣ *Salavat-ı İbrahimiye (Namazdaki Salli-Barik)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
-            "📖 _«Allâhümme salli ‘alâ Muhammedin ve ‘alâ âli Muhammed, kemâ salleyte ‘alâ İbrâhîme ve ‘alâ âli İbrâhîm, inneke hamîdün mecîd...»_\n"
+            "📖 _«Allâhümme salli ‘alâ Muhammedin ve ‘alâ âli Muhammed, kemâ salleyte ‘alâ İbrâhîme ve ‘alâ âli İbrâhîm...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! İbrahim'e ve âline salât ettiğin gibi, Muhammed'e ve âline de salât eyle...»\n\n"
             "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin tıbbi’l-kulûbi ve devâihâ ve ‘âfiyeti’l-ebdâni ve şifâihâ ve nûri’l-ebsâri ve diyâihâ ve ‘alâ âlihî ve sahbihî ve sellim.»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Kalplerin tabibi ve devası, bedenlerin afiyeti ve şifası, gözlerin nuru ve aydınlığı olan Efendimiz Muhammed'e, âline ve ashabına salât ve selam eyle.»\n\n"
             "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin salâten tüncînâ bihâ min cemî‘i’l-ehvâli ve’l-âfât...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Efendimiz Muhammed'e öyle bir salât eyle ki; onunla bizi her türlü korku ve afetten kurtar, bütün ihtiyaçlarımızı gider, bütün günahlardan arındır ve en yüce derecelere eriştir...»\n\n"
             "4️⃣ *Salavat-ı Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
             "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedini’l-fâtihi limâ uğlika ve’l-hâtimi limâ sebaka nâsıri’l-hakkı bi’l-hakkı ve’l-hâdî ilâ sırâtike’l-müstekîm...»_\n"
             "🇹🇷 *Meali:* «Allah'ım! Kilitli kapıları açan, geçmiş peygamberlerin sonuncusu olan, hakka hak ile yardım eden ve doğru yoluna rehberlik eden Efendimiz Muhammed'e salât eyle.»\n\n"
             "5️⃣ *Kısa ve Faziletli Salavat*\n"
@@ -1421,7 +1411,9 @@ TEXTS = {
         'btn_timezone_hub': "🕒 Время и Геолокация",
         'btn_lang': "🌐 Сменить язык",
         'btn_timezone': "🕒 Часовой пояс",
+        'btn_city_label': "Город",
         'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
+        'btn_change_prayer_city': "🔄 Сменить город",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook, X (Twitter) или YouTube:",
         'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*, *Стамбул*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & ДОКУМЕНТЫ*\n\nВыберите действие:",
@@ -1501,36 +1493,24 @@ TEXTS = {
             "📖 _«Аллаху ляя иляяха илляя хуваль-хайюль-кайюум...»_\n"
             "🇷🇺 *Перевод:* «Аллах — нет божества, кроме Него, Живого, Вседержителя...»\n\n"
             "2️⃣ *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас (по 3 раза)*\n"
-            "📖 _Тому, кто читает их утром и вечером трижды, этого будет достаточно для защиты от всего._\n\n"
-            "3️⃣ *Саййид аль-Истигфар (Господин покаяния)*\n"
+            "3️⃣ *Саййид аль-Истигфар*\n"
             "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
-            "📖 _«Аллахумма анта Рабби ляя иляяха илляя анта, халяктании ва ана 'абдук...»_\n"
-            "🇷🇺 *Перевод:* «О Аллах! Ты — мой Господь, нет бога, кроме Тебя. Ты сотворил меня, и я — Твой раб... Прости же меня, ведь никто не прощает грехов, кроме Тебя!»\n\n"
-            "4️⃣ *Утренняя благодарность Аллаху*\n"
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ...\n"
-            "📖 _«Асбахнаа ва асбахаль-мульку лилляях, валь-хамду лилляях...»_\n"
-            "🇷🇺 *Перевод:* «Мы встретили утро, и вся власть принадлежит Аллаху. Хвала Аллаху, нет сотоварища Ему...»\n\n"
+            "4️⃣ *Утренняя благодарность*\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
             "5️⃣ *Мольба о защите (3 раза)*\n"
             "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
-            "📖 _«Бисмилляяхил-лязии ляя ядурру ма'асмихи шай'ун филь-арди ва ляя фис-самаа'и ва хувас-самии'уль-'алиим.»_\n"
-            "🇷🇺 *Перевод:* «С именем Аллаха, с именем Которого ничто не причинит вреда ни на земле, ни на небесах...»\n\n"
             "6️⃣ *Тасбих (100 раз)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n"
-            "📖 _«Субханаллахи ва бихамдихи»_"
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_evening_text': (
             "🌇 *ВЕЧЕРНИЕ ЗИКРЫ (АРАБСКИЙ, ТРАНСКРИПЦИЯ И ПЕРЕВОД)*\n\n"
             "1️⃣ *Аят аль-Курси*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ...\n\n"
-            "2️⃣ *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас (по 3 раза)*\n\n"
-            "3️⃣ *Саййид аль-Истигфар*\n\n"
+            "2️⃣ *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас (по 3 раза)*\n"
+            "3️⃣ *Саййид аль-Истигфар*\n"
             "4️⃣ *Вечерняя хвала*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ...\n"
-            "📖 _«Амсайнаа ва амсаль-мульку лилляях...»_\n\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
             "5️⃣ *Защита от зла творений (3 раза)*\n"
             "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
-            "📖 _«А'уузу би-калимаатил-ляяхит-тааммаати мин шарри маа халяк.»_\n"
-            "🇷🇺 *Перевод:* «Прибегаю к защите совершенных слов Аллаха от зла того, что Он сотворил.»\n\n"
             "6️⃣ *Тасбих (100 раз)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
@@ -1538,17 +1518,13 @@ TEXTS = {
             "🤲 *ДОСТОВЕРНЫЕ САЛАВАТЫ И ИХ ЗНАЧЕНИЯ*\n\n"
             "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
-            "📖 _«Аллахумма салли ‘аляя Мухаммадин ва ‘аляя аали Мухаммад...»_\n"
-            "🇷🇺 *Перевод:* «О Аллах, благослови Мухаммада и семейство Мухаммада, как благословил Ты Ибрахима...»\n\n"
             "2️⃣ *Салават Тиббиль-Кулюб (Исцеление сердец)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
-            "🇷🇺 *Перевод:* «О Аллах! Благослови нашего господина Мухаммада — врачевателя сердец и их лекарство, здравие тел и их исцеление, свет очей и их сияние...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "3️⃣ *Салават Тунджина (Спасение от бед)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ...\n"
-            "🇷🇺 *Перевод:* «О Аллах! Благослови нашего господина Мухаммада благословением, посредством которого Ты спасешь нас от всех страхов и бедствий...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
             "4️⃣ *Краткий благословенный салават*\n"
             "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
-            "📖 _«Салляллаху ‘алейхи ва саллям»_ (Да благословит его Аллах и приветствует)."
+            "📖 _«Салляллаху ‘алейхи ва саллям»_"
         )
     },
     'en': {
@@ -1565,7 +1541,9 @@ TEXTS = {
         'btn_timezone_hub': "🕒 Time & Location",
         'btn_lang': "🌐 Change Language",
         'btn_timezone': "🕒 Timezone",
+        'btn_city_label': "City",
         'btn_auto_loc': "📍 Auto-Detect (Location / City)",
+        'btn_change_prayer_city': "🔄 Change City",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, X (Twitter), or YouTube:",
         'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & DOCUMENTS HUB*\n\nChoose an action:",
@@ -1645,22 +1623,14 @@ TEXTS = {
             "📖 _«Allahu la ilaha illa Huwa, Al-Hayyul-Qayyum...»_\n"
             "🇬🇧 *Meaning:* «Allah! There is no deity except Him, the Ever-Living, the Sustainer of all existence...»\n\n"
             "2️⃣ *Surahs Al-Ikhlas, Al-Falaq, An-Nas (3 times each)*\n"
-            "📖 _Reciting them 3 times in morning and evening suffices for protection against everything._\n\n"
-            "3️⃣ *Sayyid al-Istighfar (Chief of Prayers for Forgiveness)*\n"
+            "3️⃣ *Sayyid al-Istighfar*\n"
             "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
-            "📖 _«Allahumma Anta Rabbi la ilaha illa Anta, khalaqtani wa ana 'abduka...»_\n"
-            "🇬🇧 *Meaning:* «O Allah, You are my Lord, none has the right to be worshipped except You. You created me and I am Your servant... Forgive me, for none forgives sins except You.»\n\n"
             "4️⃣ *Morning Gratitude*\n"
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ...\n"
-            "📖 _«Asbahna wa asbahal mulku lillah, walhamdu lillah...»_\n\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
             "5️⃣ *Protection Prayer (3 times)*\n"
             "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
-            "📖 _«Bismillahilladhi la yadurru ma'asmihi shay'un fil-ardi wa la fis-sama'i wa Huwas-Sami'ul-'Alim.»_\n\n"
-            "6️⃣ *Dhikr of Contentment (3 times)*\n"
-            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n\n"
-            "7️⃣ *Tasbih (100 times)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n"
-            "📖 _«Subhanallahi wa bihamdihi»_"
+            "6️⃣ *Tasbih (100 times)*\n"
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_evening_text': (
             "🌇 *EVENING ADHKAR (ARABIC, TRANSLITERATION & MEANING)*\n\n"
@@ -1668,30 +1638,23 @@ TEXTS = {
             "2️⃣ *Surahs Al-Ikhlas, Al-Falaq, An-Nas (3 times)*\n"
             "3️⃣ *Sayyid al-Istighfar*\n"
             "4️⃣ *Evening Praise*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ...\n"
             "5️⃣ *Seeking Refuge (3 times)*\n"
             "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
-            "📖 _«A'udhu bi kalimatillahit-tammati min sharri ma khalaq.»_\n"
-            "6️⃣ *Protection Prayer (3 times)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ...\n"
-            "7️⃣ *Tasbih (100 times)*\n"
+            "6️⃣ *Tasbih (100 times)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_salawat_text': (
             "🤲 *AUTHENTIC SALAWAT & TRANSLATIONS*\n\n"
             "1️⃣ *Salawat Ibrahimiyyah (Prayer Salawat)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
-            "📖 _«Allahumma salli 'ala Muhammadin wa 'ala ali Muhammad...»_\n"
-            "🇬🇧 *Meaning:* «O Allah, bestow Your favor upon Muhammad and upon the family of Muhammad, as You bestowed favor upon Abraham...»\n\n"
             "2️⃣ *Salawat Tibbil Qulub (Healing of Hearts)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
-            "🇬🇧 *Meaning:* «O Allah, send blessings upon our Master Muhammad, the remedy of hearts and their cure, the wellness of bodies and their healing, and the light of eyes and their illumination...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
             "3️⃣ *Salawat Munjiyyah (Deliverance)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ...\n"
-            "🇬🇧 *Meaning:* «O Allah, bless our Master Muhammad with a prayer through which You rescue us from all terrors and calamities...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
             "4️⃣ *Short Salawat*\n"
             "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
-            "📖 _«Sallallahu 'alayhi wa sallam»_ (May Allah's peace and blessings be upon him)."
+            "📖 _«Sallallahu 'alayhi wa sallam»_"
         )
     }
 }
@@ -1944,7 +1907,6 @@ def download_media_sync(url: str, download_dir: str) -> dict:
     if insta_code:
         clean_url = f"https://www.instagram.com/reel/{insta_code}/"
 
-    # 1. Aşama: Standart ve optimize yt-dlp ile dene
     try:
         return _yt_dlp_download(clean_url, download_dir)
     except FileTooLargeError:
@@ -1952,14 +1914,12 @@ def download_media_sync(url: str, download_dir: str) -> dict:
     except Exception as e:
         print(f"[DOWNLOAD_WARNING] yt-dlp ile indirilemedi ({e}). Akilli yedek indirme motoru devreye giriyor...")
 
-        # 2. Aşama: Instagram için Embed / InstaFix yedek motoru
         if insta_code:
             fallback_res = fallback_instagram_download(insta_code, download_dir)
             if fallback_res:
                 print(f"[DOWNLOAD_SUCCESS] Instagram yedek motoru ile basariyla indirildi: {insta_code}")
                 return fallback_res
 
-        # 3. Aşama: X / Twitter için FxTwitter yedek motoru
         m_x = re.search(r'(?:twitter\.com|x\.com)/(?:[^/]+/)?status/(\d+)', clean_url)
         if m_x:
             fallback_x = fallback_twitter_download(m_x.group(1), download_dir)
@@ -2105,7 +2065,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # SAAT DİLİMİ AYARLARI
+    # SAAT DİLİMİ VE ŞEHİR SEÇİCİ
     if data == "open_tz_selector":
         await query.message.reply_text(
             get_text(user_id, 'prompt_timezone', context),
@@ -2125,26 +2085,51 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("settz_"):
-        parts = data.split("_")
-        try:
-            val = int(parts[1])
-            save_user_timezone(user_id, val, locked=True)
-            try: await query.message.delete()
-            except Exception: pass
-            
-            user_now = get_user_now(user_id, context)
-            now_str = user_now.strftime("%H:%M")
-            tz_sign = "+" if val >= 0 else ""
-            t = TEXTS.get(user_lang, TEXTS['uz'])
-            
-            msg = (
-                f"✅ *{t['tz_changed']}*\n\n"
-                f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{val}`\n"
-                f"⏰ {t['current_time_lbl']}: `{now_str}`"
-            )
-            await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
-        except Exception:
-            pass
+        city_tz_defaults = {
+            "settz_5": ("Toshkent", 5),
+            "settz_3": ("Istanbul", 3),
+            "settz_3_ru": ("Moskva", 3),
+            "settz_4": ("Dubay", 4),
+            "settz_0": ("London", 0),
+            "settz_1": ("Berlin", 1),
+            "settz_5_kz": ("Olmaota", 5),
+            "settz_-5": ("New York", -5),
+        }
+        city_name, val = city_tz_defaults.get(data, (None, None))
+        if val is None:
+            parts = data.split("_")
+            try: val = int(parts[1])
+            except Exception: val = 3
+        if city_name:
+            save_user_city(user_id, city_name)
+        save_user_timezone(user_id, val, locked=True)
+        try: await query.message.delete()
+        except Exception: pass
+        
+        user_now = get_user_now(user_id, context)
+        now_str = user_now.strftime("%H:%M")
+        tz_sign = "+" if val >= 0 else ""
+        t = TEXTS.get(user_lang, TEXTS['uz'])
+        c_label = f"\n📍 {t['btn_city_label']}: *{city_name}*" if city_name else ""
+        
+        msg = (
+            f"✅ *{t['tz_changed']}*{c_label}\n\n"
+            f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{val}`\n"
+            f"⏰ {t['current_time_lbl']}: `{now_str}`\n\n"
+            f"_{t['tz_synced_hint']}_"
+        )
+        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
+        return
+
+    # NAMOZ SHAHARINI O'ZGARTIRISH
+    if data == "change_prayer_city":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'prayer'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_prayer', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
         return
 
     # ZİKİRLER VE SALAVATLARIN İÇERİĞİ
@@ -2529,15 +2514,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if mode_val == 'video':
                 await update.message.reply_text(get_text(user_id, 'prompt_video', context))
             elif mode_val == 'prayer':
+                saved_city = get_user_city(user_id)
+                if saved_city:
+                    status = await update.message.reply_text("⏳ " + get_text(user_id, 'downloading', context))
+                    timings, d_name, dt_s, h_s, src = await fetch_prayer_times(saved_city, user_id=user_id)
+                    try: await status.delete()
+                    except Exception: pass
+                    if timings:
+                        card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang)
+                        kb = InlineKeyboardMarkup([
+                            [InlineKeyboardButton(get_text(user_id, 'btn_change_prayer_city', context), callback_data="change_prayer_city")]
+                        ])
+                        await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
+                        return
                 context.user_data['mode'] = 'prayer'
                 await update.message.reply_text(get_text(user_id, 'prompt_prayer', context), parse_mode="Markdown")
             elif mode_val == 'pdf_hub':
                 await update.message.reply_text(get_text(user_id, 'prompt_pdf_hub', context), parse_mode="Markdown", reply_markup=get_pdf_hub_keyboard(user_lang))
             elif mode_val == 'exam':
                 exams = get_user_exams(user_id)
-                cards = [f"📌 *{e.get('title')}* — `{e.get('date')}`" for e in exams] if exams else [get_text(user_id, 'exam_empty', context)]
+                now = get_user_now(user_id, context)
+                if exams:
+                    cards = []
+                    for e in exams:
+                        cd_str = format_exam_countdown(e.get('date', ''), now, user_lang)
+                        cards.append(f"📌 *{e.get('title')}*\n📅 `{e.get('date')}`\n{cd_str}\n")
+                else:
+                    cards = [get_text(user_id, 'exam_empty', context)]
                 hdr = get_text(user_id, 'exam_hub_title', context)
-                await update.message.reply_text(f"{hdr}\n\n" + "\n".join(cards), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add")]]))
+                await update.message.reply_text(
+                    f"{hdr}\n\n" + "\n".join(cards),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add")]])
+                )
             elif mode_val == 'schedule_img':
                 context.user_data['mode'] = 'schedule_img_input'
                 await update.message.reply_text(get_text(user_id, 'prompt_schedule_img', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
@@ -2552,8 +2561,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 tz_off = get_user_tz_offset(user_id, context)
                 tz_sign = "+" if tz_off >= 0 else ""
                 cur_time = get_user_now(user_id, context).strftime("%H:%M")
+                saved_city = get_user_city(user_id) or ("Toshkent" if user_lang=='uz' else "Istanbul")
                 t = TEXTS.get(user_lang, TEXTS['uz'])
                 desc = (
+                    f"📍 *{t['btn_city_label']}:* `{saved_city}`\n"
                     f"🕒 *{t['btn_timezone']}:* `UTC{tz_sign}{tz_off}`\n"
                     f"⏰ *{t['current_time_lbl']}:* `{cur_time}`\n\n"
                     f"_{t['tz_synced_hint']}_\n\n"
@@ -2572,6 +2583,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         t = TEXTS.get(user_lang, TEXTS['uz'])
         if tz_detected is not None:
             save_user_timezone(user_id, tz_detected, locked=True)
+            save_user_city(user_id, raw_text.title())
             cleanup_user_temp_files(context, user_id)
             user_now = get_user_now(user_id, context)
             now_str = user_now.strftime("%H:%M")
@@ -2582,6 +2594,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             card = (
                 f"✅ *{t['tz_loc_detected']}*\n\n"
+                f"📍 *{t['btn_city_label']}:* `{d_name or raw_text.title()}`\n"
                 f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{tz_detected}`\n"
                 f"⏰ {t['current_time_lbl']}: `{now_str}`{prayer_sync_text}\n\n"
                 f"_{t['tz_synced_hint']}_"
@@ -2713,7 +2726,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == 'prayer':
         timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text, user_id=user_id)
         if timings:
-            await update.message.reply_text(format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang), parse_mode="Markdown")
+            save_user_city(user_id, d_name)
+            tz_detected = resolve_tz_from_city(raw_text)
+            if tz_detected is not None:
+                save_user_timezone(user_id, tz_detected, locked=True)
+            card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang)
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(get_text(user_id, 'btn_change_prayer_city', context), callback_data="change_prayer_city")]
+            ])
+            await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
             cleanup_user_temp_files(context, user_id)
             return
         await update.message.reply_text(get_text(user_id, 'city_not_found', context))

@@ -16,4 +16,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "bot.py"]
+CMD ["sh", "-c", "python bot.py 2>/dev/null || python main.py 2>/dev/null || python app.py"]

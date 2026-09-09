@@ -281,58 +281,85 @@ def extract_text_from_image(image_path: str) -> str:
         return ""
 
 # =====================================================================
-# HAFTALIK DERS PROGRAMI GÖRSELİ (PILLOW / 1080x1920)
+# ÇOK DİLLİ DERS PROGRAMI GÖRSELİ (PILLOW / 1080x1920)
 # =====================================================================
-def parse_schedule_text(text: str):
-    day_keywords = {
-        "dushanba": "DUSHANBA", "pazartesi": "PAZARTESİ", "monday": "MONDAY", "понедельник": "ПОНЕДЕЛЬНИК",
-        "seshanba": "SESHANBA", "sali": "SALI", "tuesday": "TUESDAY", "вторник": "ВТОРНИК",
-        "chorshanba": "CHORSHANBA", "carsamba": "ÇARŞAMBA", "wednesday": "WEDNESDAY", "среда": "СРЕДА",
-        "payshanba": "PAYSHANBA", "persembe": "PERŞEMBE", "thursday": "THURSDAY", "четверг": "ЧЕТВЕРГ",
-        "juma": "JUMA", "cuma": "CUMA", "friday": "FRIDAY", "пятница": "ПЯТНИЦA",
-        "shanba": "SHANBA", "cumartesi": "CUMARTESİ", "saturday": "SATURDAY", "суббота": "СУББОТА",
-        "yakshanba": "YAKSHANBA", "pazar": "PAZAR", "sunday": "SUNDAY", "воскресенье": "ВОСКРЕСЕНЬЕ",
+def parse_schedule_text(text: str, user_lang: str = 'uz'):
+    day_indices = {
+        "dushanba": 0, "pazartesi": 0, "monday": 0, "понедельник": 0, "пн": 0, "mon": 0,
+        "seshanba": 1, "sali": 1, "tuesday": 1, "вторник": 1, "вт": 1, "tue": 1,
+        "chorshanba": 2, "carsamba": 2, "wednesday": 2, "среда": 2, "ср": 2, "wed": 2,
+        "payshanba": 3, "persembe": 3, "thursday": 3, "четверг": 3, "чт": 3, "thu": 3,
+        "juma": 4, "cuma": 4, "friday": 4, "пятница": 4, "пт": 4, "fri": 4,
+        "shanba": 5, "cumartesi": 5, "saturday": 5, "суббота": 5, "сб": 5, "sat": 5,
+        "yakshanba": 6, "pazar": 6, "sunday": 6, "воскресенье": 6, "вс": 6, "sun": 6,
     }
-    current_day = "DUSHANBA"
+    
+    localized_days = {
+        'uz': ["DUSHANBA", "SESHANBA", "CHORSHANBA", "PAYSHANBA", "JUMA", "SHANBA", "YAKSHANBA"],
+        'tr': ["PAZARTESİ", "SALI", "ÇARŞAMBA", "PERŞEMBE", "CUMA", "CUMARTESİ", "PAZAR"],
+        'ru': ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА", "ВОСКРЕСЕНЬЕ"],
+        'en': ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
+    }
+    
+    current_day = localized_days.get(user_lang, localized_days['uz'])[0]
     schedule = {}
     lines = text.strip().split("\n")
     for line in lines:
         l_c = line.strip()
-        if not l_c: continue
+        if not l_c:
+            continue
         first_word = l_c.lower().replace(":", "").replace("-", "").split()[0]
-        if first_word in day_keywords:
-            current_day = day_keywords[first_word]
-            if current_day not in schedule: schedule[current_day] = []
+        if first_word in day_indices:
+            idx = day_indices[first_word]
+            current_day = localized_days.get(user_lang, localized_days['uz'])[idx]
+            if current_day not in schedule:
+                schedule[current_day] = []
             rest = l_c[len(first_word):].lstrip(":- ").strip()
-            if rest: schedule[current_day].append(rest)
+            if rest:
+                schedule[current_day].append(rest)
         else:
-            if current_day not in schedule: schedule[current_day] = []
+            if current_day not in schedule:
+                schedule[current_day] = []
             schedule[current_day].append(l_c)
     return schedule
 
-def generate_schedule_wallpaper(schedule_data: dict, output_path: str, title: str = "DERS PROGRAMI"):
+def generate_schedule_wallpaper(schedule_data: dict, output_path: str, user_lang: str = 'uz'):
     width, height = 1080, 1920
     img = Image.new("RGB", (width, height), color=(10, 10, 10))
     draw = ImageDraw.Draw(img)
 
+    titles = {
+        'uz': ("AKADEMIK REJA", "DARS JADVALI", "NUN PROJECT • KILIT EKRANI JADVALI"),
+        'tr': ("AKADEMİK PROGRAM", "DERS PROGRAMI", "NUN PROJECT • KİLİT EKRANI PROGRAMI"),
+        'ru': ("УЧЕБНЫЙ ПЛАН", "РАСПИСАНИЕ ЗАНЯТИЙ", "NUN PROJECT • ЭКРАН БЛОКИРОВКИ"),
+        'en': ("ACADEMIC TIMETABLE", "CLASS SCHEDULE", "NUN PROJECT • LOCKSCREEN TIMETABLE"),
+    }
+    sub_title, main_title, footer_text = titles.get(user_lang, titles['uz'])
+
+    font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_path_norm = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
     try:
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
-        font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-        font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-        font_item = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 26)
+        font_large = ImageFont.truetype(font_path_bold, 44)
+        font_med = ImageFont.truetype(font_path_bold, 30)
+        font_sub = ImageFont.truetype(font_path_norm, 24)
+        font_item = ImageFont.truetype(font_path_norm, 26)
     except Exception:
         font_large = font_med = font_sub = font_item = ImageFont.load_default()
 
-    for x in range(0, width, 80): draw.line([(x, 0), (x, height)], fill=(18, 18, 18), width=1)
-    for y in range(0, height, 80): draw.line([(0, y), (width, y)], fill=(18, 18, 18), width=1)
+    for x in range(0, width, 80):
+        draw.line([(x, 0), (x, height)], fill=(18, 18, 18), width=1)
+    for y in range(0, height, 80):
+        draw.line([(0, y), (width, y)], fill=(18, 18, 18), width=1)
 
     draw.rectangle([(60, 80), (width - 60, 220)], fill=(18, 18, 18), outline=(60, 60, 60), width=2)
-    draw.text((100, 105), "NUN PROJECT // ACADEMIC", fill=(160, 160, 160), font=font_sub)
-    draw.text((100, 140), title.upper(), fill=(255, 255, 255), font=font_large)
+    draw.text((100, 105), f"NUN PROJECT // {sub_title}", fill=(160, 160, 160), font=font_sub)
+    draw.text((100, 140), main_title, fill=(255, 255, 255), font=font_large)
 
     cur_y = 260
     for day, items in schedule_data.items():
-        if cur_y > height - 200: break
+        if cur_y > height - 200:
+            break
         day_box_height = 55 + (len(items) * 45)
         draw.rectangle([(60, cur_y), (width - 60, cur_y + day_box_height)], fill=(15, 15, 15), outline=(50, 50, 50), width=1)
         draw.rectangle([(60, cur_y), (width - 60, cur_y + 45)], fill=(30, 30, 30))
@@ -344,7 +371,7 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, title: st
             item_y += 42
         cur_y += day_box_height + 20
 
-    draw.text((width // 2 - 180, height - 70), "NUN PROJECT • LOCKSCREEN TIMETABLE", fill=(100, 100, 100), font=font_sub)
+    draw.text((width // 2 - 200, height - 70), footer_text, fill=(100, 100, 100), font=font_sub)
     img.save(output_path, quality=95)
     return True
 
@@ -443,7 +470,7 @@ def cyrillic_to_latin(text: str) -> str:
         if c in ('Ё', 'ё'): res.append("Yo" if c.isupper() else "yo"); i += 1; continue
         if c in ('Ю', 'ю'): res.append("Yu" if c.isupper() else "yu"); i += 1; continue
         if c in ('Я', 'я'): res.append("Ya" if c.isupper() else "ya"); i += 1; continue
-        if c in ('Ч', 'ч'): res.append("Ch" if c.isupper() else "ch"); i += 1; continue
+        if c in ('Ch', 'ч'): res.append("Ch" if c.isupper() else "ch"); i += 1; continue
         if c in ('Ш', 'ш', 'Щ', 'щ'): res.append("Sh" if c.isupper() else "sh"); i += 1; continue
         if c in ('Ц', 'ц'): res.append("Ts" if c.isupper() else "ts"); i += 1; continue
         if c == 'Ў': res.append("Oʻ"); i += 1; continue
@@ -1353,7 +1380,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         perm_tmp.close()
         await file_obj.download_to_drive(perm_tmp.name)
 
-        # 1. OCR REJİMİ AKTİFSE
         if mode == 'ocr' and ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):
             txt = await asyncio.to_thread(extract_text_from_image, perm_tmp.name)
             if txt:
@@ -1372,7 +1398,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception: pass
             return
 
-        # 2. PDF DÖNÜŞTÜRME REJİMİ
         if mode == 'convert_to_pdf':
             with tempfile.TemporaryDirectory() as tmp_dir:
                 out_pdf = os.path.join(tmp_dir, "converted.pdf")
@@ -1395,7 +1420,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception: pass
             return
 
-        # 3. MOD SEÇİLMEDEN ATILDIYSA SOR
         if ext in (".jpg", ".jpeg", ".png", ".webp"):
             context.user_data['direct_file_path'] = perm_tmp.name
             await update.message.reply_text(
@@ -1409,7 +1433,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Word, Excel, TXT doğrudan PDF'e çevrilir
         if ext in (".docx", ".xlsx", ".txt"):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 out_pdf = os.path.join(tmp_dir, "converted.pdf")
@@ -1576,16 +1599,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(format_scheduler_card(title, cur_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
         return
 
-    # 4. HAFTALIK DERS PROGRAMI GÖRSELİ
+    # 4. ÇOK DİLLİ HAFTALIK DERS PROGRAMI GÖRSELİ
     if mode == 'schedule_img_input':
         status = await update.message.reply_text(get_text(user_id, 'schedule_processing', context))
-        parsed_data = parse_schedule_text(raw_text)
+        parsed_data = parse_schedule_text(raw_text, user_lang)
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_img = os.path.join(tmp_dir, "timetable_wallpaper.png")
-            generate_schedule_wallpaper(parsed_data, out_img, "DERS PROGRAMI")
+            generate_schedule_wallpaper(parsed_data, out_img, user_lang)
+            caption_text = f"📱 {get_text(user_id, 'schedule_ready_caption', context)}"
             with open(out_img, "rb") as f_photo, open(out_img, "rb") as f_doc:
-                await update.message.reply_photo(photo=f_photo, caption=f"📱 {get_text(user_id, 'schedule_ready_caption', context)}", parse_mode="Markdown")
-                await update.message.reply_document(document=f_doc, filename="timetable_1080x1920.png")
+                await update.message.reply_photo(photo=f_photo, caption=caption_text, parse_mode="Markdown")
+                await update.message.reply_document(document=f_doc, filename=f"timetable_{user_lang}.png")
         cleanup_user_temp_files(context, user_id)
         try: await status.delete()
         except Exception: pass

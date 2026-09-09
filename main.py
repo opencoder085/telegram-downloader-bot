@@ -8,11 +8,11 @@ import asyncio
 import tempfile
 import threading
 import time
+import struct
 import urllib.parse
 import urllib.request
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from PIL import Image
 import httpx
 from telegram import (
     Update,
@@ -74,6 +74,77 @@ def run_keep_alive_pinger():
                 pass
         except Exception:
             pass
+
+# =====================================================================
+# SAF PYTHON (SIFIR DIŞ BAĞIMLILIK) GÖRSEL ➔ PDF DÖNÜŞTÜRÜCÜSÜ
+# =====================================================================
+def get_jpeg_size(data: bytes):
+    i = 0
+    size = len(data)
+    while i < size - 1:
+        if data[i] == 0xFF:
+            marker = data[i + 1]
+            if marker in (0xC0, 0xC1, 0xC2):
+                h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                return w, h
+            elif marker not in (0xD8, 0xD9, 0x00, 0xFF):
+                length = struct.unpack(">H", data[i + 2:i + 4])[0]
+                i += 2 + length
+                continue
+        i += 1
+    return 800, 1000
+
+def pure_jpeg_to_pdf(jpeg_path: str, pdf_path: str) -> bool:
+    """Harici hiçbir kütüphane (Pillow vs) olmadan JPEG'i doğrudan geçerli PDF'e sarar."""
+    try:
+        with open(jpeg_path, "rb") as f:
+            img_data = f.read()
+
+        width, height = get_jpeg_size(img_data)
+        w_pt, h_pt = width * 72 / 96, height * 72 / 96
+
+        objects = []
+        objects.append(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+        objects.append(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+        page = f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w_pt:.2f} {h_pt:.2f}] /Contents 4 0 R /Resources << /XObject << /Im 5 0 R >> >> >>\nendobj\n".encode()
+        objects.append(page)
+        content = f"q\n{w_pt:.2f} 0 0 {h_pt:.2f} 0 0 cm\n/Im Do\nQ\n".encode()
+        obj4 = f"4 0 obj\n<< /Length {len(content)} >>\nstream\n".encode() + content + b"endstream\nendobj\n"
+        objects.append(obj4)
+        obj5_header = f"5 0 obj\n<< /Type /XObject /Subtype /Image /Width {width} /Height {height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(img_data)} >>\nstream\n".encode()
+        obj5 = obj5_header + img_data + b"\nendstream\nendobj\n"
+        objects.append(obj5)
+
+        pdf = b"%PDF-1.4\n"
+        offsets = [0]
+        for obj in objects:
+            offsets.append(len(pdf))
+            pdf += obj
+
+        xref_pos = len(pdf)
+        pdf += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+        for off in offsets[1:]:
+            pdf += f"{off:010d} 00000 n \n".encode()
+        pdf += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode()
+
+        with open(pdf_path, "wb") as f:
+            f.write(pdf)
+        return True
+    except Exception as e:
+        print(f"pure_jpeg_to_pdf hatası: {e}")
+        return False
+
+def convert_image_to_pdf_safe(input_path: str, output_path: str) -> bool:
+    """Pillow varsa kullanır, yoksa sıfır maliyetli saf Python motorunu çalıştırır."""
+    try:
+        from PIL import Image
+        with Image.open(input_path) as img:
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(output_path, format="PDF", resolution=100.0)
+        return True
+    except Exception:
+        return pure_jpeg_to_pdf(input_path, output_path)
 
 # =====================================================================
 # KALICI VERİ YÖNETİM SİSTEMİ (DİL & SINAVLAR)
@@ -596,6 +667,7 @@ def format_nun_prayer_card(display_name: str, user_input: str, timings: dict, gr
     clean_inp = re.sub(r"[*_`\[\]]", "", clean_prayer_query(user_input))
     is_fuzzy = clean_inp.lower() != clean_disp.lower() and bool(clean_inp)
 
+    # İsimler bağımsız değişken olarak atanır; liste indeksleme hatası imkansız kılınmıştır!
     if lang == 'tr':
         header = "*NUN PROJECT // NAMAZ VAKİTLERİ*"
         lbl_fajr = "İMSAK"
@@ -680,7 +752,7 @@ ADHKAAR_DATA = {
             'arabic': "اللَّهُمَّ أَنْتَ رَبِّي لاَ إِلَهَ إِلاَّ أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي، فَاغْفِرْ لِي فَإِنَّهُ لاَ يَغْفِرُ الذُّنُوبَ إِلاَّ أَنْتَ",
             'uz': "Allohim, Sen mening Rabbimsan, Sendan oʻzga iloh yoʻq. Meni Sen yaratding va men Sening qulingman. Kuchim yetganicha ahding va vaʼdangdaman. Qilgan ishlarimning yomonligidan Sendan panoh tilayman. Menga bergan neʼmatingni eʼtirof etaman va gunohimni boʻynimga olaman. Meni kechir, zero gunohlarni faqat Sendan oʻzga hech kim kechira olmas.",
             'tr': "Allahım! Sen benim Rabbimsin, Senden başka ilah yoktur. Beni Sen yarattın, ben Senin kulunum ve gücüm yettiğince Sana verdiğim söz ve ahid üzerindeyim. Yaptıklarımın şerrinden Sana sığınırım. Üzerimdeki nimetini itiraf eder, günahımı da kabul ederim. Beni bağışla; çünkü günahları Senden başkası bağışlayamaz.",
-            'ru': "О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. И я буду хранить верность завету и обещанию, данному Тебе, пока у меня хватит сил. Прибегаю к Твоей защите от зла того, что я совершил. Признаю милость, оказанную Тобой мне, и признаю грех свой, прости же меня, ведь никто не прощает грехов, кроме Тебя!",
+            'ru': "О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. И я буду хранить верность завету и обещанию, данному Тебе, пока у меня хватит сил. Прибегаю к Твой защите от зла того, что я совершил. Признаю милость, оказанную Тобой мне, и признаю грех свой, прости же меня, ведь никто не прощает грехов, кроме Тебя!",
             'en': "O Allah, You are my Lord, there is no deity except You. You have created me and I am Your slave, and I am on Your covenant and promise as much as I can. I seek refuge in You from the evil of what I have done. I acknowledge Your favor upon me and I acknowledge my sin, so forgive me, for verily none forgives sins except You."
         },
         {
@@ -1333,10 +1405,9 @@ async def handle_photo_to_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             await file_obj.download_to_drive(input_path)
 
-            with Image.open(input_path) as img:
-                if img.mode in ("RGBA", "P"):
-                    img = img.convert("RGB")
-                img.save(output_pdf, format="PDF", resolution=100.0)
+            success = convert_image_to_pdf_safe(input_path, output_pdf)
+            if not success or not os.path.exists(output_pdf):
+                raise RuntimeError("PDF oluşturulamadı.")
 
             with open(output_pdf, "rb") as f:
                 await update.message.reply_document(
@@ -1537,7 +1608,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo_to_pdf))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot aktif; Simetrik Menü, Tek Tuş Çevirici ve Öğrenci Araçları hazır!")
+    print("Nun Bot aktif; Sıfır Bağımlılıklı PDF Motoru ve 7/24 Hizmet Devrede!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

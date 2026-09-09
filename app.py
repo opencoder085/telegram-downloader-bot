@@ -96,23 +96,114 @@ def run_keep_alive_pinger():
         time.sleep(480)
 
 # =====================================================================
-# VERİ TABANI YÖNETİMİ (DİL, SAAT DİLİMİ, SINAVLAR, HATIRLATICILAR)
+# GELİŞMİŞ VE KAPSAMLI SAAT DİLİMİ & KONUM MOTORU
+# =====================================================================
+CITY_TIMEZONE_MAP = {
+    # O'zbekiston (UTC+5)
+    "toshkent": 5, "tashkent": 5, "samarqand": 5, "samarkand": 5, "buxoro": 5, "bukhara": 5,
+    "andijon": 5, "andijan": 5, "namangan": 5, "fargona": 5, "fergana": 5, "qoqon": 5, "kokand": 5,
+    "urganch": 5, "urgench": 5, "nukus": 5, "qarshi": 5, "karshi": 5, "navoiy": 5, "navoi": 5,
+    "termiz": 5, "termez": 5, "guliston": 5, "gulistan": 5, "jizzax": 5, "jizzakh": 5,
+    "xiva": 5, "khiva": 5, "margilon": 5, "margilan": 5, "angren": 5, "chirchiq": 5, "chirchik": 5,
+    "olmaliq": 5, "almalyk": 5, "shahrisabz": 5, "denov": 5, "zarafshon": 5, "bekobod": 5,
+
+    # Turkiya (UTC+3)
+    "istanbul": 3, "ankara": 3, "izmir": 3, "bursa": 3, "antalya": 3, "konya": 3, "adana": 3,
+    "gaziantep": 3, "sanliurfa": 3, "kocaeli": 3, "mersin": 3, "diyarbakir": 3, "hatay": 3,
+    "manisa": 3, "kayseri": 3, "samsun": 3, "balikesir": 3, "kahramanmaras": 3, "van": 3,
+    "aydin": 3, "denizli": 3, "sakarya": 3, "erzurum": 3, "mugla": 3, "eskisehir": 3, "trabzon": 3,
+    "elazig": 3, "sivas": 3, "batman": 3, "rize": 3, "malatya": 3, "tekirdag": 3, "canakkale": 3,
+
+    # Rossiya
+    "moskva": 3, "moscow": 3, "piter": 3, "sankt-peterburg": 3, "spb": 3, "kazan": 3, "sochi": 3,
+    "krasnodar": 3, "nizhny novgorod": 3, "samara": 4, "ufa": 5, "yekaterinburg": 5, "ekaterinburg": 5,
+    "chelyabinsk": 5, "tyumen": 5, "omsk": 6, "novosibirsk": 7, "krasnoyarsk": 7, "irkutsk": 8,
+    "yakutsk": 9, "vladivostok": 10,
+
+    # Markaziy Osiyo & Kavkaz
+    "almaty": 5, "astana": 5, "shymkent": 5, "bishkek": 6, "osh": 6, "dushanbe": 5,
+    "ashgabat": 5, "baku": 4, "tbilisi": 4, "yerevan": 4,
+
+    # Yaqin Sharq & Ko'rfaz
+    "dubai": 4, "dubay": 4, "abu dhabi": 4, "riyadh": 3, "makka": 3, "makkah": 3, "mecca": 3,
+    "madina": 3, "medina": 3, "doha": 3, "kuwait": 3, "muscat": 4, "tehran": 3,
+
+    # Yevropa
+    "london": 0, "dublin": 0, "lisbon": 0, "paris": 1, "parij": 1, "berlin": 1, "rome": 1, "rim": 1,
+    "madrid": 1, "amsterdam": 1, "brussels": 1, "bryussel": 1, "vienna": 1, "vena": 1, "warsaw": 1,
+    "varshava": 1, "prague": 1, "praqa": 1, "budapest": 1, "kyiv": 2, "kiev": 2, "athens": 2,
+    "afina": 2, "bucharest": 2, "buxarest": 2, "helsinki": 2, "stockholm": 1, "oslo": 1,
+
+    # Osiyo
+    "seoul": 9, "seul": 9, "tokyo": 9, "beijing": 8, "pekin": 8, "shanghai": 8, "hong kong": 8,
+    "singapore": 8, "singapur": 8, "kuala lumpur": 8, "bangkok": 7, "jakarta": 7, "delhi": 5, "mumbai": 5,
+
+    # Amerika
+    "new york": -5, "ny": -5, "washington": -5, "boston": -5, "miami": -5, "toronto": -5,
+    "chicago": -6, "dallas": -6, "houston": -6, "denver": -7, "los angeles": -8, "la": -8,
+    "san francisco": -8, "seattle": -8, "vancouver": -8, "sydney": 10, "melbourne": 10
+}
+
+def resolve_tz_from_city(city_input: str):
+    c_norm = re.sub(r"['’`ʻʼ]", "", city_input.lower().strip()).replace('i̇', 'i').replace('ı', 'i')
+    if c_norm in CITY_TIMEZONE_MAP:
+        return CITY_TIMEZONE_MAP[c_norm]
+    matches = difflib.get_close_matches(c_norm, list(CITY_TIMEZONE_MAP.keys()), n=1, cutoff=0.75)
+    if matches:
+        return CITY_TIMEZONE_MAP[matches[0]]
+    return None
+
+def coords_to_tz_offset(lat: float, lon: float) -> int:
+    if 37.0 <= lat <= 46.0 and 56.0 <= lon <= 73.5: return 5  # O'zbekiston
+    if 35.5 <= lat <= 42.5 and 25.5 <= lon <= 45.0: return 3  # Turkiya
+    if 50.0 <= lat <= 65.0 and 28.0 <= lon <= 55.0: return 3  # Moskva / Yevropa Rossiyasi
+    if 22.0 <= lat <= 27.5 and 51.5 <= lon <= 60.0: return 4  # BAA / Dubay
+    if 16.0 <= lat <= 32.0 and 34.0 <= lon <= 51.5: return 3  # Saudiya
+    if 30.0 <= lat <= 46.0 and 124.0 <= lon <= 146.0: return 9 # Koreya / Yaponiya
+    if 1.0 <= lat <= 54.0 and 97.0 <= lon <= 124.0: return 8   # Xitoy / Singapur
+    if 36.5 <= lat <= 43.5 and 67.0 <= lon <= 75.0: return 5   # Tojikiston
+    if 39.0 <= lat <= 43.5 and 69.0 <= lon <= 80.5: return 6   # Qirg'iziston
+    if 40.5 <= lat <= 55.5 and 46.5 <= lon <= 87.5: return 5   # Qozog'iston
+    if 49.0 <= lat <= 60.5 and -11.0 <= lon <= 2.0: return 0   # Buyuk Britaniya
+    if 36.0 <= lat <= 55.0 and 2.0 <= lon <= 24.0: return 1    # Markaziy Yevropa
+    if 34.0 <= lat <= 70.0 and 20.0 <= lon <= 35.0: return 2   # Sharqiy Yevropa
+    if 24.0 <= lat <= 50.0:
+        if -80.0 <= lon <= -65.0: return -5
+        if -90.0 <= lon <= -80.0: return -5
+        if -105.0 <= lon <= -90.0: return -6
+        if -115.0 <= lon <= -105.0: return -7
+        if -125.0 <= lon <= -115.0: return -8
+    return max(-12, min(14, round(lon / 15.0)))
+
+def parse_tz_from_text(text: str):
+    m = re.search(r"(?:(?:utc|gmt)\s*)?([+-]\d{1,2})\b", text, re.IGNORECASE)
+    if m:
+        val = int(m.group(1))
+        if -12 <= val <= 14:
+            return val
+    return resolve_tz_from_city(text)
+
+# =====================================================================
+# VERİ TABANI YÖNETİMİ
 # =====================================================================
 LANG_FILE = "user_langs.json"
 TZ_FILE = "user_timezones.json"
+TZ_LOCK_FILE = "user_tz_locked.json"
 EXAMS_FILE = "user_exams.json"
 REMINDERS_FILE = "user_reminders.json"
 
 USER_LANGS = {}
 USER_TIMEZONES = {}
+USER_TZ_LOCKED = {}
 USER_EXAMS = {}
 USER_REMINDERS = {}
 
 def load_databases():
-    global USER_LANGS, USER_TIMEZONES, USER_EXAMS, USER_REMINDERS
+    global USER_LANGS, USER_TIMEZONES, USER_TZ_LOCKED, USER_EXAMS, USER_REMINDERS
     for fname, var_ref in [
         (LANG_FILE, USER_LANGS),
         (TZ_FILE, USER_TIMEZONES),
+        (TZ_LOCK_FILE, USER_TZ_LOCKED),
         (EXAMS_FILE, USER_EXAMS),
         (REMINDERS_FILE, USER_REMINDERS)
     ]:
@@ -144,9 +235,49 @@ def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
             return l
     return 'uz'
 
-def save_user_timezone(user_id, offset_hours: int):
-    USER_TIMEZONES[str(user_id)] = int(offset_hours)
+def save_user_timezone(user_id, offset_hours: int, locked: bool = False):
+    uid_str = str(user_id)
+    USER_TIMEZONES[uid_str] = int(offset_hours)
     save_json(TZ_FILE, USER_TIMEZONES)
+    if locked:
+        USER_TZ_LOCKED[uid_str] = True
+        save_json(TZ_LOCK_FILE, USER_TZ_LOCKED)
+
+def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code: str = None):
+    uid_str = str(user_id)
+    if USER_TZ_LOCKED.get(uid_str):
+        return USER_TIMEZONES.get(uid_str, 3)
+
+    detected_tz = None
+
+    # 1. Metin icerisinde saat dilimi veya sehir taramasi
+    if raw_text:
+        m_tz = re.search(r"(?:(?:utc|gmt)\s*)?([+-]\d{1,2})\b", raw_text, re.IGNORECASE)
+        if m_tz:
+            val = int(m_tz.group(1))
+            if -12 <= val <= 14:
+                detected_tz = val
+
+        if detected_tz is None:
+            text_clean = re.sub(r"['’`ʻʼ\-]", "", raw_text.lower()).replace("i̇", "i").replace("ı", "i")
+            for city, tz in CITY_TIMEZONE_MAP.items():
+                pattern = r"\b" + re.escape(city) + r"(?:daman|dasan|damiz|dayam|dayik|da|de|dan|den|ga|ge|ya|ye|a|e|ni|ning|lik|li)?\b"
+                if re.search(pattern, text_clean):
+                    detected_tz = tz
+                    break
+
+    # 2. Telegram arayuz dili fallback
+    if detected_tz is None and uid_str not in USER_TIMEZONES and user_lang_code:
+        code = user_lang_code.lower()
+        if code.startswith('tr'): detected_tz = 3
+        elif code.startswith('ru'): detected_tz = 3
+        elif code.startswith('uz'): detected_tz = 5
+
+    if detected_tz is not None:
+        save_user_timezone(user_id, detected_tz, locked=False)
+        return detected_tz
+
+    return USER_TIMEZONES.get(uid_str, 3)
 
 def get_user_tz_offset(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> int:
     uid_str = str(user_id)
@@ -558,18 +689,13 @@ def is_mostly_cyrillic(text: str) -> bool:
     return len(re.findall(r'[\u0400-\u04FF]', text)) >= len(re.findall(r'[a-zA-Z]', text))
 
 # =====================================================================
-# NAMAZ VAKİTLERİ MOTORU & AKILLI SAAT DİLİMİ EŞLEŞTİRİCİ
+# NAMAZ VAKİTLERİ MOTORU
 # =====================================================================
 UZ_REGIONS = {
     "toshkent": "toshkent", "samarqand": "samarqand-shahri", "buxoro": "buxoro-shahri",
     "andijon": "andijon-shahri", "namangan": "namangan-shahri", "fargona": "fargona-shahri",
     "qoqon": "qoqon-shahri", "urganch": "urganch-shahri", "nukus": "nukus-shahri",
     "qarshi": "qarshi-shahri", "navoiy": "navoiy-shahri", "termiz": "termiz-shahri",
-}
-GLOBAL_CITIES = {
-    "istanbul": ("Istanbul", 3), "ankara": ("Ankara", 3), "izmir": ("Izmir", 3), "bursa": ("Bursa", 3),
-    "moskva": ("Moscow", 3), "moscow": ("Moscow", 3), "almaty": ("Almaty", 5),
-    "makka": ("Makkah", 3), "madina": ("Medina", 3), "dubai": ("Dubai", 4), "london": ("London", 0)
 }
 
 def clean_time_str(val: str) -> str:
@@ -580,7 +706,12 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
     c_norm = re.sub(r"['’`ʻʼ]", "", city_input.lower().strip()).replace('i̇', 'i').replace('ı', 'i')
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    # 1. Özbekistan Şehirleri (UTC+5)
+    # Otomatik saat dilimi eşleştirme
+    detected_tz = resolve_tz_from_city(c_norm)
+    if user_id and detected_tz is not None:
+        save_user_timezone(user_id, detected_tz)
+
+    # 1. Özbekistan Şehirleri
     slug = UZ_REGIONS.get(c_norm)
     if not slug:
         matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
@@ -593,8 +724,6 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
                     j = resp.json()
                     t = j.get("today", {}).get("times", {})
                     meta = j.get("meta", {})
-                    if user_id:
-                        save_user_timezone(user_id, 5)
                     return {
                         "Fajr": t.get("bomdod"), "Sunrise": t.get("quyosh"), "Dhuhr": t.get("peshin"),
                         "Asr": t.get("asr"), "Maghrib": t.get("shom"), "Isha": t.get("xufton")
@@ -602,19 +731,13 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
         except Exception: pass
 
     # 2. Küresel Şehirler
-    target_info = GLOBAL_CITIES.get(c_norm)
-    target = target_info[0] if target_info else city_input
-    target_tz = target_info if target_info else None
-
     try:
         async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-            resp = await client.get(f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(target)}", headers=headers)
+            resp = await client.get(f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(city_input)}", headers=headers)
             if resp.status_code == 200:
                 data = resp.json().get("data", {})
                 d = data.get("date", {})
-                if user_id and target_tz is not None:
-                    save_user_timezone(user_id, target_tz)
-                return data.get("timings", {}), target.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
+                return data.get("timings", {}), city_input.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
     except Exception: pass
 
     return None, None, None, None, None
@@ -720,7 +843,7 @@ def build_scheduler_keyboard(lang: str = 'uz') -> InlineKeyboardMarkup:
             'hour_minus': "➖ 1 час", 'hour_plus': "➕ 1 час",
             'min_minus': "➖ 15 мин", 'min_plus': "➕ 15 мин",
             'open_cal': "🗓 Выбрать из календаря",
-            'today': "⚡ Сегодня", 'tmrw': "⚡ Завтра", 'week': "⚡ 1 неделя",
+            'today': "⚡ Сегодня", 'tmrw': "⚡ Завtra", 'week': "⚡ 1 неделя",
             'confirm': "✅ ПОДТВЕРДИТЬ И СОХРАНИТЬ",
             'cancel': "❌ Отмена"
         },
@@ -809,12 +932,13 @@ def get_pomodoro_keyboard(user_id: int, lang: str = 'uz'):
     t = TEXTS.get(lang, TEXTS['uz'])
     tz_off = get_user_tz_offset(user_id)
     tz_btn_lbl = f"🕒 UTC+{tz_off}" if tz_off >= 0 else f"🕒 UTC{tz_off}"
+    cur_time = get_user_now(user_id).strftime("%H:%M")
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t['pomo_btn_work25'], callback_data="pomo_25"), InlineKeyboardButton(t['pomo_btn_break5'], callback_data="pomo_5")],
         [InlineKeyboardButton(t['pomo_btn_work50'], callback_data="pomo_50"), InlineKeyboardButton(t['pomo_btn_break10'], callback_data="pomo_10")],
         [InlineKeyboardButton(t['pomo_btn_add_remind'], callback_data="remind_add"), InlineKeyboardButton(t['pomo_btn_my_reminds'], callback_data="remind_list")],
-        [InlineKeyboardButton(f"{t['btn_timezone']}: {tz_btn_lbl}", callback_data="open_tz_selector")]
+        [InlineKeyboardButton(f"{t['btn_timezone']}: {tz_btn_lbl} ({cur_time})", callback_data="open_tz_selector")]
     ])
 
 def get_adhkar_selection_keyboard(lang: str = 'uz'):
@@ -836,6 +960,7 @@ def get_timezone_keyboard(lang: str = 'uz'):
         [InlineKeyboardButton("🇷🇺 Moskva (UTC+3)", callback_data="settz_3_ru"), InlineKeyboardButton("🇦🇪 Dubay (UTC+4)", callback_data="settz_4")],
         [InlineKeyboardButton("🇬🇧 London (UTC+0)", callback_data="settz_0"), InlineKeyboardButton("🇩🇪 Berlin (UTC+1)", callback_data="settz_1")],
         [InlineKeyboardButton("🇰🇿 Olmaota (UTC+5)", callback_data="settz_5_kz"), InlineKeyboardButton("🇺🇸 New York (UTC-5)", callback_data="settz_-5")],
+        [InlineKeyboardButton(t['btn_auto_loc'], callback_data="tz_req_location")],
         [InlineKeyboardButton(t['btn_cancel'], callback_data="cancel_action")]
     ])
 
@@ -856,6 +981,7 @@ TEXTS = {
         'btn_translit': "🔤 Kirill ⇄ Lotin",
         'btn_lang': "🌐 Tilni tanlash",
         'btn_timezone': "🕒 Vaqt mintaqasi",
+        'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:",
@@ -867,7 +993,11 @@ TEXTS = {
         'prompt_ocr': "🔍 *RASMDAN MATN CHIQARISH (OCR) FAOL*\n\nMatnini oʻqib olmoqchi boʻlgan kitob yoki taxta rasmini yuboring:\n_(Arabcha, Xitoycha, Ruscha, Oʻzbekcha va barcha tillar qoʻllab-quvvatlanadi)_",
         'prompt_exam_title': "🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_",
         'prompt_remind': "⏰ Eslatmani quyidagi formatda yuboring:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`",
-        'prompt_timezone': "🕒 *VAQT MINTAQASINI TANLANG*\n\nOʻzingiz joylashgan hududning vaqt mintaqasini tanlang (Taymer va eslatmalar toʻgʻri vaqtda ishlashi uchun):",
+        'prompt_timezone': "🕒 *VAQT MINTAQASINI TANLANG*\n\nOʻzingiz joylashgan shahar yoki vaqt mintaqasini tanlang (Taymer va eslatmalar aniq ishlashi uchun):",
+        'prompt_send_location': "📍 *JOY LASHUV / SHAHARNI YUBORING*\n\nIltimos, Telegram orqali joylashuvingizni (Location) yuboring yoki shahar nomini yozing (Masalan: *Toshkent*, *Istanbul*, *Moskva*, *London*...):",
+        'tz_loc_detected': "JOY LASHUV VA VAQT ANIQLANDI",
+        'tz_synced_hint': "Barcha taymerlar, eslatmalar va namoz vaqtlari sizning mahalliy vaqtingizga toʻliq moslashtirildi.",
+        'current_time_lbl': "Joriy vaqtingiz",
         'pomo_started': "POMODORO BOSHLANDI",
         'pomo_work_label': "Dars",
         'pomo_break_label': "Dam olish",
@@ -949,6 +1079,7 @@ TEXTS = {
         'btn_translit': "🔤 Kiril ⇄ Latin",
         'btn_lang': "🌐 Dil Seçimi",
         'btn_timezone': "🕒 Saat Dilimi",
+        'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
         'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & BELGE ARAÇLARI*\n\nİşlem seçiniz:",
@@ -960,7 +1091,11 @@ TEXTS = {
         'prompt_ocr': "🔍 *GÖRSELDEN METİN ÇIKARMA (OCR) AKTİF*\n\nMetnini okutmak istediğiniz kitap veya tahta fotoğrafını gönderin:\n_(Arapça, Çince, Rusça, Türkçe, Özbekçe ve tüm diller desteklenir)_",
         'prompt_exam_title': "🎓 *SINAV EKLE*\n\n✍️ Sınav veya dersin adını yazıp gönderin:\n_(Örneğin: *Yüksek Matematik*, *Fizik Final*)_",
         'prompt_remind': "⏰ Hatırlatıcıyı şu formatta gönderin:\n`Kitap oku - 18:30` veya `Ders - 30 dakika`",
-        'prompt_timezone': "🕒 *SAAT DİLİMİ SEÇİMİ*\n\nBulunduğunuz bölgenin saat dilimini seçiniz (Zamanlayıcı ve hatırlatıcıların tam vaktinde çalışması için):",
+        'prompt_timezone': "🕒 *SAAT DİLİMİ SEÇİMİ*\n\nBulunduğunuz şehir veya saat dilimini seçiniz (Zamanlayıcı ve hatırlatıcıların tam vaktinde çalışması için):",
+        'prompt_send_location': "📍 *KONUM / ŞEHİR BİLGİSİ*\n\nLütfen Telegram üzerinden konumunuzu (Location) gönderin veya şehrinizi yazın (Örn: *İstanbul*, *Taşkent*, *Ankara*, *Moskova*...):",
+        'tz_loc_detected': "KONUM VE SAAT DİLİMİ ALGILANDI",
+        'tz_synced_hint': "Tüm zamanlayıcılar, hatırlatıcılar ve namaz vakitleri yerel saatinize göre tam senkronize edildi.",
+        'current_time_lbl': "Güncel Saatiniz",
         'pomo_started': "POMODORO BAŞLADI",
         'pomo_work_label': "Çalışma",
         'pomo_break_label': "Mola",
@@ -1042,6 +1177,7 @@ TEXTS = {
         'btn_translit': "🔤 Кириллица ⇄ Латиница",
         'btn_lang': "🌐 Сменить язык",
         'btn_timezone': "🕒 Часовой пояс",
+        'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
         'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*, *Стамбул*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & ДОКУМЕНТЫ*\n\nВыберите действие:",
@@ -1053,7 +1189,11 @@ TEXTS = {
         'prompt_ocr': "🔍 *ИЗВЛЕЧЕНИЕ ТЕКСТА (OCR) АКТИВНО*\n\nОтправьте фото книги, конспекта или доски:\n_(Поддерживаются арабский, китайский, русский, узбекский, английский и все языки)_",
         'prompt_exam_title': "🎓 *ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*)_",
         'prompt_remind': "⏰ Отправьте напоминание в формате:\n`Читать книгу - 18:30` или `Учеба - 30 минут`",
-        'prompt_timezone': "🕒 *ВЫБОР ЧАСОВОГО ПОЯСА*\n\nВыберите ваш часовой пояс (чтобы таймер и напоминания работали точно по вашему местному времени):",
+        'prompt_timezone': "🕒 *ВЫБОР ЧАСОВОГО ПОЯСА*\n\nВыберите ваш город или часовой пояс (чтобы таймер и напоминания работали точно):",
+        'prompt_send_location': "📍 *ОТПРАВЬТЕ ГЕОЛОКАЦИЮ ИЛИ ГОРОД*\n\nОтправьте геолокацию (Location) в Telegram или напишите город (Напр: *Москва*, *Ташкент*, *Стамбул*, *Лондон*...):",
+        'tz_loc_detected': "ЛОКАЦИЯ И ЧАСОВОЙ ПОЯС ОПРЕДЕЛЕНЫ",
+        'tz_synced_hint': "Все таймеры, напоминания и расписание намаза полностью синхронизированы с вашим местным временем.",
+        'current_time_lbl': "Ваше местное время",
         'pomo_started': "ПОМОДОРО ЗАПУЩЕН",
         'pomo_work_label': "Работа",
         'pomo_break_label': "Перерыв",
@@ -1135,6 +1275,7 @@ TEXTS = {
         'btn_translit': "🔤 Cyrillic ⇄ Latin",
         'btn_lang': "🌐 Change Language",
         'btn_timezone': "🕒 Timezone",
+        'btn_auto_loc': "📍 Auto-Detect (Location / City)",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
         'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & DOCUMENTS HUB*\n\nChoose an action:",
@@ -1146,7 +1287,11 @@ TEXTS = {
         'prompt_ocr': "🔍 *TEXT EXTRACTION (OCR) ACTIVE*\n\nSend a photo of a whiteboard, book, or notes:\n_(Arabic, Chinese, Russian, Turkish, Uzbek, English and all languages supported)_",
         'prompt_exam_title': "🎓 *ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*)_",
         'prompt_remind': "⏰ Send reminder in format:\n`Read book - 18:30` or `Study - 30 minutes`",
-        'prompt_timezone': "🕒 *SELECT TIMEZONE*\n\nChoose your timezone (to ensure timers and reminders sync with your local time):",
+        'prompt_timezone': "🕒 *SELECT TIMEZONE*\n\nChoose your city or timezone (to ensure timers and reminders sync with your local time):",
+        'prompt_send_location': "📍 *SHARE LOCATION OR CITY*\n\nPlease share your Location via Telegram or type your city name (e.g. *London*, *Istanbul*, *Tashkent*, *New York*...):",
+        'tz_loc_detected': "LOCATION & TIMEZONE DETECTED",
+        'tz_synced_hint': "All timers, reminders, and prayer times are now accurately aligned with your local time.",
+        'current_time_lbl': "Your Local Time",
         'pomo_started': "POMODORO STARTED",
         'pomo_work_label': "Work",
         'pomo_break_label': "Break",
@@ -1325,6 +1470,29 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cleanup_user_temp_files(context, user_id)
     await update.message.reply_text(get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
 
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    loc = update.message.location
+    if not loc:
+        return
+    tz_offset = coords_to_tz_offset(loc.latitude, loc.longitude)
+    save_user_timezone(user_id, tz_offset, locked=True)
+    cleanup_user_temp_files(context, user_id)
+    
+    user_now = get_user_now(user_id, context)
+    now_str = user_now.strftime("%H:%M")
+    u_lang = get_user_lang(user_id, context)
+    t = TEXTS.get(u_lang, TEXTS['uz'])
+    tz_sign = "+" if tz_offset >= 0 else ""
+    
+    card = (
+        f"📍 *{t['tz_loc_detected']}*\n\n"
+        f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{tz_offset}`\n"
+        f"⏰ {t['current_time_lbl']}: `{now_str}`\n\n"
+        f"_{t['tz_synced_hint']}_"
+    )
+    await update.message.reply_text(card, parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1344,6 +1512,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("lang_"):
         l_code = data.replace("lang_", "", 1).strip()
         save_user_lang(user_id, l_code)
+        silent_background_tz_sync(user_id, user_lang_code=l_code)
         if context and context.user_data is not None:
             context.user_data['lang'] = l_code
         try: await query.message.delete()
@@ -1365,18 +1534,35 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "tz_req_location":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'awaiting_location_or_city'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_send_location', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
     if data.startswith("settz_"):
         parts = data.split("_")
         try:
             val = int(parts)
-            save_user_timezone(user_id, val)
+            save_user_timezone(user_id, val, locked=True)
             try: await query.message.delete()
             except Exception: pass
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"✅ {get_text(user_id, 'tz_changed', context)} (`UTC{'+' if val >= 0 else ''}{val}`)",
-                parse_mode="Markdown"
+            
+            user_now = get_user_now(user_id, context)
+            now_str = user_now.strftime("%H:%M")
+            tz_sign = "+" if val >= 0 else ""
+            t = TEXTS.get(user_lang, TEXTS['uz'])
+            
+            msg = (
+                f"✅ *{t['tz_changed']}*\n\n"
+                f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{val}`\n"
+                f"⏰ {t['current_time_lbl']}: `{now_str}`"
             )
+            await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         except Exception:
             pass
         return
@@ -1443,7 +1629,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup_user_temp_files(context, user_id)
         return
 
-    # POMODORO VE HATIRLATICI (TAM KULLANICI YEREL ZAMANI)
+    # POMODORO VE HATIRLATICI
     if data.startswith("pomo_"):
         mins = int(data.replace("pomo_", "", 1))
         is_break = mins in (5, 10)
@@ -1741,6 +1927,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
+    # Arka planda sessiz saat dilimi eşitleme
+    tele_code = update.effective_user.language_code if update.effective_user else None
+    silent_background_tz_sync(user_id, raw_text=raw_text, user_lang_code=tele_code)
+
     # 1. Menü Butonları Tıklamaları (Tüm diller ve varyasyonlar)
     btn_keys = {
         'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_pdf_hub': 'pdf_hub',
@@ -1796,6 +1986,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     mode = context.user_data.get('mode', 'auto')
+
+    # Konum / Şehir Metni Girişi Bekleniyorsa
+    if mode == 'awaiting_location_or_city':
+        tz_detected = parse_tz_from_text(raw_text)
+        if tz_detected is not None:
+            save_user_timezone(user_id, tz_detected, locked=True)
+            cleanup_user_temp_files(context, user_id)
+            user_now = get_user_now(user_id, context)
+            now_str = user_now.strftime("%H:%M")
+            t = TEXTS.get(user_lang, TEXTS['uz'])
+            tz_sign = "+" if tz_detected >= 0 else ""
+            card = (
+                f"✅ *{t['tz_loc_detected']}*\n\n"
+                f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{tz_detected}`\n"
+                f"⏰ {t['current_time_lbl']}: `{now_str}`\n\n"
+                f"_{t['tz_synced_hint']}_"
+            )
+            await update.message.reply_text(card, parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
+            return
 
     # 3. KORUMALI SINAV GİRİŞİ (CANLI AYARLAYICI)
     if mode == 'exam_title_input':
@@ -1896,6 +2105,7 @@ def main():
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

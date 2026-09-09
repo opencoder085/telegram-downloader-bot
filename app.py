@@ -12,6 +12,7 @@ import struct
 import urllib.parse
 import urllib.request
 import calendar
+import html as html_lib
 from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import httpx
@@ -250,7 +251,6 @@ def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code
 
     detected_tz = None
 
-    # 1. Metin icerisinde saat dilimi veya sehir taramasi
     if raw_text:
         m_tz = re.search(r"(?:(?:utc|gmt)\s*)?([+-]\d{1,2})\b", raw_text, re.IGNORECASE)
         if m_tz:
@@ -266,7 +266,6 @@ def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code
                     detected_tz = tz
                     break
 
-    # 2. Telegram arayuz dili fallback
     if detected_tz is None and uid_str not in USER_TIMEZONES and user_lang_code:
         code = user_lang_code.lower()
         if code.startswith('tr'): detected_tz = 3
@@ -706,12 +705,10 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
     c_norm = re.sub(r"['’`ʻʼ]", "", city_input.lower().strip()).replace('i̇', 'i').replace('ı', 'i')
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    # Otomatik saat dilimi eşleştirme
     detected_tz = resolve_tz_from_city(c_norm)
     if user_id and detected_tz is not None:
         save_user_timezone(user_id, detected_tz)
 
-    # 1. Özbekistan Şehirleri
     slug = UZ_REGIONS.get(c_norm)
     if not slug:
         matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
@@ -730,7 +727,6 @@ async def fetch_prayer_times(city_input: str, user_id: int = None):
                     }, meta.get("region", {}).get("name", city_input.title()), meta.get("date", ""), "", "Oʻzbekiston Din ishlari qoʻmitasi"
         except Exception: pass
 
-    # 2. Küresel Şehirler
     try:
         async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
             resp = await client.get(f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(city_input)}", headers=headers)
@@ -1041,12 +1037,12 @@ TEXTS = {
         'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
         'downloading': "Media yuklab olinmoqda, iltimos kuting...",
         'uploading': "Telegramga yuklanmoqda...",
-        'error_size': "⚠️ Fayl hajmi Telegram Bot cheklovidan (50 MB) katta. Iltimos, qisqaroq yoki pastroq sifatdagi video yuboring.",
+        'error_size': "⚠️ Fayl hajmi Telegram Bot cheklovidan (50 MB) katta. Iltimos, qisqaroq video yuboring.",
         'error_general': "Xatolik yuz berdi. Qaytadan urinib koʻring.",
         'schedule_processing': "Qulflangan ekran fon rasmi tayyorlanmoqda...",
         'schedule_ready_caption': "Dars jadvali (Qulflangan ekran)",
         'doc_processing': "Fayl qabul qilindi, ishlov berilmoqda...",
-        'video_error': "Videoni yuklab olishda xatolik yuz berdi. Havola yopiq (private) boʻlishi yoki bot himoyasiga uchragan boʻlishi mumkin.",
+        'video_error': "Videoni yuklab olishda xatolik yuz berdi. Havola yopiq (private) boʻlishi mumkin.",
         'adhkar_morning_btn': "🌅 Tonggi zikrlar",
         'adhkar_evening_btn': "🌇 Kechki zikrlar",
         'adhkar_morning_text': (
@@ -1259,7 +1255,7 @@ TEXTS = {
             "2. *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас* (по 3 раза)\n"
             "3. *«Амсайна ва амсаль-мульку лиллях, валь-хамду лиллях...»*\n"
             "4. *«Аллахумма бика амсайна, ва бика асбахна, ва бика нахья, ва бика намуту ва илейкаль-масыр.»*\n"
-            "5. *«А'узу би-калиматилляхит-таммати мин шарри ма халяк.»* (3 раза)"
+            "5. *«A'uuzu bi-kaliimatillahi-t-taammaati min sharri maa khalaq.»* (3 раза)"
         )
     },
     'en': {
@@ -1378,7 +1374,7 @@ def get_reply_menu(user_id, context=None):
     ], resize_keyboard=True)
 
 # =====================================================================
-# GELİŞMİŞ VİDEO & MEDYA İNDİRME MOTORU (INSTA, TIKTOK, X, FB, YT)
+# GELİŞMİŞ VE ÇÖKMEZ VİDEO & MEDYA İNDİRME MOTORU (ÇOK KATMANLI YEDEKLEME)
 # =====================================================================
 SUPPORTED_PLATFORMS = [
     r'(?:instagram\.com|instagr\.am|threads\.net)',
@@ -1396,35 +1392,183 @@ class FileTooLargeError(Exception):
         self.size_mb = size_mb
         super().__init__(f"File size ({size_mb:.1f} MB) exceeds Telegram 50 MB limit.")
 
-def download_media_sync(url: str, download_dir: str) -> dict:
+def extract_instagram_code(url: str) -> str:
+    """Instagram URL'sinden kısa kodu (shortcode) cikarir."""
+    m = re.search(r'instagram\.com/(?:[^/]+/)?(?:p|reel|reels|tv|share/reel|share/p)/([A-Za-z0-9_-]+)', url)
+    return m.group(1) if m else None
+
+def parse_media_url_from_html(html_text: str):
+    """HTML içeriğinden doğrudan CDN video veya resim URL'sini yakalar."""
+    # 1. JSON video_url
+    m = re.search(r'"video_url"\s*:\s*"([^"]+)"', html_text)
+    if m:
+        return html_lib.unescape(m.group(1).replace(r'\/', '/').replace(r'\u0026', '&')), True
+
+    # 2. OpenGraph og:video
+    m = re.search(r'<meta[^>]+(?:property|name)=["\']og:video(?::secure_url)?["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), True
+
+    # 3. Twitter player stream
+    m = re.search(r'<meta[^>]+(?:property|name)=["\']twitter:player:stream["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), True
+
+    # 4. video tag src
+    m = re.search(r'<video[^>]+src=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), True
+
+    # 5. Görsel kontrolü (display_url / og:image)
+    m = re.search(r'"display_url"\s*:\s*"([^"]+)"', html_text)
+    if m:
+        return html_lib.unescape(m.group(1).replace(r'\/', '/').replace(r'\u0026', '&')), False
+
+    m = re.search(r'<meta[^>]+(?:property|name)=["\']og:image(?::secure_url)?["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), False
+
+    return None, False
+
+def download_direct_url(direct_url: str, output_path: str, max_bytes: int = 50 * 1024 * 1024):
+    """Doğrudan CDN bağlantısından akış yaparak güvenli dosya indirme."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Referer": "https://www.instagram.com/",
+    }
+    with httpx.Client(timeout=30.0, follow_redirects=True, headers=headers) as client:
+        with client.stream("GET", direct_url) as response:
+            if response.status_code != 200:
+                raise RuntimeError(f"HTTP stream basarisiz: {response.status_code}")
+            content_length = response.headers.get("content-length")
+            if content_length and int(content_length) > max_bytes:
+                raise FileTooLargeError(int(content_length) / (1024 * 1024))
+            downloaded = 0
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_bytes(chunk_size=65536):
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes:
+                        raise FileTooLargeError(downloaded / (1024 * 1024))
+                    f.write(chunk)
+
+def fallback_instagram_download(code: str, download_dir: str) -> dict:
     """
-    Instagram, TikTok, X (Twitter), Facebook ve YouTube için optimize edilmiş
-    hataya dayanıklı indirme fonksiyonu.
+    Instagram'ın giriş duvarını ve IP kısıtlamalarını aşmak için
+    Embed ve vekil uç noktaları sorgulayan gelişmiş yedek motor.
     """
+    headers_embed = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "X-IG-App-ID": "936619743392459",
+    }
+    headers_bot = {
+        "User-Agent": "TelegramBot (like TwitterBot)",
+        "Accept": "*/*",
+    }
+
+    candidate_endpoints = [
+        (f"https://www.instagram.com/p/{code}/embed/captioned/", headers_embed),
+        (f"https://instagramez.com/reel/{code}/", headers_bot),
+        (f"https://www.ddinstagram.com/reel/{code}/", headers_bot),
+        (f"https://instagramez.com/p/{code}/", headers_bot),
+        (f"https://www.ddinstagram.com/p/{code}/", headers_bot),
+    ]
+
+    with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+        for target_url, hdrs in candidate_endpoints:
+            try:
+                resp = client.get(target_url, headers=hdrs)
+                if resp.status_code == 200 and resp.text:
+                    media_url, is_video = parse_media_url_from_html(resp.text)
+                    if media_url:
+                        ext = ".mp4" if is_video else ".jpg"
+                        out_file = os.path.join(download_dir, f"insta_{code}{ext}")
+                        download_direct_url(media_url, out_file)
+
+                        size_mb = os.path.getsize(out_file) / (1024 * 1024)
+                        if size_mb > 49.5:
+                            raise FileTooLargeError(size_mb)
+
+                        return {
+                            'path': out_file,
+                            'title': f"Instagram @{code}",
+                            'duration': 0,
+                            'width': None,
+                            'height': None,
+                            'size_mb': size_mb,
+                            'is_video': is_video,
+                            'is_photo': not is_video
+                        }
+            except FileTooLargeError:
+                raise
+            except Exception:
+                continue
+
+    return None
+
+def fallback_twitter_download(tweet_id: str, download_dir: str) -> dict:
+    """X / Twitter videoları için açık API yedeği."""
+    api_url = f"https://api.fxtwitter.com/status/{tweet_id}"
+    try:
+        with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+            resp = client.get(api_url)
+            if resp.status_code == 200:
+                data = resp.json()
+                tweet = data.get("tweet", {})
+                media = tweet.get("media", {})
+                videos = media.get("videos", [])
+                if videos:
+                    v_url = videos[0].get("url")
+                    if v_url:
+                        out_file = os.path.join(download_dir, f"x_{tweet_id}.mp4")
+                        download_direct_url(v_url, out_file)
+                        size_mb = os.path.getsize(out_file) / (1024 * 1024)
+                        if size_mb > 49.5:
+                            raise FileTooLargeError(size_mb)
+                        return {
+                            'path': out_file,
+                            'title': tweet.get("text", "X Video")[:50],
+                            'duration': int(videos[0].get("duration", 0)),
+                            'width': videos[0].get("width"),
+                            'height': videos[0].get("height"),
+                            'size_mb': size_mb,
+                            'is_video': True,
+                            'is_photo': False
+                        }
+    except FileTooLargeError:
+        raise
+    except Exception:
+        pass
+    return None
+
+def _yt_dlp_download(url: str, download_dir: str) -> dict:
     out_tmpl = os.path.join(download_dir, 'media_%(id)s.%(ext)s')
-    
-    # 50 MB Telegram Bot API limiti için format hiyerarşisi
     ydl_opts = {
         'outtmpl': out_tmpl,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'noplaylist': True,
-        'socket_timeout': 25,
+        'socket_timeout': 20,
         'retries': 3,
-        # 48 MB altındaki en kaliteli formatı hedefler, aşarsa en iyi video akışını çeker
         'format': 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Mode': 'navigate',
+            'X-IG-App-ID': '936619743392459',
+        },
+        'extractor_args': {
+            'instagram': {
+                'app_id': ['936619743392459'],
+            }
         }
     }
 
-    # ffmpeg varsa MP4 olarak birleştir
     if shutil.which('ffmpeg'):
         ydl_opts['merge_output_format'] = 'mp4'
 
-    # Varsa cookies.txt dosyasını bağla
     cookie_path = os.environ.get("COOKIE_FILE", "cookies.txt")
     if os.path.exists(cookie_path):
         ydl_opts['cookiefile'] = cookie_path
@@ -1436,7 +1580,6 @@ def download_media_sync(url: str, download_dir: str) -> dict:
         width = info.get('width') if info else None
         height = info.get('height') if info else None
 
-        # İndirilen dosyalar arasından geçici (.part, .ytdl) olmayan en uygun dosyayı seç
         valid_files = []
         for f in os.listdir(download_dir):
             full_p = os.path.join(download_dir, f)
@@ -1446,9 +1589,8 @@ def download_media_sync(url: str, download_dir: str) -> dict:
                     valid_files.append(full_p)
 
         if not valid_files:
-            raise RuntimeError("Dosya indirilemedi veya platform içeriği kısıtladı.")
+            raise RuntimeError("Dosya indirilemedi veya platform icerigi kisitladi.")
 
-        # Boyuta göre sırala (ana medya dosyasını al)
         valid_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
         chosen_file = valid_files[0]
         size_mb = os.path.getsize(chosen_file) / (1024 * 1024)
@@ -1470,6 +1612,37 @@ def download_media_sync(url: str, download_dir: str) -> dict:
             'is_video': is_video,
             'is_photo': is_photo
         }
+
+def download_media_sync(url: str, download_dir: str) -> dict:
+    clean_url = url.strip()
+    insta_code = extract_instagram_code(clean_url)
+    if insta_code:
+        clean_url = f"https://www.instagram.com/reel/{insta_code}/"
+
+    # 1. Aşama: Standart ve optimize yt-dlp ile dene
+    try:
+        return _yt_dlp_download(clean_url, download_dir)
+    except FileTooLargeError:
+        raise
+    except Exception as e:
+        print(f"[DOWNLOAD_WARNING] yt-dlp ile indirilemedi ({e}). Akilli yedek indirme motoru devreye giriyor...")
+
+        # 2. Aşama: Instagram için Embed / InstaFix yedek motoru
+        if insta_code:
+            fallback_res = fallback_instagram_download(insta_code, download_dir)
+            if fallback_res:
+                print(f"[DOWNLOAD_SUCCESS] Instagram yedek motoru ile basariyla indirildi: {insta_code}")
+                return fallback_res
+
+        # 3. Aşama: X / Twitter için FxTwitter yedek motoru
+        m_x = re.search(r'(?:twitter\.com|x\.com)/(?:[^/]+/)?status/(\d+)', clean_url)
+        if m_x:
+            fallback_x = fallback_twitter_download(m_x.group(1), download_dir)
+            if fallback_x:
+                print(f"[DOWNLOAD_SUCCESS] X/Twitter yedek motoru ile basariyla indirildi: {m_x.group(1)}")
+                return fallback_x
+
+        raise e
 
 # =====================================================================
 # DİNAMİK BOT KOMUTLARI
@@ -1996,11 +2169,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # Arka planda sessiz saat dilimi eşitleme
     tele_code = update.effective_user.language_code if update.effective_user else None
     silent_background_tz_sync(user_id, raw_text=raw_text, user_lang_code=tele_code)
 
-    # 1. Menü Butonları Tıklamaları (Tüm diller ve varyasyonlar)
+    # 1. Menü Butonları Tıklamaları
     btn_keys = {
         'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_pdf_hub': 'pdf_hub',
         'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img', 'btn_pomodoro': 'pomodoro',
@@ -2038,7 +2210,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Tilni tanlang / Dil seçimi / Выберите язык / Select language:", reply_markup=get_language_keyboard())
             return
 
-    # 2. Medya Linki Kontrolü (Gelişmiş & Çökmez)
+    # 2. Medya Linki Kontrolü (Çok Katmanlı & Kesintisiz)
     if is_supported_url(raw_text):
         m_url = re.search(r'https?://[^\s]+', raw_text)
         if m_url:
@@ -2147,7 +2319,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception: pass
         return
 
-    # 5. HATIRLATICI (KULLANICI YEREL ZAMANINA GÖRE)
+    # 5. HATIRLATICI
     if mode == 'remind_input':
         user_now = get_user_now(user_id, context)
         target_dt = None
@@ -2179,7 +2351,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'prompt_remind', context), parse_mode="Markdown")
         return
 
-    # 6. NAMAZ VAKTİ (VE OTOMATİK SAAT DİLİMİ EŞLEŞTİRME)
+    # 6. NAMAZ VAKTİ
     if mode == 'prayer':
         timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text, user_id=user_id)
         if timings:
@@ -2197,13 +2369,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🔤 *Кирилл:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
         return
 
-    # Genel Menü Hatırlatması
     await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
 
 async def post_init_setup(application):
-    """
-    python-telegram-bot v20+ için güvenli arka plan zamanlayıcı başlatıcısı.
-    """
     asyncio.create_task(reminders_worker(application))
 
 def main():
@@ -2211,7 +2379,6 @@ def main():
     if not token: raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
     load_databases()
 
-    # Arka plan keep-alive ve HTTP sağlık sunucusu
     threading.Thread(target=run_health_server, daemon=True).start()
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 

@@ -12,7 +12,7 @@ import struct
 import urllib.parse
 import urllib.request
 import calendar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import httpx
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
@@ -44,7 +44,7 @@ from telegram.ext import (
 import yt_dlp
 
 # =====================================================================
-# RENDER 7/24 GELİŞMİŞ SAĞLIK SUNUCUSU & SELF-PINGER
+# RENDER 7/24 SAĞLIK SUNUCUSU & SELF-PINGER
 # =====================================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -67,22 +67,17 @@ def run_health_server():
     server.serve_forever()
 
 def get_target_ping_url() -> str:
-    # 1. Render'ın varsayılan enjekte ettiği hostname
     hostname = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
     if hostname:
         return f"https://{hostname}/ping"
-    
-    # 2. Manuel girilmiş olabilecek ortam değişkenleri
     url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL") or os.environ.get("WEB_URL")
     if url:
         if not url.startswith("http"):
             url = f"https://{url}"
         return f"{url.rstrip('/')}/ping"
-    
     return None
 
 def run_keep_alive_pinger():
-    # Sunucunun ve Render routing altyapısının ayağa kalkması için 60 sn bekle
     time.sleep(60)
     while True:
         target_url = get_target_ping_url()
@@ -90,33 +85,37 @@ def run_keep_alive_pinger():
             try:
                 req = urllib.request.Request(
                     target_url,
-                    headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NunBot-KeepAlive/2.0'
-                    }
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NunBot-KeepAlive/2.0'}
                 )
                 with urllib.request.urlopen(req, timeout=25) as resp:
                     print(f"[KEEP-ALIVE] Ping basarili: {target_url} -> Kod: {resp.status}")
             except Exception as e:
                 print(f"[KEEP-ALIVE] Ping uyarisi: {e}")
         else:
-            print("[KEEP-ALIVE] RENDER_EXTERNAL_HOSTNAME tanimli degil. UptimeRobot ile Render linkinizi 8 dk'da bir pingleyebilirsiniz.")
-
-        # Render 15 dakikada uyur, 8 dakikada bir (480 sn) ping göndermek idealdir
+            print("[KEEP-ALIVE] RENDER_EXTERNAL_HOSTNAME tanimli degil.")
         time.sleep(480)
 
 # =====================================================================
-# VERİ TABANI YÖNETİMİ (DİL, SINAVLAR, HATIRLATICILAR)
+# VERİ TABANI YÖNETİMİ (DİL, SAAT DİLİMİ, SINAVLAR, HATIRLATICILAR)
 # =====================================================================
 LANG_FILE = "user_langs.json"
+TZ_FILE = "user_timezones.json"
 EXAMS_FILE = "user_exams.json"
 REMINDERS_FILE = "user_reminders.json"
+
 USER_LANGS = {}
+USER_TIMEZONES = {}
 USER_EXAMS = {}
 USER_REMINDERS = {}
 
 def load_databases():
-    global USER_LANGS, USER_EXAMS, USER_REMINDERS
-    for fname, var_ref in [(LANG_FILE, USER_LANGS), (EXAMS_FILE, USER_EXAMS), (REMINDERS_FILE, USER_REMINDERS)]:
+    global USER_LANGS, USER_TIMEZONES, USER_EXAMS, USER_REMINDERS
+    for fname, var_ref in [
+        (LANG_FILE, USER_LANGS),
+        (TZ_FILE, USER_TIMEZONES),
+        (EXAMS_FILE, USER_EXAMS),
+        (REMINDERS_FILE, USER_REMINDERS)
+    ]:
         if os.path.exists(fname):
             try:
                 with open(fname, "r", encoding="utf-8") as f:
@@ -144,6 +143,25 @@ def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
         if isinstance(l, str) and l in TEXTS:
             return l
     return 'uz'
+
+def save_user_timezone(user_id, offset_hours: int):
+    USER_TIMEZONES[str(user_id)] = int(offset_hours)
+    save_json(TZ_FILE, USER_TIMEZONES)
+
+def get_user_tz_offset(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> int:
+    uid_str = str(user_id)
+    if uid_str in USER_TIMEZONES:
+        return USER_TIMEZONES[uid_str]
+    lang = get_user_lang(user_id, context)
+    # Varsayılanlar: Türkçe ve Rusça -> UTC+3 (İstanbul/Moskova), Özbekçe -> UTC+5 (Taşkent), İngilizce -> UTC+3
+    if lang in ('tr', 'ru', 'en'):
+        return 3
+    return 5
+
+def get_user_now(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> datetime:
+    offset = get_user_tz_offset(user_id, context)
+    utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return utc_now + timedelta(hours=offset)
 
 def add_user_exam(user_id, title: str, date_str: str) -> str:
     uid_str = str(user_id)
@@ -235,7 +253,7 @@ def xlsx_to_pdf(input_xlsx: str, output_pdf: str) -> bool:
         if not table_data:
             return False
         pdf_doc = SimpleDocTemplate(output_pdf, pagesize=A4)
-        story = [Paragraph("<b>Excel Jadvali</b>", getSampleStyleSheet()['Heading2']), Spacer(1, 10)]
+        story = [Paragraph("<b>Excel Document</b>", getSampleStyleSheet()['Heading2']), Spacer(1, 10)]
         t = Table(table_data)
         t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#222222')),
@@ -257,7 +275,7 @@ def txt_to_pdf(input_txt: str, output_pdf: str) -> bool:
             content = f.read()
         doc = SimpleDocTemplate(output_pdf, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
         styles = getSampleStyleSheet()
-        story = [Paragraph("<b>Matn Hujjati</b>", styles['Heading2']), Spacer(1, 10)]
+        story = [Paragraph("<b>Document</b>", styles['Heading2']), Spacer(1, 10)]
         for line in content.split("\n"):
             line_clean = line.strip()
             if line_clean:
@@ -270,7 +288,7 @@ def txt_to_pdf(input_txt: str, output_pdf: str) -> bool:
         return False
 
 # =====================================================================
-# GELİŞMİŞ ÇOK DİLLİ OCR MOTORU (ARAPÇA & ÇİNCE DESTEKLİ)
+# GELİŞMİŞ ÇOK DİLLİ OCR MOTORU
 # =====================================================================
 def extract_text_from_image(image_path: str) -> str:
     try:
@@ -310,8 +328,8 @@ def parse_schedule_text(text: str, user_lang: str = 'uz'):
     day_indices = {
         "dushanba": 0, "pazartesi": 0, "monday": 0, "понедельник": 0, "пн": 0, "mon": 0,
         "seshanba": 1, "sali": 1, "tuesday": 1, "вторник": 1, "вт": 1, "tue": 1,
-        "chorshanba": 2, "carsamba": 2, "wednesday": 2, "среда": 2, "ср": 2, "wed": 2,
-        "payshanba": 3, "persembe": 3, "thursday": 3, "четверг": 3, "чт": 3, "thu": 3,
+        "chorshanba": 2, "carsamba": 2, "çarşamba": 2, "wednesday": 2, "среда": 2, "ср": 2, "wed": 2,
+        "payshanba": 3, "persembe": 3, "perşembe": 3, "thursday": 3, "четверг": 3, "чт": 3, "thu": 3,
         "juma": 4, "cuma": 4, "friday": 4, "пятница": 4, "пт": 4, "fri": 4,
         "shanba": 5, "cumartesi": 5, "saturday": 5, "суббота": 5, "сб": 5, "sat": 5,
         "yakshanba": 6, "pazar": 6, "sunday": 6, "воскресенье": 6, "вс": 6, "sun": 6,
@@ -352,7 +370,7 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, user_lang
     draw = ImageDraw.Draw(img)
 
     titles = {
-        'uz': ("AKADEMIK REJA", "DARS JADVALI", "NUN PROJECT • KILIT EKRANI JADVALI"),
+        'uz': ("AKADEMIK REJA", "DARS JADVALI", "NUN PROJECT • QULFLANGAN EKRAN JADVALI"),
         'tr': ("AKADEMİK PROGRAM", "DERS PROGRAMI", "NUN PROJECT • KİLİT EKRANI PROGRAMI"),
         'ru': ("УЧЕБНЫЙ ПЛАН", "РАСПИСАНИЕ ЗАНЯТИЙ", "NUN PROJECT • ЭКРАН БЛОКИРОВКИ"),
         'en': ("ACADEMIC TIMETABLE", "CLASS SCHEDULE", "NUN PROJECT • LOCKSCREEN TIMETABLE"),
@@ -399,18 +417,18 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, user_lang
     return True
 
 # =====================================================================
-# POMODORO & HATIRLATICI MOTORU
+# POMODORO & HATIRLATICI MOTORU (GERÇEK KULLANICI YEREL SAATİ)
 # =====================================================================
 async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
     await asyncio.sleep(duration_mins * 60)
     t = TEXTS.get(user_lang, TEXTS['uz'])
     if is_break:
         msg = f"🔔 *{t['pomo_break_over']}* ☕"
-        btn_lbl = "🍅 25 Min Work" if user_lang == 'en' else ("🍅 25 Мин Работа" if user_lang == 'ru' else ("🍅 25 Dk Çalış" if user_lang == 'tr' else "🍅 25 Dk Ish"))
+        btn_lbl = t['pomo_btn_work25']
         cb = "pomo_25"
     else:
         msg = f"🎉 *{t['pomo_work_over']}* 🍅 (`{duration_mins} {t['pomo_mins_unit']}`)"
-        btn_lbl = "☕ 5 Min Break" if user_lang == 'en' else ("☕ 5 Мин Перерыв" if user_lang == 'ru' else ("☕ 5 Dk Mola" if user_lang == 'tr' else "☕ 5 Dk Mola"))
+        btn_lbl = t['pomo_btn_break5']
         cb = "pomo_5"
 
     kb = InlineKeyboardMarkup([[InlineKeyboardButton(btn_lbl, callback_data=cb)]])
@@ -421,30 +439,28 @@ async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: b
 
 async def reminders_worker(app):
     while True:
-        await asyncio.sleep(30)
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        due = []
+        await asyncio.sleep(25)
         for uid, items in list(USER_REMINDERS.items()):
+            user_now = get_user_now(int(uid))
+            now_str = user_now.strftime("%Y-%m-%d %H:%M")
+            due = []
             for it in list(items):
                 if it.get("time") <= now_str:
-                    due.append((uid, it))
+                    due.append(it)
                     items.remove(it)
-        if due:
-            save_json(REMINDERS_FILE, USER_REMINDERS)
-            for uid, item in due:
+            if due:
+                save_json(REMINDERS_FILE, USER_REMINDERS)
                 u_lang = USER_LANGS.get(str(uid), 'uz')
                 t = TEXTS.get(u_lang, TEXTS['uz'])
-                hdr = t['remind_due']
-                lbl_task = "Vazifa" if u_lang == 'uz' else ("Görev" if u_lang == 'tr' else ("Задача" if u_lang == 'ru' else "Task"))
-                note = "Belgilangan vaqt yetib keldi!" if u_lang == 'uz' else ("Belirlenen vakit geldi!" if u_lang == 'tr' else ("Время пришло!" if u_lang == 'ru' else "Time is up!"))
-                try:
-                    await app.bot.send_message(
-                        chat_id=int(uid),
-                        text=f"🔔 *{hdr}*\n\n📌 *{lbl_task}:* {item.get('text')}\n⏰ {note}",
-                        parse_mode="Markdown"
-                    )
-                except Exception:
-                    pass
+                for item in due:
+                    try:
+                        await app.bot.send_message(
+                            chat_id=int(uid),
+                            text=f"🔔 *{t['remind_due']}*\n\n📌 *{t['remind_task_lbl']}:* {item.get('text')}\n⏰ {t['remind_note']}",
+                            parse_mode="Markdown"
+                        )
+                    except Exception:
+                        pass
 
 # =====================================================================
 # ÖZBEKÇE KİRİL <-> LATİN ÇEVİRİ MOTORU
@@ -543,7 +559,7 @@ def is_mostly_cyrillic(text: str) -> bool:
     return len(re.findall(r'[\u0400-\u04FF]', text)) >= len(re.findall(r'[a-zA-Z]', text))
 
 # =====================================================================
-# NAMAZ VAKİTLERİ MOTORU
+# NAMAZ VAKİTLERİ MOTORU & AKILLI SAAT DİLİMİ EŞLEŞTİRİCİ
 # =====================================================================
 UZ_REGIONS = {
     "toshkent": "toshkent", "samarqand": "samarqand-shahri", "buxoro": "buxoro-shahri",
@@ -552,44 +568,55 @@ UZ_REGIONS = {
     "qarshi": "qarshi-shahri", "navoiy": "navoiy-shahri", "termiz": "termiz-shahri",
 }
 GLOBAL_CITIES = {
-    "istanbul": "Istanbul", "ankara": "Ankara", "izmir": "Izmir", "bursa": "Bursa",
-    "moskva": "Moscow", "almaty": "Almaty", "makka": "Makkah", "madina": "Medina", "dubai": "Dubai"
+    "istanbul": ("Istanbul", 3), "ankara": ("Ankara", 3), "izmir": ("Izmir", 3), "bursa": ("Bursa", 3),
+    "moskva": ("Moscow", 3), "moscow": ("Moscow", 3), "almaty": ("Almaty", 5),
+    "makka": ("Makkah", 3), "madina": ("Medina", 3), "dubai": ("Dubai", 4), "london": ("London", 0)
 }
 
 def clean_time_str(val: str) -> str:
     m = re.search(r"\d{1,2}:\d{2}", str(val))
     return m.group(0) if m else "--:--"
 
-async def fetch_prayer_times(city_input: str):
+async def fetch_prayer_times(city_input: str, user_id: int = None):
     c_norm = re.sub(r"['’`ʻʼ]", "", city_input.lower().strip()).replace('i̇', 'i').replace('ı', 'i')
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        slug = UZ_REGIONS.get(c_norm)
-        if not slug:
-            matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
-            if matches: slug = UZ_REGIONS[matches[0]]
-        if slug:
-            try:
+    # 1. Özbekistan Şehirleri (UTC+5)
+    slug = UZ_REGIONS.get(c_norm)
+    if not slug:
+        matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
+        if matches: slug = UZ_REGIONS[matches[0]]
+    if slug:
+        try:
+            async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
                 resp = await client.get(f"https://namoz-vaqti.uz/index.php?format=json&region={slug}", headers=headers)
                 if resp.status_code == 200:
                     j = resp.json()
                     t = j.get("today", {}).get("times", {})
                     meta = j.get("meta", {})
+                    if user_id:
+                        save_user_timezone(user_id, 5)
                     return {
                         "Fajr": t.get("bomdod"), "Sunrise": t.get("quyosh"), "Dhuhr": t.get("peshin"),
                         "Asr": t.get("asr"), "Maghrib": t.get("shom"), "Isha": t.get("xufton")
                     }, meta.get("region", {}).get("name", city_input.title()), meta.get("date", ""), "", "Oʻzbekiston Din ishlari qoʻmitasi"
-            except Exception: pass
+        except Exception: pass
 
-        target = GLOBAL_CITIES.get(c_norm, city_input)
-        try:
+    # 2. Küresel Şehirler
+    target_info = GLOBAL_CITIES.get(c_norm)
+    target = target_info[0] if target_info else city_input
+    target_tz = target_info if target_info else None
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
             resp = await client.get(f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(target)}", headers=headers)
             if resp.status_code == 200:
                 data = resp.json().get("data", {})
                 d = data.get("date", {})
+                if user_id and target_tz is not None:
+                    save_user_timezone(user_id, target_tz)
                 return data.get("timings", {}), target.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
-        except Exception: pass
+    except Exception: pass
 
     return None, None, None, None, None
 
@@ -622,9 +649,9 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         f"  ▫️ *{lbls[0]}:*    `{t_f}`\n"
         f"  ▫️ *{lbls}:*    `{t_s}`\n"
         f"  ▫️ *{lbls}:*    `{t_d}`\n"
-        f"  ▫️ *{lbls}:*    `{t_a}`\n"
-        f"  ▫️ *{lbls}:*    `{t_m}`\n"
-        f"  ▫️ *{lbls}:*    `{t_i}`\n"
+        f"  ▫️ *{lbls[3]}:*    `{t_a}`\n"
+        f"  ▫️ *{lbls[4]}:*    `{t_m}`\n"
+        f"  ▫️ *{lbls[5]}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
         f"_{source}_"
     )
@@ -644,27 +671,19 @@ def format_scheduler_card(title: str, dt: datetime, lang: str = 'uz') -> str:
 
     if lang == 'tr':
         header = "*NUN PROJECT // ZAMAN AYARI*"
-        lbl_exam = "Ders / Sınav"
-        lbl_date = "Tarih"
-        lbl_time = "Saat"
+        lbl_exam, lbl_date, lbl_time = "Ders / Sınav", "Tarih", "Saat"
         hint = "_Aşağıdaki butonlarla tarihi ve saati canlı olarak ayarlayın:_"
     elif lang == 'ru':
         header = "*NUN PROJECT // НАСТРОЙКА ВРЕМЕНИ*"
-        lbl_exam = "Предмет / Экзамен"
-        lbl_date = "Дата"
-        lbl_time = "Время"
+        lbl_exam, lbl_date, lbl_time = "Предмет / Экзамен", "Дата", "Время"
         hint = "_Настройте дату и время с помощью кнопок ниже:_"
     elif lang == 'en':
         header = "*NUN PROJECT // SCHEDULE TIME*"
-        lbl_exam = "Subject / Exam"
-        lbl_date = "Date"
-        lbl_time = "Time"
+        lbl_exam, lbl_date, lbl_time = "Subject / Exam", "Date", "Time"
         hint = "_Adjust date and time in real-time using buttons below:_"
     else:
         header = "*NUN PROJECT // VAQTNI SOZLASH*"
-        lbl_exam = "Fan / Imtihon"
-        lbl_date = "Sana"
-        lbl_time = "Vaqt"
+        lbl_exam, lbl_date, lbl_time = "Fan / Imtihon", "Sana", "Vaqt"
         hint = "_Quyidagi tugmalar orqali sana va vaqtni jonli sozlang:_"
 
     return (
@@ -778,62 +797,52 @@ async def safe_edit_text_markup(message, text: str, reply_markup=None, parse_mod
             pass
 
 # =====================================================================
-# SADELEŞTİRİLMİŞ PDF HUB VE DİĞER ARAYÜZLER
+# SADELEŞTİRİLMİŞ ARAYÜZLER (PDF, POMODORO, ZİKİRLER, SAAT DİLİMİ)
 # =====================================================================
 def get_pdf_hub_keyboard(lang: str = 'uz'):
-    if lang == 'tr':
-        t_conv, t_ocr = "📸 Fotoğraf / Word / Excel / TXT ➔ PDF", "🔍 Görselden Metin Çıkarma (OCR)"
-    elif lang == 'ru':
-        t_conv, t_ocr = "📸 Фото / Word / Excel / TXT ➔ PDF", "🔍 Извлечение текста (OCR)"
-    elif lang == 'en':
-        t_conv, t_ocr = "📸 Photo / Word / Excel / TXT ➔ PDF", "🔍 Extract Text (OCR)"
-    else:
-        t_conv, t_ocr = "📸 Rasm / Word / Excel / TXT ➔ PDF", "🔍 Rasmdan Matn Olish (OCR)"
-
+    t = TEXTS.get(lang, TEXTS['uz'])
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t_conv, callback_data="pdf_act_to_pdf")],
-        [InlineKeyboardButton(t_ocr, callback_data="pdf_act_ocr")],
+        [InlineKeyboardButton(t['pdf_hub_to_pdf_btn'], callback_data="pdf_act_to_pdf")],
+        [InlineKeyboardButton(t['pdf_hub_ocr_btn'], callback_data="pdf_act_ocr")],
     ])
 
-def get_pomodoro_keyboard(lang: str = 'uz'):
-    if lang == 'tr':
-        t_w25, t_b5 = "🍅 25 Dk Çalış", "☕ 5 Dk Mola"
-        t_w50, t_b10 = "🍅 50 Dk Çalış", "☕ 10 Dk Mola"
-        t_add, t_list = "⏰ Yeni Hatırlatıcı Ekle", "📋 Hatırlatıcılarım"
-    elif lang == 'ru':
-        t_w25, t_b5 = "🍅 25 Мин Работа", "☕ 5 Мин Перерыв"
-        t_w50, t_b10 = "🍅 50 Мин Работа", "☕ 10 Мин Перерыв"
-        t_add, t_list = "⏰ Новое напоминание", "📋 Мои напоминания"
-    elif lang == 'en':
-        t_w25, t_b5 = "🍅 25 Min Work", "☕ 5 Min Break"
-        t_w50, t_b10 = "🍅 50 Min Work", "☕ 10 Min Break"
-        t_add, t_list = "⏰ Add New Reminder", "📋 My Reminders"
-    else:
-        t_w25, t_b5 = "🍅 25 Dk Ish", "☕ 5 Dk Mola"
-        t_w50, t_b10 = "🍅 50 Dk Ish", "☕ 10 Dk Mola"
-        t_add, t_list = "⏰ Yangi Eslatma Qoʻshish", "📋 Eslatmalarim"
+def get_pomodoro_keyboard(user_id: int, lang: str = 'uz'):
+    t = TEXTS.get(lang, TEXTS['uz'])
+    tz_off = get_user_tz_offset(user_id)
+    tz_btn_lbl = f"🕒 UTC+{tz_off}" if tz_off >= 0 else f"🕒 UTC{tz_off}"
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t_w25, callback_data="pomo_25"), InlineKeyboardButton(t_b5, callback_data="pomo_5")],
-        [InlineKeyboardButton(t_w50, callback_data="pomo_50"), InlineKeyboardButton(t_b10, callback_data="pomo_10")],
-        [InlineKeyboardButton(t_add, callback_data="remind_add"), InlineKeyboardButton(t_list, callback_data="remind_list")]
+        [InlineKeyboardButton(t['pomo_btn_work25'], callback_data="pomo_25"), InlineKeyboardButton(t['pomo_btn_break5'], callback_data="pomo_5")],
+        [InlineKeyboardButton(t['pomo_btn_work50'], callback_data="pomo_50"), InlineKeyboardButton(t['pomo_btn_break10'], callback_data="pomo_10")],
+        [InlineKeyboardButton(t['pomo_btn_add_remind'], callback_data="remind_add"), InlineKeyboardButton(t['pomo_btn_my_reminds'], callback_data="remind_list")],
+        [InlineKeyboardButton(f"{t['btn_timezone']}: {tz_btn_lbl}", callback_data="open_tz_selector")]
     ])
 
 def get_adhkar_selection_keyboard(lang: str = 'uz'):
-    if lang == 'tr':
-        t_m, t_e = "🌅 Sabah Zikirleri", "🌇 Akşam Zikirleri"
-    elif lang == 'ru':
-        t_m, t_e = "🌅 Утренние зикры", "🌇 Вечерние зикры"
-    elif lang == 'en':
-        t_m, t_e = "🌅 Morning Adhkar", "🌇 Evening Adhkar"
-    else:
-        t_m, t_e = "🌅 Tonggi zikrlar", "🌇 Kechki zikrlar"
-
+    t = TEXTS.get(lang, TEXTS['uz'])
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t_m, callback_data="adhkar_morning"), InlineKeyboardButton(t_e, callback_data="adhkar_evening")]
+        [InlineKeyboardButton(t['adhkar_morning_btn'], callback_data="adhkar_morning"), InlineKeyboardButton(t['adhkar_evening_btn'], callback_data="adhkar_evening")]
     ])
 
-# 4 DİLLİ TAM SÖZLÜK (57 ANAHTAR EKSİKSİZ)
+def get_language_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")],
+        [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+    ])
+
+def get_timezone_keyboard(lang: str = 'uz'):
+    t = TEXTS.get(lang, TEXTS['uz'])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇺🇿 Toshkent (UTC+5)", callback_data="settz_5"), InlineKeyboardButton("🇹🇷 Istanbul (UTC+3)", callback_data="settz_3")],
+        [InlineKeyboardButton("🇷🇺 Moskva (UTC+3)", callback_data="settz_3_ru"), InlineKeyboardButton("🇦🇪 Dubay (UTC+4)", callback_data="settz_4")],
+        [InlineKeyboardButton("🇬🇧 London (UTC+0)", callback_data="settz_0"), InlineKeyboardButton("🇩🇪 Berlin (UTC+1)", callback_data="settz_1")],
+        [InlineKeyboardButton("🇰🇿 Olmaota (UTC+5)", callback_data="settz_5_kz"), InlineKeyboardButton("🇺🇸 New York (UTC-5)", callback_data="settz_-5")],
+        [InlineKeyboardButton(t['btn_cancel'], callback_data="cancel_action")]
+    ])
+
+# =====================================================================
+# 4 DİLLİ TAM VE EKSİKSİZ SÖZLÜK
+# =====================================================================
 TEXTS = {
     'uz': {
         'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\nQuyidagi menyudan kerakli boʻlimni tanlang:",
@@ -845,19 +854,21 @@ TEXTS = {
         'btn_schedule_img': "🗓️ Dars Jadvali (Rasm)",
         'btn_pomodoro': "⏱️ Pomodoro & Eslatma",
         'btn_adhkar': "📿 Zikrlar",
-        'btn_translit': "🔤 Krill ⇄ Lotin",
+        'btn_translit': "🔤 Kirill ⇄ Lotin",
         'btn_lang': "🌐 Tilni tanlash",
+        'btn_timezone': "🕒 Vaqt mintaqasi",
         'prompt_video': "🔗 Instagram, TikTok, Facebook yoki X (Twitter) havolasini yuboring:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:",
-        'prompt_schedule_img': "🗓️ *DARS JADVALI GÖRSELİ*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 kilit ekrani formatiga aylantiradi.",
+        'prompt_schedule_img': "🗓️ *DARS JADVALI RASMI*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 qulflangan ekran formatiga aylantiradi.",
         'prompt_pomodoro': "⏱️ *POMODORO & ESLATMA MARKAZI*",
-        'prompt_adhkar': "📿 Zikrlarni tanlang:",
+        'prompt_adhkar': "📿 Zikr turini tanlang:",
         'prompt_translit': "✍️ Matningizni yuboring, avtomatik Kirill ⇄ Lotin oʻgirib beraman:",
-        'prompt_convert_to_pdf': "📸 *PDF'GA OʻGIRISH REJIMI FAOL*\n\nPDF formatiga oʻtkazmoqchi boʻlgan faylni yuboring:\n_(Rasm, Word .docx, Excel .xlsx yoki TXT)_",
+        'prompt_convert_to_pdf': "📸 *PDF GA OʻGIRISH REJIMI FAOL*\n\nPDF formatiga oʻtkazmoqchi boʻlgan faylni yuboring:\n_(Rasm, Word .docx, Excel .xlsx yoki TXT)_",
         'prompt_ocr': "🔍 *RASMDAN MATN CHIQARISH (OCR) FAOL*\n\nMatnini oʻqib olmoqchi boʻlgan kitob yoki taxta rasmini yuboring:\n_(Arabcha, Xitoycha, Ruscha, Oʻzbekcha va barcha tillar qoʻllab-quvvatlanadi)_",
         'prompt_exam_title': "🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_",
-        'prompt_remind': "⏰ Eslatmani quyidagicha yuboring:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`",
+        'prompt_remind': "⏰ Eslatmani quyidagi formatda yuboring:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`",
+        'prompt_timezone': "🕒 *VAQT MINTAQASINI TANLANG*\n\nOʻzingiz joylashgan hududning vaqt mintaqasini tanlang (Taymer va eslatmalar toʻgʻri vaqtda ishlashi uchun):",
         'pomo_started': "POMODORO BOSHLANDI",
         'pomo_work_label': "Dars",
         'pomo_break_label': "Dam olish",
@@ -867,15 +878,28 @@ TEXTS = {
         'pomo_end_lbl': "Tugash vaqti",
         'pomo_break_over': "TANAFFUS TUGADI!",
         'pomo_work_over': "POMODORO TUGADI!",
+        'pomo_btn_work25': "🍅 25 daq dars",
+        'pomo_btn_break5': "☕ 5 daq tanaffus",
+        'pomo_btn_work50': "🍅 50 daq dars",
+        'pomo_btn_break10': "☕ 10 daq tanaffus",
+        'pomo_btn_add_remind': "⏰ Yangi Eslatma Qoʻshish",
+        'pomo_btn_my_reminds': "📋 Eslatmalarim",
         'exam_empty': "Sizda hali saqlangan imtihon yoʻq.",
         'exam_btn_add': "➕ Imtihon qoʻshish",
         'exam_saved': "Imtihon muvaffaqiyatli saqlandi!",
         'exam_deleted': "Imtihon muvaffaqiyatli oʻchirildi.",
+        'exam_default_title': "Imtihon",
+        'exam_hub_title': "🎓 *NUN PROJECT // IMTIHONLAR TAYMERI*",
         'remind_saved': "Eslatma oʻrnatildi!",
         'remind_empty': "Sizda faol eslatmalar yoʻq.",
         'remind_due': "NUN PROJECT // ESLATMA",
+        'remind_deleted': "Eslatma muvaffaqiyatli oʻchirildi.",
+        'remind_task_lbl': "Vazifa",
+        'remind_note': "Belgilangan vaqt yetib keldi!",
         'pdf_ready': "PDF hujjati muvaffaqiyatli tayyorlandi!",
         'pdf_fail': "Faylni PDF ga oʻgirishda xatolik yuz berdi.",
+        'pdf_hub_to_pdf_btn': "📸 Rasm / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Rasmdan Matn Olish (OCR)",
         'ocr_title': "RASMDAN OʻQIB OLINGAN MATN:",
         'ocr_fail': "Rasmdan tushunarli matn topilmadi.",
         'direct_img_prompt': "Rasm qabul qilindi. Qaysi amalni bajarmoqchisiz?",
@@ -884,18 +908,37 @@ TEXTS = {
         'btn_cancel': "Bekor qilish",
         'cancel_success': "Amal bekor qilindi.",
         'lang_changed': "Til muvaffaqiyatli oʻzgartirildi!",
+        'tz_changed': "Vaqt mintaqasi muvaffaqiyatli saqlandi!",
         'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
         'downloading': "Video yuklab olinmoqda, iltimos kuting...",
         'uploading': "Telegramga yuklanmoqda...",
         'error_size': "Fayl hajmi Telegram cheklovidan (50 MB) katta.",
         'error_general': "Xatolik yuz berdi. Qaytadan urinib koʻring.",
-        'schedule_processing': "Kilit ekrani fon rasmi tayyorlanmoqda...",
-        'schedule_ready_caption': "Dars Jadvali (Kilit Ekrani)",
+        'schedule_processing': "Qulflangan ekran fon rasmi tayyorlanmoqda...",
+        'schedule_ready_caption': "Dars jadvali (Qulflangan ekran)",
         'doc_processing': "Fayl qabul qilindi, ishlov berilmoqda...",
-        'video_error': "Videoni yuklab olishda xatolik yuz berdi."
+        'video_error': "Videoni yuklab olishda xatolik yuz berdi.",
+        'adhkar_morning_btn': "🌅 Tonggi zikrlar",
+        'adhkar_evening_btn': "🌇 Kechki zikrlar",
+        'adhkar_morning_text': (
+            "🌅 *TONGGI ZIKRLAR*\n\n"
+            "1. *Oyatul Kursiy*\n"
+            "2. *Ixlos, Falaq, Nos suralari* (3 marta)\n"
+            "3. *«Asbahnaa va asbahal mulku lillaah, valhamdu lillaah, laa ilaaha illallohu vahdahu laa shariyka lah...»*\n"
+            "4. *«Allohumma bika asbahnaa va bika amsaynaa va bika nahyaa va bika namuutu va ilaykan nushuur.»*\n"
+            "5. *«Subhanallohi va bihamdih»* (100 marta)"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *KECHKI ZIKRLAR*\n\n"
+            "1. *Oyatul Kursiy*\n"
+            "2. *Ixlos, Falaq, Nos suralari* (3 marta)\n"
+            "3. *«Amsaynaa va amsal mulku lillaah, valhamdu lillaah...»*\n"
+            "4. *«Allohumma bika amsaynaa va bika asbahnaa va bika nahyaa va bika namuutu va ilaykal masiyr.»*\n"
+            "5. *«A'uuzu bi kalimaatillaahit taammaati min sharri maa xolaq»* (3 marta)"
+        )
     },
     'tr': {
-        'welcome': "Merhaba! Nun Bota hoş geldiniz.\nAşağıdaki menüden işlem seçiniz:",
+        'welcome': "Merhaba! Nun Bot'a hoş geldiniz.\nAşağıdaki menüden işlem seçiniz:",
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
         'btn_prayer': "🕌 Namaz Vakitleri",
@@ -906,17 +949,19 @@ TEXTS = {
         'btn_adhkar': "📿 Zikirler",
         'btn_translit': "🔤 Kiril ⇄ Latin",
         'btn_lang': "🌐 Dil Seçimi",
+        'btn_timezone': "🕒 Saat Dilimi",
         'prompt_video': "🔗 Instagram, TikTok, Facebook veya X (Twitter) linki gönderin:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & BELGE ARAÇLARI*\n\nİşlem seçiniz:",
         'prompt_schedule_img': "🗓️ *HAFTALIK DERS PROGRAMI GÖRSELİ*\n\nDers programınızı gün gün yazıp gönderin (Örn: Pazartesi: 09:00 Matematik...):\nBot 1080x1920 telefon kilit ekranı formatına dönüştürecektir.",
         'prompt_pomodoro': "⏱️ *POMODORO & HATIRLATICI MERKEZİ*",
-        'prompt_adhkar': "📿 Zikirleri seçiniz:",
-        'prompt_translit': "✍️ Metninizi gönderin, otomatik Kiril ⇄ Latin alfabesine dönüştüreceğim:",
+        'prompt_adhkar': "📿 Zikir türünü seçiniz:",
+        'prompt_translit': "✍️ Metninizi gönderin, otomatik Kiril ⇄ Latin alfabesine dönüştüreyim:",
         'prompt_convert_to_pdf': "📸 *PDF DÖNÜŞTÜRÜCÜ AKTİF*\n\nPDF formatına dönüştürmek istediğiniz dosyayı gönderin:\n_(Fotoğraf, Word .docx, Excel .xlsx veya TXT)_",
         'prompt_ocr': "🔍 *GÖRSELDEN METİN ÇIKARMA (OCR) AKTİF*\n\nMetnini okutmak istediğiniz kitap veya tahta fotoğrafını gönderin:\n_(Arapça, Çince, Rusça, Türkçe, Özbekçe ve tüm diller desteklenir)_",
         'prompt_exam_title': "🎓 *SINAV EKLE*\n\n✍️ Sınav veya dersin adını yazıp gönderin:\n_(Örneğin: *Yüksek Matematik*, *Fizik Final*)_",
-        'prompt_remind': "⏰ Hatırlatıcıyı şu şekilde gönderin:\n`Kitap oku - 18:30` veya `Ders - 30 dakika`",
+        'prompt_remind': "⏰ Hatırlatıcıyı şu formatta gönderin:\n`Kitap oku - 18:30` veya `Ders - 30 dakika`",
+        'prompt_timezone': "🕒 *SAAT DİLİMİ SEÇİMİ*\n\nBulunduğunuz bölgenin saat dilimini seçiniz (Zamanlayıcı ve hatırlatıcıların tam vaktinde çalışması için):",
         'pomo_started': "POMODORO BAŞLADI",
         'pomo_work_label': "Çalışma",
         'pomo_break_label': "Mola",
@@ -926,15 +971,28 @@ TEXTS = {
         'pomo_end_lbl': "Bitiş Saati",
         'pomo_break_over': "MOLA BİTTİ!",
         'pomo_work_over': "POMODORO TAMAMLANDI!",
+        'pomo_btn_work25': "🍅 25 Dk Çalış",
+        'pomo_btn_break5': "☕ 5 Dk Mola",
+        'pomo_btn_work50': "🍅 50 Dk Çalış",
+        'pomo_btn_break10': "☕ 10 Dk Mola",
+        'pomo_btn_add_remind': "⏰ Yeni Hatırlatıcı Ekle",
+        'pomo_btn_my_reminds': "📋 Hatırlatıcılarım",
         'exam_empty': "Henüz kayıtlı bir sınavınız bulunmuyor.",
         'exam_btn_add': "➕ Sınav Ekle",
         'exam_saved': "Sınav başarıyla kaydedildi!",
         'exam_deleted': "Sınav başarıyla silindi.",
+        'exam_default_title': "Sınav",
+        'exam_hub_title': "🎓 *NUN PROJECT // SINAV GERİ SAYIMI*",
         'remind_saved': "Hatırlatıcı kuruldu!",
         'remind_empty': "Aktif hatırlatıcınız bulunmuyor.",
         'remind_due': "NUN PROJECT // HATIRLATICI",
+        'remind_deleted': "Hatırlatıcı başarıyla silindi.",
+        'remind_task_lbl': "Görev",
+        'remind_note': "Belirlenen vakit geldi!",
         'pdf_ready': "PDF belgesi başarıyla hazırlandı!",
         'pdf_fail': "Dosyayı PDF'e dönüştürürken bir hata oluştu.",
+        'pdf_hub_to_pdf_btn': "📸 Fotoğraf / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Görselden Metin Çıkarma (OCR)",
         'ocr_title': "GÖRSELDEN OKUNAN METİN:",
         'ocr_fail': "Görselden okunabilir bir metin bulunamadı.",
         'direct_img_prompt': "Fotoğraf alındı. Hangi işlemi yapmak istersiniz?",
@@ -943,6 +1001,7 @@ TEXTS = {
         'btn_cancel': "İptal",
         'cancel_success': "İşlem iptal edildi.",
         'lang_changed': "Dil başarıyla değiştirildi!",
+        'tz_changed': "Saat dilimi başarıyla güncellendi!",
         'city_not_found': "Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
         'downloading': "Medya indiriliyor, lütfen bekleyin...",
         'uploading': "Telegram'a yükleniyor...",
@@ -951,7 +1010,25 @@ TEXTS = {
         'schedule_processing': "Kilit ekranı duvar kağıdı hazırlanıyor...",
         'schedule_ready_caption': "Ders Programı (Kilit Ekranı)",
         'doc_processing': "Dosya alındı, işleniyor...",
-        'video_error': "Video indirilirken bir hata oluştu."
+        'video_error': "Video indirilirken bir hata oluştu.",
+        'adhkar_morning_btn': "🌅 Sabah Zikirleri",
+        'adhkar_evening_btn': "🌇 Akşam Zikirleri",
+        'adhkar_morning_text': (
+            "🌅 *SABAH ZİKİRLERİ*\n\n"
+            "1. *Ayet-el Kürsi*\n"
+            "2. *İhlas, Felak, Nas Sureleri* (3 defa)\n"
+            "3. *«Esbahnâ ve esbaha'l-mülkü lillâh, vel-hamdü lillâh...»*\n"
+            "4. *«Allâhümme bike esbahnâ ve bike emseynâ ve bike nehyâ ve bike nemûtü ve ileyke'n-nüşûr.»*\n"
+            "5. *«Sübhânallâhi ve bi-hamdihî»* (100 defa)"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *AKŞAM ZİKİRLERİ*\n\n"
+            "1. *Ayet-el Kürsi*\n"
+            "2. *İhlas, Felak, Nas Sureleri* (3 defa)\n"
+            "3. *«Emseynâ ve emse'l-mülkü lillâh, vel-hamdü lillâh...»*\n"
+            "4. *«Allâhümme bike emseynâ ve bike esbahnâ ve bike nehyâ ve bike nemûtü ve ileyke'l-masîr.»*\n"
+            "5. *«Eûzü bi-kelimâtillâhi't-tâmmâti min şerri mâ halak.»* (3 defa)"
+        )
     },
     'ru': {
         'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\nВыберите действие в меню:",
@@ -965,17 +1042,19 @@ TEXTS = {
         'btn_adhkar': "📿 Зикры",
         'btn_translit': "🔤 Кириллица ⇄ Латиница",
         'btn_lang': "🌐 Сменить язык",
+        'btn_timezone': "🕒 Часовой пояс",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook или X (Twitter):",
         'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*, *Стамбул*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & ДОКУМЕНТЫ*\n\nВыберите действие:",
         'prompt_schedule_img': "🗓️ *РАСПИСАНИЕ ЗАНЯТИЙ (ОБОИ)*\n\nОтправьте расписание по дням (Напр: Понедельник: 09:00 Математика...):\nБот создаст стильные обои 1080x1920 для экрана блокировки.",
         'prompt_pomodoro': "⏱️ *ПОМОДОРО И НАПОМИНАНИЯ*",
-        'prompt_adhkar': "📿 Выберите зикры:",
+        'prompt_adhkar': "📿 Выберите категорию зикров:",
         'prompt_translit': "✍️ Отправьте текст, автоматически переведу Кириллица ⇄ Латиница:",
         'prompt_convert_to_pdf': "📸 *КОНВЕРТЕР В PDF АКТИВЕН*\n\nОтправьте файл для конвертации в PDF:\n_(Фото, Word .docx, Excel .xlsx или TXT)_",
         'prompt_ocr': "🔍 *ИЗВЛЕЧЕНИЕ ТЕКСТА (OCR) АКТИВНО*\n\nОтправьте фото книги, конспекта или доски:\n_(Поддерживаются арабский, китайский, русский, узбекский, английский и все языки)_",
         'prompt_exam_title': "🎓 *ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*)_",
         'prompt_remind': "⏰ Отправьте напоминание в формате:\n`Читать книгу - 18:30` или `Учеба - 30 минут`",
+        'prompt_timezone': "🕒 *ВЫБОР ЧАСОВОГО ПОЯСА*\n\nВыберите ваш часовой пояс (чтобы таймер и напоминания работали точно по вашему местному времени):",
         'pomo_started': "ПОМОДОРО ЗАПУЩЕН",
         'pomo_work_label': "Работа",
         'pomo_break_label': "Перерыв",
@@ -985,15 +1064,28 @@ TEXTS = {
         'pomo_end_lbl': "Окончание",
         'pomo_break_over': "ПЕРЕРЫВ ОКОНЧЕН!",
         'pomo_work_over': "ПОМОДОРО ЗАВЕРШЕН!",
+        'pomo_btn_work25': "🍅 25 Мин Работа",
+        'pomo_btn_break5': "☕ 5 Мин Перерыв",
+        'pomo_btn_work50': "🍅 50 Мин Работа",
+        'pomo_btn_break10': "☕ 10 Мин Перерыв",
+        'pomo_btn_add_remind': "⏰ Новое напоминание",
+        'pomo_btn_my_reminds': "📋 Мои напоминания",
         'exam_empty': "У вас пока нет сохраненных экзаменов.",
         'exam_btn_add': "➕ Добавить экзамен",
         'exam_saved': "Экзамен успешно сохранен!",
         'exam_deleted': "Экзамен успешно удален.",
+        'exam_default_title': "Экзамен",
+        'exam_hub_title': "🎓 *NUN PROJECT // ТАЙМЕР ЭКЗАМЕНОВ*",
         'remind_saved': "Напоминание установлено!",
         'remind_empty': "У вас нет активных напоминаний.",
         'remind_due': "NUN PROJECT // НАПОМИНАНИЕ",
+        'remind_deleted': "Напоминание успешно удалено.",
+        'remind_task_lbl': "Задача",
+        'remind_note': "Время пришло!",
         'pdf_ready': "PDF документ успешно сформирован!",
         'pdf_fail': "Ошибка при конвертации в PDF.",
+        'pdf_hub_to_pdf_btn': "📸 Фото / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Извлечение текста (OCR)",
         'ocr_title': "ТЕКСТ, РАСПОЗНАННЫЙ С ИЗОБРАЖЕНИЯ:",
         'ocr_fail': "Разборчивый текст на изображении не найден.",
         'direct_img_prompt': "Изображение получено. Что вы хотите сделать?",
@@ -1002,6 +1094,7 @@ TEXTS = {
         'btn_cancel': "Отмена",
         'cancel_success': "Действие отменено.",
         'lang_changed': "Язык успешно изменен!",
+        'tz_changed': "Часовой пояс успешно обновлен!",
         'city_not_found': "Город не найден. Напишите правильное название.",
         'downloading': "Скачивается, пожалуйста подождите...",
         'uploading': "Отправка в Telegram...",
@@ -1010,7 +1103,25 @@ TEXTS = {
         'schedule_processing': "Создаются обои для экрана блокировки...",
         'schedule_ready_caption': "Расписание занятий (Экран блокировки)",
         'doc_processing': "Файл получен, обрабатывается...",
-        'video_error': "Произошла ошибка при загрузке видео."
+        'video_error': "Произошла ошибка при загрузке видео.",
+        'adhkar_morning_btn': "🌅 Утренние зикры",
+        'adhkar_evening_btn': "🌇 Вечерние зикры",
+        'adhkar_morning_text': (
+            "🌅 *УТРЕННИЕ ЗИКРЫ*\n\n"
+            "1. *Аят аль-Курси*\n"
+            "2. *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас* (по 3 раза)\n"
+            "3. *«Асбахна ва асбахаль-мульку лиллях, валь-хамду лиллях...»*\n"
+            "4. *«Аллахумма бика асбахна, ва бика амсайна, ва бика нахья, ва бика намуту ва илейкан-нушур.»*\n"
+            "5. *«Субханаллахи ва бихамдихи»* (100 раз)"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *ВЕЧЕРНИЕ ЗИКРЫ*\n\n"
+            "1. *Аят аль-Курси*\n"
+            "2. *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас* (по 3 раза)\n"
+            "3. *«Амсайна ва амсаль-мульку лиллях, валь-хамду лиллях...»*\n"
+            "4. *«Аллахумма бика амсайна, ва бика асбахна, ва бика нахья, ва бика намуту ва илейкаль-масыр.»*\n"
+            "5. *«А'узу би-калиматилляхит-таммати мин шарри ма халяк.»* (3 раза)"
+        )
     },
     'en': {
         'welcome': "Hello! Welcome to Nun Bot.\nChoose an option from the menu:",
@@ -1024,6 +1135,7 @@ TEXTS = {
         'btn_adhkar': "📿 Adhkar",
         'btn_translit': "🔤 Cyrillic ⇄ Latin",
         'btn_lang': "🌐 Change Language",
+        'btn_timezone': "🕒 Timezone",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, or X (Twitter):",
         'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & DOCUMENTS HUB*\n\nChoose an action:",
@@ -1035,6 +1147,7 @@ TEXTS = {
         'prompt_ocr': "🔍 *TEXT EXTRACTION (OCR) ACTIVE*\n\nSend a photo of a whiteboard, book, or notes:\n_(Arabic, Chinese, Russian, Turkish, Uzbek, English and all languages supported)_",
         'prompt_exam_title': "🎓 *ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*)_",
         'prompt_remind': "⏰ Send reminder in format:\n`Read book - 18:30` or `Study - 30 minutes`",
+        'prompt_timezone': "🕒 *SELECT TIMEZONE*\n\nChoose your timezone (to ensure timers and reminders sync with your local time):",
         'pomo_started': "POMODORO STARTED",
         'pomo_work_label': "Work",
         'pomo_break_label': "Break",
@@ -1044,15 +1157,28 @@ TEXTS = {
         'pomo_end_lbl': "Ends at",
         'pomo_break_over': "BREAK OVER!",
         'pomo_work_over': "POMODORO FINISHED!",
+        'pomo_btn_work25': "🍅 25 Min Work",
+        'pomo_btn_break5': "☕ 5 Min Break",
+        'pomo_btn_work50': "🍅 50 Min Work",
+        'pomo_btn_break10': "☕ 10 Min Break",
+        'pomo_btn_add_remind': "⏰ Add New Reminder",
+        'pomo_btn_my_reminds': "📋 My Reminders",
         'exam_empty': "You don't have any saved exams yet.",
         'exam_btn_add': "➕ Add Exam",
         'exam_saved': "Exam successfully saved!",
         'exam_deleted': "Exam successfully deleted.",
+        'exam_default_title': "Exam",
+        'exam_hub_title': "🎓 *NUN PROJECT // EXAM COUNTDOWN*",
         'remind_saved': "Reminder set!",
         'remind_empty': "You have no active reminders.",
         'remind_due': "NUN PROJECT // REMINDER",
+        'remind_deleted': "Reminder successfully deleted.",
+        'remind_task_lbl': "Task",
+        'remind_note': "Time is up!",
         'pdf_ready': "PDF document successfully generated!",
         'pdf_fail': "Failed to convert file to PDF.",
+        'pdf_hub_to_pdf_btn': "📸 Photo / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Extract Text (OCR)",
         'ocr_title': "TEXT RECOGNIZED FROM IMAGE:",
         'ocr_fail': "No readable text found on the image.",
         'direct_img_prompt': "Image received. What would you like to do?",
@@ -1061,6 +1187,7 @@ TEXTS = {
         'btn_cancel': "Cancel",
         'cancel_success': "Action cancelled.",
         'lang_changed': "Language updated successfully!",
+        'tz_changed': "Timezone updated successfully!",
         'city_not_found': "City not found. Please enter a valid city name.",
         'downloading': "Downloading media, please wait...",
         'uploading': "Uploading to Telegram...",
@@ -1069,7 +1196,25 @@ TEXTS = {
         'schedule_processing': "Generating lock-screen wallpaper...",
         'schedule_ready_caption': "Class Schedule (Lock Screen)",
         'doc_processing': "File received, processing...",
-        'video_error': "An error occurred during video download."
+        'video_error': "An error occurred during video download.",
+        'adhkar_morning_btn': "🌅 Morning Adhkar",
+        'adhkar_evening_btn': "🌇 Evening Adhkar",
+        'adhkar_morning_text': (
+            "🌅 *MORNING ADHKAR*\n\n"
+            "1. *Ayat al-Kursi*\n"
+            "2. *Surahs Al-Ikhlas, Al-Falaq, An-Nas* (3 times each)\n"
+            "3. *«Asbahna wa asbahal mulku lillah, walhamdu lillah...»*\n"
+            "4. *«Allahumma bika asbahna wa bika amsayna wa bika nahya wa bika namutu wa ilaykan nushur.»*\n"
+            "5. *«Subhanallahi wa bihamdihi»* (100 times)"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *EVENING ADHKAR*\n\n"
+            "1. *Ayat al-Kursi*\n"
+            "2. *Surahs Al-Ikhlas, Al-Falaq, An-Nas* (3 times each)\n"
+            "3. *«Amsayna wa amsal mulku lillah, walhamdu lillah...»*\n"
+            "4. *«Allahumma bika amsayna wa bika asbahna wa bika nahya wa bika namutu wa ilaykal maseer.»*\n"
+            "5. *«A'udhu bi kalimatillahit-tammati min sharri ma khalaq.»* (3 times)"
+        )
     }
 }
 
@@ -1087,13 +1232,6 @@ def get_reply_menu(user_id, context=None):
         [KeyboardButton(t['btn_adhkar']), KeyboardButton(t['btn_translit'])],
         [KeyboardButton(t['btn_lang'])]
     ], resize_keyboard=True)
-
-# 4 DİLLİ SEÇİM BUTONU
-def get_language_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz"), InlineKeyboardButton("🇹🇷 Türkçe", callback_data="lang_tr")],
-        [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
-    ])
 
 # =====================================================================
 # VİDEO İNDİRME MOTORU
@@ -1203,7 +1341,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
         return
 
-    # DİL DEĞİŞTİRME (4 DİL EKSİKSİZ)
+    # DİL DEĞİŞTİRME
     if data.startswith("lang_"):
         l_code = data.replace("lang_", "", 1).strip()
         save_user_lang(user_id, l_code)
@@ -1219,7 +1357,41 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # SADECE 1 VE 5 NUMARALI PDF HUB SEÇENEKLERİ
+    # SAAT DİLİMİ AYARLARI
+    if data == "open_tz_selector":
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_timezone', context),
+            parse_mode="Markdown",
+            reply_markup=get_timezone_keyboard(user_lang)
+        )
+        return
+
+    if data.startswith("settz_"):
+        tz_raw = data.split("_")
+        try:
+            val = int(tz_raw)
+            save_user_timezone(user_id, val)
+            try: await query.message.delete()
+            except Exception: pass
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"✅ {get_text(user_id, 'tz_changed', context)} (`UTC{'+' if val >= 0 else ''}{val}`)",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        return
+
+    # ZİKİRLERİN İÇERİĞİ
+    if data == "adhkar_morning":
+        await query.message.reply_text(TEXTS[user_lang]['adhkar_morning_text'], parse_mode="Markdown")
+        return
+
+    if data == "adhkar_evening":
+        await query.message.reply_text(TEXTS[user_lang]['adhkar_evening_text'], parse_mode="Markdown")
+        return
+
+    # PDF HUB SEÇENEKLERİ
     if data == "pdf_act_to_pdf":
         cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'convert_to_pdf'
@@ -1240,7 +1412,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # DOĞRUDAN GÖNDERİLEN GÖRSELİN İŞLEM SEÇİMİ
+    # DOĞRUDAN GÖNDERİLEN GÖRSEL İŞLEMLERİ
     if data == "direct_img_pdf":
         img_p = context.user_data.get('direct_file_path')
         if img_p and os.path.exists(img_p):
@@ -1272,11 +1444,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup_user_temp_files(context, user_id)
         return
 
-    # POMODORO VE HATIRLATICI
+    # POMODORO VE HATIRLATICI (TAM KULLANICI YEREL ZAMANI)
     if data.startswith("pomo_"):
         mins = int(data.replace("pomo_", "", 1))
         is_break = mins in (5, 10)
-        end_time = datetime.now() + timedelta(minutes=mins)
+        
+        user_now = get_user_now(user_id, context)
+        end_time = user_now + timedelta(minutes=mins)
+        tz_off = get_user_tz_offset(user_id, context)
+        tz_str = f"UTC+{tz_off}" if tz_off >= 0 else f"UTC{tz_off}"
+
         label = get_text(user_id, 'pomo_break_label', context) if is_break else get_text(user_id, 'pomo_work_label', context)
         unit = get_text(user_id, 'pomo_mins_unit', context)
         hdr = get_text(user_id, 'pomo_started', context)
@@ -1288,7 +1465,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🍅 *{hdr}*\n\n"
             f"📌 *{lbl_mode}:* {label}\n"
             f"⏳ *{lbl_dur}:* `{mins} {unit}`\n"
-            f"🏁 *{lbl_end}:* `{end_time.strftime('%H:%M')}`"
+            f"🏁 *{lbl_end}:* `{end_time.strftime('%H:%M')}` _({tz_str})_"
         )
         await query.message.reply_text(card, parse_mode="Markdown")
         asyncio.create_task(pomodoro_timer_task(context.bot, user_id, mins, is_break, user_lang))
@@ -1305,7 +1482,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not rems:
             await query.message.reply_text(get_text(user_id, 'remind_empty', context))
             return
-        lines = [f"📋 *{get_text(user_id, 'btn_pomodoro', context)}:*\n"]
+        lines = [f"📋 *{get_text(user_id, 'pomo_btn_my_reminds', context)}:*\n"]
         btns = []
         for r in rems:
             lines.append(f"▫️ {r.get('text')} — `{r.get('time')}`")
@@ -1318,10 +1495,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         delete_user_reminder(user_id, r_id)
         try: await query.message.delete()
         except Exception: pass
-        await query.message.reply_text("🗑️")
+        await query.message.reply_text(f"🗑️ {get_text(user_id, 'remind_deleted', context)}")
         return
 
-    # SINAV VE TAKVİM İŞLEMLERİ (SEÇENEK A - TAM DİL DESTEKLİ)
+    # SINAV VE TAKVİM İŞLEMLERİ
     if data == "exam_add":
         cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'exam_title_input'
@@ -1333,17 +1510,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("sched_"):
-        cur_dt = context.user_data.get('exam_draft_dt') or ((datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0))
-        title = context.user_data.get('exam_draft_title', 'Sınav')
+        def_t = get_text(user_id, 'exam_default_title', context)
+        cur_dt = context.user_data.get('exam_draft_dt') or ((get_user_now(user_id, context) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0))
+        title = context.user_data.get('exam_draft_title', def_t)
+        
         if data == "sched_day_prev": cur_dt -= timedelta(days=1)
         elif data == "sched_day_next": cur_dt += timedelta(days=1)
         elif data == "sched_hour_minus": cur_dt -= timedelta(hours=1)
         elif data == "sched_hour_plus": cur_dt += timedelta(hours=1)
         elif data == "sched_min_minus": cur_dt -= timedelta(minutes=15)
         elif data == "sched_min_plus": cur_dt += timedelta(minutes=15)
-        elif data == "sched_jump_today": now = datetime.now(); cur_dt = cur_dt.replace(year=now.year, month=now.month, day=now.day)
-        elif data == "sched_jump_tmrw": tmrw = datetime.now() + timedelta(days=1); cur_dt = cur_dt.replace(year=tmrw.year, month=tmrw.month, day=tmrw.day)
-        elif data == "sched_jump_week": nxt = datetime.now() + timedelta(days=7); cur_dt = cur_dt.replace(year=nxt.year, month=nxt.month, day=nxt.day)
+        elif data == "sched_jump_today": 
+            now = get_user_now(user_id, context)
+            cur_dt = cur_dt.replace(year=now.year, month=now.month, day=now.day)
+        elif data == "sched_jump_tmrw": 
+            tmrw = get_user_now(user_id, context) + timedelta(days=1)
+            cur_dt = cur_dt.replace(year=tmrw.year, month=tmrw.month, day=tmrw.day)
+        elif data == "sched_jump_week": 
+            nxt = get_user_now(user_id, context) + timedelta(days=7)
+            cur_dt = cur_dt.replace(year=nxt.year, month=nxt.month, day=nxt.day)
         elif data == "sched_open_cal":
             await safe_edit_text_markup(query.message, f"🗓 *{title}*", build_month_calendar(cur_dt.year, cur_dt.month, user_lang), parse_mode="Markdown")
             return
@@ -1362,30 +1547,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("cal_pick_"):
+        def_t = get_text(user_id, 'exam_default_title', context)
         d_str = data.replace("cal_pick_", "", 1).strip()
         y, m, d = [int(x) for x in d_str.split("-")]
-        cur_dt = context.user_data.get('exam_draft_dt') or datetime.now().replace(hour=10, minute=0)
+        cur_dt = context.user_data.get('exam_draft_dt') or get_user_now(user_id, context).replace(hour=10, minute=0)
         new_dt = cur_dt.replace(year=y, month=m, day=d)
         context.user_data['exam_draft_dt'] = new_dt
-        title = context.user_data.get('exam_draft_title', 'Sınav')
+        title = context.user_data.get('exam_draft_title', def_t)
         await safe_edit_text_markup(query.message, format_scheduler_card(title, new_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
         return
 
     if data == "cal_back_panel":
-        cur_dt = context.user_data.get('exam_draft_dt') or datetime.now()
-        title = context.user_data.get('exam_draft_title', 'Sınav')
+        def_t = get_text(user_id, 'exam_default_title', context)
+        cur_dt = context.user_data.get('exam_draft_dt') or get_user_now(user_id, context)
+        title = context.user_data.get('exam_draft_title', def_t)
         await safe_edit_text_markup(query.message, format_scheduler_card(title, cur_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
         return
 
     if data.startswith("cal_nav_"):
+        def_t = get_text(user_id, 'exam_default_title', context)
         parts = data.split("_")
         _, _, ny, nm = parts
-        title = context.user_data.get('exam_draft_title', 'Sınav')
+        title = context.user_data.get('exam_draft_title', def_t)
         await safe_edit_text_markup(query.message, f"🗓 *{title}*", build_month_calendar(int(ny), int(nm), user_lang), parse_mode="Markdown")
         return
 
 # =====================================================================
-# DOSYA & FOTOĞRAF İŞLEYİCİSİ (KESİN MOD KİLİDİ)
+# DOSYA & FOTOĞRAF İŞLEYİCİSİ
 # =====================================================================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -1393,7 +1581,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     if not doc: return
 
-    fname = doc.file_name or "fayl"
+    fname = doc.file_name or "file"
     ext = os.path.splitext(fname).lower()
     status = await update.message.reply_text(get_text(user_id, 'doc_processing', context))
 
@@ -1543,7 +1731,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception: pass
 
 # =====================================================================
-# METİN MESAJ YÖNLENDİRİCİSİ (TAM DİL DESTEĞİ)
+# METİN MESAJ YÖNLENDİRİCİSİ (4 DİL TAM DESTEK)
 # =====================================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -1554,14 +1742,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları (Tüm dillerde kusursuz eşleşir)
+    # 1. Menü Butonları Tıklamaları (Tüm diller ve varyasyonlar)
     btn_keys = {
         'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_pdf_hub': 'pdf_hub',
         'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img', 'btn_pomodoro': 'pomodoro',
         'btn_adhkar': 'adhkar', 'btn_translit': 'translit', 'btn_lang': 'lang'
     }
     for b_key, mode_val in btn_keys.items():
-        if raw_text in [TEXTS[l].get(b_key, '') for l in TEXTS]:
+        allowed_texts = [TEXTS[l].get(b_key, '') for l in TEXTS]
+        if b_key == 'btn_translit':
+            allowed_texts.append("🔤 Krill ⇄ Lotin")  # Eski typo uyumluluğu
+        if raw_text in allowed_texts:
             cleanup_user_temp_files(context, user_id)
             if mode_val == 'video':
                 await update.message.reply_text(get_text(user_id, 'prompt_video', context))
@@ -1573,12 +1764,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif mode_val == 'exam':
                 exams = get_user_exams(user_id)
                 cards = [f"📌 *{e.get('title')}* — `{e.get('date')}`" for e in exams] if exams else [get_text(user_id, 'exam_empty', context)]
-                await update.message.reply_text(f"🎓 *NUN PROJECT*\n\n" + "\n".join(cards), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add")]]))
+                hdr = get_text(user_id, 'exam_hub_title', context)
+                await update.message.reply_text(f"{hdr}\n\n" + "\n".join(cards), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add")]]))
             elif mode_val == 'schedule_img':
                 context.user_data['mode'] = 'schedule_img_input'
                 await update.message.reply_text(get_text(user_id, 'prompt_schedule_img', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
             elif mode_val == 'pomodoro':
-                await update.message.reply_text(get_text(user_id, 'prompt_pomodoro', context), parse_mode="Markdown", reply_markup=get_pomodoro_keyboard(user_lang))
+                await update.message.reply_text(get_text(user_id, 'prompt_pomodoro', context), parse_mode="Markdown", reply_markup=get_pomodoro_keyboard(user_id, user_lang))
             elif mode_val == 'adhkar':
                 await update.message.reply_text(get_text(user_id, 'prompt_adhkar', context), reply_markup=get_adhkar_selection_keyboard(user_lang))
             elif mode_val == 'translit':
@@ -1606,19 +1798,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mode = context.user_data.get('mode', 'auto')
 
-    # 3. KORUMALI SINAV GİRİŞİ (SEÇENEK A - CANLI AYARLAYICI)
+    # 3. KORUMALI SINAV GİRİŞİ (CANLI AYARLAYICI)
     if mode == 'exam_title_input':
         title_clean = raw_text.strip()
         context.user_data['exam_draft_title'] = title_clean
         context.user_data['mode'] = 'exam_schedule_panel'
-        init_dt = (datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+        init_dt = (get_user_now(user_id, context) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
         context.user_data['exam_draft_dt'] = init_dt
         await update.message.reply_text(format_scheduler_card(title_clean, init_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
         return
 
     if mode == 'exam_schedule_panel':
-        cur_dt = context.user_data.get('exam_draft_dt', datetime.now())
-        title = context.user_data.get('exam_draft_title', 'Sınav')
+        cur_dt = context.user_data.get('exam_draft_dt', get_user_now(user_id, context))
+        title = context.user_data.get('exam_draft_title', get_text(user_id, 'exam_default_title', context))
         await update.message.reply_text(format_scheduler_card(title, cur_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
         return
 
@@ -1638,8 +1830,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception: pass
         return
 
-    # 5. HATIRLATICI
+    # 5. HATIRLATICI (KULLANICI YEREL ZAMANINA GÖRE)
     if mode == 'remind_input':
+        user_now = get_user_now(user_id, context)
         target_dt = None
         rem_text = raw_text
         if "-" in raw_text:
@@ -1647,17 +1840,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rem_text = rem_text.strip()
             time_part = time_part.strip()
             m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", time_part, re.IGNORECASE)
-            if m_min: target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
+            if m_min: target_dt = user_now + timedelta(minutes=int(m_min.group(1)))
             else:
                 m_t = re.search(r"(\d{1,2})[:.](\d{2})", time_part)
                 if m_t:
-                    target_dt = datetime.now().replace(hour=int(m_t.group(1)), minute=int(m_t.group(2)), second=0)
-                    if target_dt < datetime.now(): target_dt += timedelta(days=1)
+                    target_dt = user_now.replace(hour=int(m_t.group(1)), minute=int(m_t.group(2)), second=0)
+                    if target_dt < user_now: target_dt += timedelta(days=1)
 
         if not target_dt:
             m_min = re.search(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", raw_text, re.IGNORECASE)
             if m_min:
-                target_dt = datetime.now() + timedelta(minutes=int(m_min.group(1)))
+                target_dt = user_now + timedelta(minutes=int(m_min.group(1)))
                 rem_text = re.sub(r"(\d+)\s*(?:daqiqa|dakika|min|m|минут)", "", raw_text, flags=re.IGNORECASE).strip()
 
         if target_dt:
@@ -1669,9 +1862,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'prompt_remind', context), parse_mode="Markdown")
         return
 
-    # 6. NAMAZ VAKTİ
+    # 6. NAMAZ VAKTİ (VE OTOMATİK SAAT DİLİMİ EŞLEŞTİRME)
     if mode == 'prayer':
-        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text)
+        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text, user_id=user_id)
         if timings:
             await update.message.reply_text(format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang), parse_mode="Markdown")
             cleanup_user_temp_files(context, user_id)
@@ -1695,11 +1888,13 @@ def main():
     if not token: raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
     load_databases()
 
-    # Arka plan keep-alive ve HTTP sağlık sunucusu başlatılıyor
+    # Arka plan keep-alive ve HTTP sağlık sunucusu
     threading.Thread(target=run_health_server, daemon=True).start()
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("cancel", cancel_command))

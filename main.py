@@ -7,6 +7,7 @@ import shutil
 import asyncio
 import tempfile
 import threading
+import time
 import urllib.parse
 import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -30,7 +31,9 @@ from telegram.ext import (
 )
 import yt_dlp
 
-# --- RENDER 7/24 SAĞLIK KONTROLÜ (PORT BINDING) ---
+# =====================================================================
+# RENDER 7/24 HEALTH CHECK & SELF-PING MOTORU
+# =====================================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -49,6 +52,35 @@ def run_health_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
+
+def run_keep_alive_pinger():
+    """
+    Render'ın 15 dakikalık boşta kalma uyku modunu engellemek için
+    her 9-10 dakikada bir botun kendi Render URL'sine istek gönderir.
+    """
+    target_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL")
+    if not target_url:
+        print("[Keep-Alive] RENDER_EXTERNAL_URL veya APP_URL bulunamadı. Lütfen Render Environment kısmından genel URL'nizi ekleyin.")
+        return
+
+    if not target_url.startswith("http"):
+        target_url = f"https://{target_url}"
+
+    print(f"[Keep-Alive] 7/24 Uyanık Tutma Servisi Aktif: {target_url}")
+
+    while True:
+        # Render 15 dakikada uyutur; 540 saniye (9 dakika) en güvenli süredir
+        time.sleep(540)
+        try:
+            req = urllib.request.Request(
+                target_url,
+                headers={'User-Agent': 'NunBot-KeepAlive/1.0'}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                if resp.status == 200:
+                    print(f"[Keep-Alive] Uyandırma sinyali gönderildi ({time.strftime('%H:%M:%S')}) -> Başarılı: 200 OK")
+        except Exception as e:
+            print(f"[Keep-Alive] Sinyal gönderilirken geçici hata: {e}")
 
 # =====================================================================
 # KALICI DİL YÖNETİM SİSTEMİ (DATABASE & MEMORY)
@@ -77,11 +109,9 @@ def save_user_lang(user_id, lang_code: str):
 
 def get_user_lang(user_id, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     uid_str = str(user_id)
-    # 1. Kalıcı global sözlükten kontrol
     if uid_str in USER_LANGS and USER_LANGS[uid_str] in TEXTS:
         return USER_LANGS[uid_str]
 
-    # 2. context.user_data kontrolü (Tip korumalı)
     if context and context.user_data and 'lang' in context.user_data:
         l = context.user_data['lang']
         if isinstance(l, str) and l in TEXTS:
@@ -760,7 +790,8 @@ TEXTS = {
     }
 }
 
-DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
+# 512MB RAM sınırını korumak için eşzamanlı video indirme limiti 1 olarak tutulur
+DOWNLOAD_SEMAPHORE = asyncio.Semaphore(1)
 
 def get_text(user_id, key, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     lang = get_user_lang(user_id, context)
@@ -931,7 +962,6 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Eğer kullanıcının daha önceden seçtiği bir dil yoksa Telegram arayüz diline bak
     if str(user_id) not in USER_LANGS:
         tele_lang = update.effective_user.language_code or 'uz'
         if tele_lang.startswith('tr'):
@@ -1000,13 +1030,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
 
-    # KESİN DİL DEĞİŞİMİ: data.replace ile doğrudan saf string ('uz', 'tr', 'ru', 'en') alınır
+    # KESİN DİL DEĞİŞİMİ: data.replace ile string ('uz', 'tr', 'ru', 'en') alınır
     if data.startswith("lang_"):
         selected_lang = data.replace("lang_", "").strip()
         if selected_lang not in TEXTS:
             selected_lang = 'uz'
 
-        # 1. Kalıcı global hafızaya ve context'e kaydet
         save_user_lang(user_id, selected_lang)
         if context and context.user_data is not None:
             context.user_data['lang'] = selected_lang
@@ -1016,10 +1045,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        # 2. Telegram Menü butonundaki komutları yeni dille güncelle
         await update_user_bot_commands(context, user_id, selected_lang)
 
-        # 3. Alt klavye butonlarını (ReplyKeyboardMarkup) ve onay mesajını YENİ DİLDE gönder
         new_menu = get_reply_menu(user_id, context)
         welcome_text = TEXTS[selected_lang]['welcome']
         changed_text = TEXTS[selected_lang]['lang_changed']
@@ -1058,7 +1085,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # 1. Menü Butonları Tıklamaları (Tüm dillerin buton metinlerini yakalar)
     btn_vid = [TEXTS[l]['btn_video'] for l in TEXTS]
     btn_pry = [TEXTS[l]['btn_prayer'] for l in TEXTS]
     btn_adh = [TEXTS[l]['btn_adhkar'] for l in TEXTS]
@@ -1105,7 +1131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 2. Medya Linki Kontrolü
+    # Medya Linki Kontrolü
     url_match = re.search(r'https?://[^\s]+', raw_text)
     if url_match:
         url = url_match.group(0)
@@ -1117,7 +1143,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_mode = context.user_data.get('mode', 'auto')
     lower_text = raw_text.lower().strip()
 
-    # Zikir kelimesi algılama
     if bool(re.search(r'\b(zikr|zikirlar|zikirler|adhkar|azkar|зикры|зикр)\b', lower_text)):
         await update.message.reply_text(
             get_text(user_id, 'prompt_adhkar', context),
@@ -1126,7 +1151,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Tek başına "namaz" yazıldıysa
     if lower_text in ('namoz', 'namaz', 'prayer', 'vaqt', 'vakit'):
         context.user_data['mode'] = 'prayer'
         await update.message.reply_text(
@@ -1137,7 +1161,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_prayer_intent = bool(re.search(r'\b(namoz|namaz|prayer|vaqtlari|vakitleri|vaqti|vakti)\b', lower_text))
 
-    # 3. Namaz Vakti Modu (Kullanıcı namaz modundayken çeviriye DÜŞMEZ)
     if current_mode == 'prayer' or is_prayer_intent:
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
         if timings:
@@ -1154,19 +1177,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 4. Kiril -> Latin Modu
     if current_mode == 'c2l':
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 5. Latin -> Kiril Modu
     if current_mode == 'l2c':
         converted = latin_to_cyrillic(raw_text)
         await update.message.reply_text(f"🔤 *Кирилл:*\n\n{converted}", parse_mode="Markdown")
         return
 
-    # 6. Otomatik Algılama (Şehir girildiyse)
     words = raw_text.split()
     if 1 <= len(words) <= 3 and not is_supported_url(raw_text):
         timings, resolved_name, g_date, h_str, source_note = await fetch_prayer_times(raw_text)
@@ -1180,7 +1200,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'prayer'
             return
 
-    # 7. Cümle halindeki genel metinler için çeviri
     if is_mostly_cyrillic(raw_text):
         converted = cyrillic_to_latin(raw_text)
         await update.message.reply_text(f"🔤 *Lotin:*\n\n{converted}", parse_mode="Markdown")
@@ -1193,10 +1212,13 @@ def main():
     if not token:
         raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
 
-    # Önceden kaydedilmiş kullanıcı dillerini yükle
     load_user_langs()
 
+    # 1. Port dinleyen sağlık sunucusunu arka planda başlat
     threading.Thread(target=run_health_server, daemon=True).start()
+
+    # 2. Render'ı uyutmayan 7/24 Self-Ping iş parçacığını başlat
+    threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start_command))
@@ -1207,7 +1229,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Nun Bot aktif; Kalıcı Dil Yönetimi, Namaz Vakitleri, Zikirler ve Video hazır!")
+    print("Nun Bot 7/24 aktif; Sağlık sunucusu, Self-Ping ve Kalıcı Dil hazır!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

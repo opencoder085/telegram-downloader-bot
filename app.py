@@ -86,7 +86,7 @@ def run_keep_alive_pinger():
             try:
                 req = urllib.request.Request(
                     target_url,
-                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NunBot-KeepAlive/2.0'}
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NunBot-KeepAlive/3.0'}
                 )
                 with urllib.request.urlopen(req, timeout=25) as resp:
                     print(f"[KEEP-ALIVE] Ping basarili: {target_url} -> Kod: {resp.status}")
@@ -107,6 +107,7 @@ CITY_TIMEZONE_MAP = {
     "termiz": 5, "termez": 5, "guliston": 5, "gulistan": 5, "jizzax": 5, "jizzakh": 5,
     "xiva": 5, "khiva": 5, "margilon": 5, "margilan": 5, "angren": 5, "chirchiq": 5, "chirchik": 5,
     "olmaliq": 5, "almalyk": 5, "shahrisabz": 5, "denov": 5, "zarafshon": 5, "bekobod": 5,
+    "rishton": 5, "rishtan": 5, "asaka": 5, "shahrixon": 5, "chust": 5, "quva": 5,
 
     # Turkiya (UTC+3)
     "istanbul": 3, "ankara": 3, "izmir": 3, "bursa": 3, "antalya": 3, "konya": 3, "adana": 3,
@@ -938,6 +939,140 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
     )
 
 # =====================================================================
+# GELİŞMİŞ VE GÜVENİLİR HAVA DURUMU MOTORU (OPEN-METEO GLOBAL SERVICE)
+# =====================================================================
+WMO_WEATHER_CODES = {
+    0: {'uz': ("☀️", "Musaffo ochiq osmon"), 'tr': ("☀️", "Açık ve güneşli"), 'ru': ("☀️", "Ясно"), 'en': ("☀️", "Clear sky")},
+    1: {'uz': ("🌤️", "Asosan ochiq"), 'tr': ("🌤️", "Az bulutlu"), 'ru': ("🌤️", "Преимущественно ясно"), 'en': ("🌤️", "Mainly clear")},
+    2: {'uz': ("⛅", "Qisman bulutli"), 'tr': ("⛅", "Parçalı bulutlu"), 'ru': ("⛅", "Переменная облачность"), 'en': ("⛅", "Partly cloudy")},
+    3: {'uz': ("☁️", "Bulutli"), 'tr': ("☁️", "Çok bulutlu / Kapalı"), 'ru': ("☁️", "Пасмурно"), 'en': ("☁️", "Overcast")},
+    45: {'uz': ("🌫️", "Tuman"), 'tr': ("🌫️", "Sisli"), 'ru': ("🌫️", "Туман"), 'en': ("🌫️", "Fog")},
+    48: {'uz': ("🌫️", "Qirovli tuman"), 'tr': ("🌫️", "Kırağılı sis"), 'ru': ("🌫️", "Изморозь"), 'en': ("🌫️", "Depositing rime fog")},
+    51: {'uz': ("🌦️", "Yengil mayda yomgʻir"), 'tr': ("🌦️", "Hafif çiseleme"), 'ru': ("🌦️", "Легкая морось"), 'en': ("🌦️", "Light drizzle")},
+    53: {'uz': ("🌦️", "Oʻrtacha mayda yomgʻir"), 'tr': ("🌦️", "Çiseleme"), 'ru': ("🌦️", "Умеренная морось"), 'en': ("🌦️", "Moderate drizzle")},
+    55: {'uz': ("🌧️", "Kuchli mayda yomgʻir"), 'tr': ("🌧️", "Yoğun çiseleme"), 'ru': ("🌧️", "Густая морось"), 'en': ("🌧️", "Dense drizzle")},
+    61: {'uz': ("🌧️", "Yengil yomgʻir"), 'tr': ("🌧️", "Hafif yağmurlu"), 'ru': ("🌧️", "Небольшой дождь"), 'en': ("🌧️", "Slight rain")},
+    63: {'uz': ("🌧️", "Oʻrtacha yomgʻir"), 'tr': ("🌧️", "Yağmurlu"), 'ru': ("🌧️", "Умеренный дождь"), 'en': ("🌧️", "Moderate rain")},
+    65: {'uz': ("🌧️", "Kuchli jala yomgʻir"), 'tr': ("🌧️", "Kuvvetli yağmur"), 'ru': ("🌧️", "Сильный дождь"), 'en': ("🌧️", "Heavy rain")},
+    71: {'uz': ("🌨️", "Yengil qor"), 'tr': ("🌨️", "Hafif kar yağışlı"), 'ru': ("🌨️", "Небольшой снегопад"), 'en': ("🌨️", "Slight snowfall")},
+    73: {'uz': ("🌨️", "Oʻrtacha qor"), 'tr': ("🌨️", "Kar yağışlı"), 'ru': ("🌨️", "Умеренный снегопад"), 'en': ("🌨️", "Moderate snowfall")},
+    75: {'uz': ("❄️", "Kuchli qor boʻroni"), 'tr': ("❄️", "Yoğun kar yağışı"), 'ru': ("❄️", "Сильный снегопад"), 'en': ("❄️", "Heavy snowfall")},
+    80: {'uz': ("🌧️", "Qisqa muddatli yomgʻir"), 'tr': ("🌧️", "Hafif sağanak"), 'ru': ("🌧️", "Кратковременный дождь"), 'en': ("🌧️", "Slight showers")},
+    81: {'uz': ("🌧️", "Oʻrtacha jala"), 'tr': ("🌧️", "Sağanak yağış"), 'ru': ("🌧️", "Ливень"), 'en': ("🌧️", "Moderate showers")},
+    82: {'uz': ("⛈️", "Kuchli jala"), 'tr': ("⛈️", "Kuvvetli sağanak"), 'ru': ("⛈️", "Сильный ливень"), 'en': ("⛈️", "Violent showers")},
+    95: {'uz': ("⛈️", "Momaqaldiroq"), 'tr': ("⛈️", "Gök gürültülü fırtına"), 'ru': ("⛈️", "Гроза"), 'en': ("⛈️", "Thunderstorm")},
+    96: {'uz': ("⛈️", "Doʻlli momaqaldiroq"), 'tr': ("⛈️", "Dolulu gök gürültülü fırtına"), 'ru': ("⛈️", "Гроза с градом"), 'en': ("⛈️", "Thunderstorm with hail")},
+}
+
+def get_weather_desc(code: int, lang: str = 'uz'):
+    entry = WMO_WEATHER_CODES.get(code, WMO_WEATHER_CODES.get(0))
+    return entry.get(lang, entry['uz'])
+
+async def fetch_weather(city_query: str, lang: str = 'uz'):
+    clean_q = re.sub(r"['’`ʻʼ]", "", city_query.strip())
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NunBot-Weather/3.0"}
+    
+    geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(clean_q)}&count=1&language=en&format=json"
+    
+    try:
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+            resp = await client.get(geo_url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data.get("results")
+                if results and len(results) > 0:
+                    best = results[0]
+                    lat = best["latitude"]
+                    lon = best["longitude"]
+                    name = best.get("name", city_query.title())
+                    admin1 = best.get("admin1", "")
+                    country = best.get("country", "")
+                    
+                    forecast_url = (
+                        f"https://api.open-meteo.com/v1/forecast?"
+                        f"latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m"
+                        f"&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto"
+                    )
+                    w_resp = await client.get(forecast_url, headers=headers)
+                    if w_resp.status_code == 200:
+                        w_data = w_resp.json()
+                        cur = w_data.get("current", {})
+                        daily = w_data.get("daily", {})
+                        
+                        cur_temp = cur.get("temperature_2m", 0.0)
+                        feels_like = cur.get("apparent_temperature", cur_temp)
+                        humidity = cur.get("relative_humidity_2m", 0)
+                        wind_speed = cur.get("wind_speed_10m", 0.0)
+                        w_code = cur.get("weather_code", 0)
+                        
+                        t_min = daily.get("temperature_2m_min", [cur_temp])[0] if daily.get("temperature_2m_min") else cur_temp
+                        t_max = daily.get("temperature_2m_max", [cur_temp])[0] if daily.get("temperature_2m_max") else cur_temp
+                        
+                        return name, admin1, country, cur_temp, feels_like, humidity, wind_speed, w_code, t_min, t_max
+    except Exception as e:
+        print(f"[WEATHER_GEO_ERROR] {e}")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(f"https://wttr.in/{urllib.parse.quote(city_query)}?format=j1", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                cur_cond = data.get("current_condition", [{}])[0]
+                area = data.get("nearest_area", [{}])[0]
+                name = area.get("areaName", [{}])[0].get("value", city_query.title())
+                country = area.get("country", [{}])[0].get("value", "")
+                admin1 = area.get("region", [{}])[0].get("value", "")
+                
+                cur_temp = float(cur_cond.get("temp_C", 0.0))
+                feels_like = float(cur_cond.get("FeelsLikeC", cur_temp))
+                humidity = int(cur_cond.get("humidity", 0))
+                wind_speed = float(cur_cond.get("windspeedKmph", 0.0))
+                
+                weather = data.get("weather", [{}])[0]
+                t_min = float(weather.get("mintempC", cur_temp))
+                t_max = float(weather.get("maxtempC", cur_temp))
+                
+                return name, admin1, country, cur_temp, feels_like, humidity, wind_speed, 1, t_min, t_max
+    except Exception as e:
+        print(f"[WEATHER_WTTR_FALLBACK_ERROR] {e}")
+        
+    return None, None, None, None, None, None, None, None, None, None
+
+def format_weather_card(city_name: str, admin_name: str, country: str, cur_temp: float, feels_like: float, humidity: int, wind_speed: float, w_code: int, t_min: float, t_max: float, lang: str = 'uz') -> str:
+    emoji, desc = get_weather_desc(w_code, lang)
+    loc_parts = [p for p in [city_name, admin_name, country] if p]
+    full_loc = ", ".join(loc_parts)
+
+    headers = {
+        'uz': "*NUN PROJECT // OB-HAVO MAʼLUMOTI*",
+        'tr': "*NUN PROJECT // HAVA DURUMU*",
+        'ru': "*NUN PROJECT // ПРОГНОЗ ПОГОДЫ*",
+        'en': "*NUN PROJECT // WEATHER FORECAST*",
+    }
+    lbls = {
+        'uz': ("Holat", "Harorat", "His qilinishi", "Namlik", "Shamol tezligi", "Kungi min / maks", "km/soat"),
+        'tr': ("Durum", "Sıcaklık", "Hissedilen", "Nem", "Rüzgar Hızı", "Günün En Düşük / Yüksek", "km/saat"),
+        'ru': ("Состояние", "Температура", "Ощущается как", "Влажность", "Скорость ветра", "Мин / Макс за день", "км/ч"),
+        'en': ("Condition", "Temperature", "Feels Like", "Humidity", "Wind Speed", "Daily Min / Max", "km/h"),
+    }
+    hdr = headers.get(lang, headers['uz'])
+    l = lbls.get(lang, lbls['uz'])
+
+    return (
+        f"{hdr}\n"
+        f"📍 *[ {full_loc.upper()} ]*\n\n"
+        f"┌────────────────────────────┐\n"
+        f"  ▫️ *{l[0]}:*  {emoji} `{desc}`\n"
+        f"  ▫️ *{l}:*  `{cur_temp:+.1f}°C`\n"
+        f"  ▫️ *{l}:*  `{feels_like:+.1f}°C`\n"
+        f"  ▫️ *{l}:*  `{humidity}%`\n"
+        f"  ▫️ *{l[4]}:*  `{wind_speed:.1f} {l[6]}`\n"
+        f"  ▫️ *{l[5]}:*  `{t_min:+.1f}°C / {t_max:+.1f}°C`\n"
+        f"└────────────────────────────┘\n"
+        f"_Open-Meteo Global Weather Service_"
+    )
+
+# =====================================================================
 # ÇOK DİLLİ CANLI İNTERAKTİF ZAMANLAYICI PANELİ & TAKVİM
 # =====================================================================
 def format_scheduler_card(title: str, dt: datetime, lang: str = 'uz') -> str:
@@ -1121,7 +1256,7 @@ def get_timezone_keyboard(lang: str = 'uz'):
     ])
 
 # =====================================================================
-# 4 DİLLİ TAM VE EKSİKSİZ SÖZLÜK
+# 4 DİLLİ TAM VE EKSİKSİZ SÖZLÜK (KUSURSUZ EHL-İ SÜNNET MEALLERİ)
 # =====================================================================
 TEXTS = {
     'uz': {
@@ -1129,20 +1264,23 @@ TEXTS = {
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
         'btn_prayer': "🕌 Namoz vaqtlari",
+        'btn_weather': "🌤️ Ob-havo",
         'btn_pdf_hub': "📄 PDF & Hujjatlar",
         'btn_exam': "🎓 Imtihon & Taymer",
-        'btn_schedule_img': "🗓️ Dars Jadvali (Rasm)",
+        'btn_schedule_img': "🗓️ Dars jadvali",
         'btn_pomodoro': "⏱️ Pomodoro & Eslatma",
-        'btn_adhkar': "📿 Zikrlar & Salovatlar",
         'btn_translit': "🔤 Kirill ⇄ Lotin",
+        'btn_adhkar': "📿 Zikrlar & Salovatlar",
         'btn_timezone_hub': "🕒 Vaqt & Joylashuv",
         'btn_lang': "🌐 Tilni tanlash",
         'btn_timezone': "🕒 Vaqt mintaqasi",
         'btn_city_label': "Shahar",
         'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
         'btn_change_prayer_city': "🔄 Shaharni oʻzgartirish",
+        'btn_change_weather_city': "🔄 Boshqa shahar ob-havosi",
         'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) yoki YouTube havolasini yuboring:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // OB-HAVO XIZMATI*\n\nOb-havo maʼlumotini bilmoqchi boʻlgan shahar, tuman yoki qishloq nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Rishton*, *Toshkent*, *Istanbul*, *Moskva*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:",
         'prompt_schedule_img': "🗓️ *DARS JADVALI RASMI*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 qulflangan ekran formatiga aylantiradi.",
         'prompt_pomodoro': "⏱️ *POMODORO & ESLATMA MARKAZI*",
@@ -1202,6 +1340,8 @@ TEXTS = {
         'lang_changed': "Til muvaffaqiyatli oʻzgartirildi!",
         'tz_changed': "Vaqt mintaqasi muvaffaqiyatli saqlandi!",
         'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
+        'weather_loading': "🌤️ Ob-havo maʼlumoti olinmoqda...",
+        'weather_city_not_found': "Aholi punkti topilmadi. Iltimos, shahar yoki tuman nomini toʻgʻri kiriting.",
         'downloading': "Media yuklab olinmoqda, iltimos kuting...",
         'uploading': "Telegramga yuklanmoqda...",
         'error_size': "⚠️ Fayl hajmi Telegram Bot cheklovidan (50 MB) katta. Iltimos, qisqaroq video yuboring.",
@@ -1214,72 +1354,75 @@ TEXTS = {
         'adhkar_evening_btn': "🌇 Kechki zikrlar",
         'adhkar_salawat_btn': "🤲 Salovatlar",
         'adhkar_morning_text': (
-            "🌅 *TONGGI ZIKRLAR (ARABCHA, OʻQILISHI VA MAʼNOSI)*\n\n"
-            "1️⃣ *Oyatal Kursiy*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ...\n"
-            "📖 _«Allohu laa ilaaha illa huval hayyul qoyyuum...»_\n"
-            "🇺🇿 *Maʼnosi:* «Alloh, Undan oʻzga iloh yoʻqdir. U doim tirik va barchani idora qilib turuvchidir...»\n\n"
+            "🌅 *TONGGI ZIKRLAR (ARABCHA MATN VA MAʼNOSI)*\n\n"
+            "1️⃣ *Oyatal Kursiy (Baqara surasi, 255-oyat)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "🇺🇿 *Maʼnosi:* «Alloh – Undan oʻzga iloh yoʻqdir. U doim tirik va barchani idora qilib turuvchi (Qayyum)dir. Uni na mudroq bosar va na uyqu. Osmonlar va yerdagi barcha narsa Unikidir. Uning huzurida Oʻz iznisiz kim ham shafoat qila olardi?! U ularning oldilaridagi va orqalaridagi narsalarni biladi. Ular esa Uning ilmidan faqat Oʻzi xohlaganicha narsanigina qamrab oladilar. Uning Kursiysi osmonlar va yerni qamrab olgandir. Ularni asrab-turish Unga ogʻirlik qilmas. U eng yuksak va buyuk zotdir.»\n\n"
             "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
-            "📖 _Tongda va kechda 3 martadan oʻqilsa, har bir yomonlikdan kifoya qiladi._\n\n"
-            "3️⃣ *Sayyidul Istigʻfor*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
-            "📖 _«Allohumma anta Robbiy laa ilaaha illa anta xolaqtaniy va ana 'abduka va ana 'alaa 'ahdika va va'dika mastatoth't...»_\n"
-            "🇺🇿 *Maʼnosi:* «Allohim, Sen mening Robbimsan! Sendan oʻzga iloh yoʻq. Meni yaratding, men Sening qulingman... Gunohlarimni kechir, chunki gunohlarni faqat Sen kechirasan!»\n\n"
-            "4️⃣ *Tonggi shukronalik zikri*\n"
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ\n"
-            "📖 _«Asbahnaa va asbahal mulku lillaah, valhamdu lillaah, laa ilaaha illallohu vahdahu laa shariyka lah...»_\n"
-            "🇺🇿 *Maʼnosi:* «Biz ham, butun borliq ham Allohning mulki boʻlgan holda tong ottirdik. Hamd Allohgadir...»\n\n"
-            "5️⃣ *Panoh zikri (3 marta)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
-            "📖 _«Bismillaahillaziy laa yadurru ma'asmihii shay'un fil ardi va laa fis-samaa'i va huvas-samiy'ul 'aliym.»_\n"
-            "🇺🇿 *Maʼnosi:* «Allohning ismi bilan boshlayman, Uning ismi bilan yeru osmonda hech bir narsa zarar yetkaza olmas...»\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
+            "🇺🇿 *Fazilati:* «Tongda va kechda 3 martadan oʻqilsa, bandani har bir yomonlikdan asrashga kifoya qiladi.» _(Abu Dovud va Termiziy rivoyati)_\n\n"
+            "3️⃣ *Sayyidul Istigʻfor (Eng ulugʻ tavba duosi)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohim! Sen mening Rabbimsan, Sendan oʻzga iloh yoʻq. Meni Sen yaratding va men Sening qulingman. Qurbim yetganicha Senga bergan ahdim va vaʼdamda turibman. Qilgan yomonliklarimning sharridan Oʻzingdan panoh soʻrayman. Menga bergan neʼmatingni eʼtirof qilaman va gunohlarimni tan olaman. Bas, mening gunohlarimni kechirgin, chunki gunohlarni faqat Oʻzing kechirasan!» _(Buxoriy rivoyati)_\n\n"
+            "4️⃣ *Tonggi hamd va tavhid zikri*\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذَا الْيَوْمِ وَخَيْرَ مَا بَعْدَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذَا الْيَوْمِ وَشَرِّ مَا بَعْدَهُ، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "🇺🇿 *Maʼnosi:* «Biz ham, butun mulk ham Allohnikidir degan holda tong ottirdik. Hamd Allohgadir. Yolgʻiz Allohdan oʻzga iloh yoʻq, Uning sherigi yoʻqdir. Mulk ham, hamd ham Unikidir va U har bir narsaga qodirdir. Rabbim! Sendan bu kunning va undan keyingi kunlarning yaxshiligini soʻrayman. Bu kunning va undan keyingi kunlarning yomonligidan Oʻzingdan panoh tilayman. Rabbim! Dangasalikdan va qartayishning yomonligidan Sendan panoh soʻrayman. Rabbim! Doʻzax azobidan va qabr azobidan Oʻzingdan panoh tilayman!» _(Muslim rivoyati)_\n\n"
+            "5️⃣ *Zararlardan himoyalanish zikri (3 marta)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "🇺🇿 *Maʼnosi:* «Ismi zikr qilinganda na yerda va na osmonda hech bir narsa zarar yetkaza olmaydigan Allohning ismi bilan panohlanaman. U har bir narsani eshituvchi va biluvchidir!» _(Termiziy rivoyati)_\n\n"
             "6️⃣ *Rizo zikri (3 marta)*\n"
-            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n"
-            "📖 _«Rodiytu billaahi Robban, va bil Islaami diynan, va bi Muhammadin sollallohu 'alayhi va sallama nabiyyaa.»_\n"
-            "🇺🇿 *Maʼnosi:* «Allohni Robbim, Islomni dinim, Muhammad sollallohu alayhi vasallamni paygʻambarim deb rozi boʻldim.»\n\n"
+            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohni Rabbim, Islomni dinim, Muhammad sollallohu alayhi vasallamni paygʻambarim deb chin dildan rozi boʻldim.» _(Abu Dovud rivoyati)_\n\n"
             "7️⃣ *Tasbeh (100 marta)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n"
-            "📖 _«Subhaanallohi va bihamdih»_ (Allohga hamd aytib, Uni poklab yod etaman)."
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohga hamd aytib, Uni barcha nuqsonlardan poklayman.»"
         ),
         'adhkar_evening_text': (
-            "🌇 *KECHKI ZIKRLAR (ARABCHA, OʻQILISHI VA MAʼNOSI)*\n\n"
-            "1️⃣ *Oyatal Kursiy*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ...\n\n"
-            "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n\n"
-            "3️⃣ *Sayyidul Istigʻfor*\n\n"
-            "4️⃣ *Kechki shukronalik zikri*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ...\n"
-            "📖 _«Amsaynaa va amsal mulku lillaah, valhamdu lillaah...»_\n\n"
-            "5️⃣ *Panoh soʻrash duosi (3 marta)*\n"
-            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
-            "📖 _«A'uuzu bi kalimaatillaahit taammaati min sharri maa xolaq.»_\n"
-            "🇺🇿 *Maʼnosi:* «Yaratilgan narsalarning yomonligidan Allohning mukammal kalimalari bilan panoh tilayman.»\n\n"
-            "6️⃣ *Zararlardan omonda boʻlish (3 marta)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ...\n\n"
+            "🌇 *KECHKI ZIKRLAR (ARABCHA MATN VA MAʼNOSI)*\n\n"
+            "1️⃣ *Oyatal Kursiy (Baqara surasi, 255-oyat)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
+            "3️⃣ *Sayyidul Istigʻfor*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Kechki hamd zikri*\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذِهِ اللَّيْلَةِ وَخَيْرَ مَا بَعْدَهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذِهِ اللَّيْلَةِ وَشَرِّ مَا بَعْدَهَا، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "🇺🇿 *Maʼnosi:* «Biz ham, butun mulk ham Allohnikidir degan holda kech kiritdik. Hamd Allohgadir. Yolgʻiz Allohdan oʻzga iloh yoʻq, Uning sherigi yoʻqdir. Rabbim! Sendan bu kechaning va undan keyingisining yaxshiligini soʻrayman. Bu kechaning va undan keyingisining yomonligidan Oʻzingdan panoh tilayman...»\n\n"
+            "5️⃣ *Yaratilganlar yomonligidan panoh soʻrash (3 marta)*\n"
+            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohning yaratgan barcha maxluqotlarining yomonligidan Uning benuqson, mukammal kalimalari ila panoh tilayman.» _(Muslim rivoyati)_\n\n"
+            "6️⃣ *Zararlardan himoyalanish zikri (3 marta)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
             "7️⃣ *Tasbeh (100 marta)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_salawat_text': (
             "🤲 *ENG MUTEBAR SALOVATLAR VA ULARNING MAʼNOLARI*\n\n"
             "1️⃣ *Salovati Ibrohimiyya (Namozdagi salovat)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
-            "📖 _«Allohumma solli 'alaa Muhammadiv-va 'alaa aali Muhammad, kamaa sollayta 'alaa Ibrohiyma va 'alaa aali Ibrohiym...»_\n"
-            "🇺🇿 *Maʼnosi:* «Ey Allohim! Ibrohimga va uning oilasiga rahmat yogʻdirganingdek, Muhammadga va uning oilasiga ham rahmat yogʻdir...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "🇺🇿 *Maʼnosi:* «Ey Allohim! Ibrohimga va uning oilasiga rahmat yogʻdirganingdek, Muhammadga va uning oilasiga ham rahmat yogʻdirgin, albatta Sen maqtovga loyiq va buyuk zotsan. Ey Allohim! Ibrohimni va uning oilasini barakali qilganingdek, Muhammadni va uning oilasini ham barakali qilgin, albatta Sen maqtovga loyiq va buyuk zotsan.» _(Buxoriy va Muslim rivoyati)_\n\n"
             "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
-            "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin tibbil quluubi va davaa'ihaa, va 'aafiyatil abdaani va shifaa'ihaa, va nuuril absori va diyaa'ihaa, va 'alaa aalihii va sohbihii va sallim.»_\n"
-            "🇺🇿 *Maʼnosi:* «Allohim! Qalblarning tabibi va davosi, tanlarning shifosi, koʻzlarning nuri boʻlgan Muhammad alayhissalomga, u zotning oilasi va sahobalariga salotu salom yoʻlla.»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohim! Qalblarning tabibi va davosi, tanlarning ofiyati va shifosi, koʻzlarning nuri va ziyosi boʻlgan Sayyidimiz Muhammadga, u zotning oilasi va sahobalariga salotu salomlar yogʻdirgin.»\n\n"
             "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
-            "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadin solaatan tunjiynaa bihaa min jamiy'il ahvaali val aafaat...»_\n"
-            "🇺🇿 *Maʼnosi:* «Allohim! Bizga shunday salovat yuborginki, uning sharofati bilan bizni barcha ofatlardan qutqar, ehtiyojlarimizni ravo qil, barcha yomonliklardan pokla va eng oliy darajalarga koʻtar...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohim! Sayyidimiz Muhammadga shunday salovat yoʻllaginki, uning sharofati bilan bizni barcha dahshat va ofatlardan qutqargin, barcha hojatlarimizni ravo qilgin, barcha yomonliklardan poklagin, Oʻz dargohingda eng yuksak darajalarga koʻtargin va hayotda ham, vafotdan keyin ham barcha yaxshiliklarning eng yuqori choʻqqilariga yetkazgin.»\n\n"
             "4️⃣ *Salovati Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
-            "📖 _«Allohumma solli 'alaa sayyidinaa Muhammadinil faatihi limaa ughliq, val xootimi limaa sabaq, naasiril haqqi bil haqq...»_\n"
-            "🇺🇿 *Maʼnosi:* «Allohim! Yopiqlarni ochuvchi, oʻtganlarning xotimasi, haqiqatni himoya qiluvchi va toʻgʻri yoʻlga yetaklovchi Muhammadga salovat ayla.»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَادِي إِلَىٰ صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَىٰ آلِهِ حَقَّ قَدْرِهِ وَمِقْدَارِهِ الْعَظِيمِ\n\n"
+            "🇺🇿 *Maʼnosi:* «Allohim! Qulflangan qalblar va yoʻllarni ochuvchi, oʻtgan barcha paygʻambarlarning xotimasi, haqiqatni haq bilan himoya qiluvchi va Sening toʻgʻri yoʻlingga yetaklovchi Sayyidimiz Muhammadga va u zotning buyuk qadr-qimmatiga munosib tarzda oilasiga ham salot yoʻllagin.»\n\n"
             "5️⃣ *Qisqa va Fazilatli Salovat*\n"
-            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
-            "📖 _«Sollallohu 'alayhi va sallam»_ (Alloh taolo u zotga salotu salom yoʻllasin)."
+            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n\n"
+            "🇺🇿 *Maʼnosi:* «Alloh taolo u zotga salotu salomlar yoʻllasin.»"
         )
     },
     'tr': {
@@ -1287,20 +1430,23 @@ TEXTS = {
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
         'btn_prayer': "🕌 Namaz Vakitleri",
-        'btn_pdf_hub': "📄 PDF & Belge Araçları",
+        'btn_weather': "🌤️ Hava Durumu",
+        'btn_pdf_hub': "📄 PDF & Belgeler",
         'btn_exam': "🎓 Sınav & Geri Sayım",
-        'btn_schedule_img': "🗓️ Ders Programı (Görsel)",
-        'btn_pomodoro': "⏱️ Pomodoro & Hatırlatıcı",
-        'btn_adhkar': "📿 Zikirler & Salavatlar",
+        'btn_schedule_img': "🗓️ Ders Programı",
+        'btn_pomodoro': "⏱️ Pomodoro & Sayaç",
         'btn_translit': "🔤 Kiril ⇄ Latin",
+        'btn_adhkar': "📿 Zikirler & Salavat",
         'btn_timezone_hub': "🕒 Saat & Konum Ayarı",
         'btn_lang': "🌐 Dil Seçimi",
         'btn_timezone': "🕒 Saat Dilimi",
         'btn_city_label': "Şehir",
         'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
         'btn_change_prayer_city': "🔄 Şehri Değiştir",
+        'btn_change_weather_city': "🔄 Başka Şehir Hava Durumu",
         'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) veya YouTube linki gönderin:",
         'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // HAVA DURUMU HİZMETİ*\n\nHava durumunu öğrenmek istediğiniz il, ilçe veya kasaba adını yazıp gönderin:\n_(Örneğin: *İstanbul*, *Kadıköy*, *Ankara*, *Taşkent*, *Kokand*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & BELGE ARAÇLARI*\n\nİşlem seçiniz:",
         'prompt_schedule_img': "🗓️ *HAFTALIK DERS PROGRAMI GÖRSELİ*\n\nDers programınızı gün gün yazıp gönderin (Örn: Pazartesi: 09:00 Matematik...):\nBot 1080x1920 telefon kilit ekranı formatına dönüştürecektir.",
         'prompt_pomodoro': "⏱️ *POMODORO & HATIRLATICI MERKEZİ*",
@@ -1360,6 +1506,8 @@ TEXTS = {
         'lang_changed': "Dil başarıyla değiştirildi!",
         'tz_changed': "Saat dilimi başarıyla güncellendi!",
         'city_not_found': "Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
+        'weather_loading': "🌤️ Hava durumu bilgisi alınıyor...",
+        'weather_city_not_found': "Konum bulunamadı. Lütfen il veya ilçe adını kontrol edip tekrar yazın.",
         'downloading': "Medya indiriliyor, lütfen bekleyin...",
         'uploading': "Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından büyük olduğu için gönderilemiyor.",
@@ -1372,69 +1520,74 @@ TEXTS = {
         'adhkar_evening_btn': "🌇 Akşam Zikirleri",
         'adhkar_salawat_btn': "🤲 Salavatlar",
         'adhkar_morning_text': (
-            "🌅 *SABAH ZİKİRLERİ (ARAPÇA METİN, OKUNUŞ VE MEAL)*\n\n"
-            "1️⃣ *Ayet-el Kürsi*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ...\n"
-            "📖 _«Allâhü lâ ilâhe illâ hüve’l-hayyü’l-kayyûm...»_\n"
-            "🇹🇷 *Meali:* «Allah, O'ndan başka ilah yoktur. Hayy'dır, Kayyûm'dur...»\n\n"
+            "🌅 *SABAH ZİKİRLERİ (ARAPÇA METİN VE MEAL)*\n\n"
+            "1️⃣ *Ayet-el Kürsi (Bakara Suresi, 255. Ayet)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "🇹🇷 *Meali:* «Allah, O'ndan başka ilah yoktur; diridir, her şeyin varlığı O'na bağlı ve dayalıdır. O'nu ne uyuklama tutar ne de uyku. Göklerde ve yerde ne varsa hepsi O'nundur. İzni olmadan O'nun huzurunda kim şefaat edebilir? O, kullarının önlerindekini de arkalarındakini de (yaptıklarını ve yapacaklarını) bilir. Kullar O'nun ilminden, kendisinin dilediğinden başka hiçbir şeyi kavrayamazlar. O'nun kürsüsü gökleri ve yeri kaplamıştır. Onları koruyup gözetmek O'na asla ağır gelmez. O, yücedir, büyüktür.»\n\n"
             "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n"
-            "📖 _Sabah ve akşam üçer defa okuyan kimse her türlü kötülükten korunur._\n\n"
-            "3️⃣ *Seyyidü'l-İstiğfar (En Faziletli İstiğfar)*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
-            "📖 _«Allâhümme ente Rabbî lâ ilâhe illâ ente halaktenî ve ene ‘abdüke ve ene ‘alâ ‘ahdike ve va‘dike mesteta‘tü...»_\n"
-            "🇹🇷 *Meali:* «Allah'ım! Sen benim Rabbimsin. İlah ancak Sensin. Beni Sen yarattın, ben Senin kulunum... Beni bağışla, şüphesiz günahları ancak Sen bağışlarsın.»\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
+            "🇹🇷 *Fazileti:* «Sabah ve akşam üçer defa okuyan kimse her türlü kötülükten ve afetten korunur.» _(Ebu Davud, Tirmizi)_\n\n"
+            "3️⃣ *Seyyidü'l-İstiğfar (En Faziletli Tövbe Duası)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "🇹🇷 *Meali:* «Allah'ım! Sen benim Rabbimsin. İlah ancak Sensin. Beni Sen yarattın, ben Senin kulunum. Gücüm yettiğince Sana verdiğim ahd ü vad üzereyim. Yaptıklarımın şerrinden Sana sığınırım. Bana olan nimetlerini itiraf eder, günahlarımı da ikrar ederim. Beni bağışla; şüphesiz günahları ancak Sen bağışlarsın!» _(Buhari)_\n\n"
             "4️⃣ *Sabah Hamd ve Tevhid Zikri*\n"
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ\n"
-            "📖 _«Esbahnâ ve esbaha’l-mülkü lillâhi vel-hamdü lillâh, lâ ilâhe illallâhü vahdehû lâ şerîke leh...»_\n"
-            "🇹🇷 *Meali:* «Sabaha çıktık; mülk de Allah'ın olarak sabaha çıktı. Hamd Allah'a mahsustur...»\n\n"
-            "5️⃣ *Kötülüklerden Korunma Duası (3 defa)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
-            "📖 _«Bismillâhillezî lâ yedurru ma‘asmihî şey’ün fi’l-ardı ve lâ fi’s-semâi ve hüve’s-semî‘u’l-‘alîm.»_\n"
-            "🇹🇷 *Meali:* «İsmiyle yerde ve gökte hiçbir şeyin zarar veremeyeceği Allah'ın adıyla başlarım...»\n\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذَا الْيَوْمِ وَخَيْرَ مَا بَعْدَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذَا الْيَوْمِ وَشَرِّ مَا بَعْدَهُ، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "🇹🇷 *Meali:* «Sabaha çıktık; mülk de Allah'ın olarak sabaha erdi. Hamd Allah'a mahsustur. Allah'tan başka ilah yoktur; O tektir, ortağı yoktur. Mülk O'nundur, hamd O'nadır ve O her şeye kadirdir. Rabbim! Senden bu günün hayrını ve bundan sonrasının hayrını dilerim. Bu günün şerrinden ve bundan sonrasının şerrinden de Sana sığınırım. Rabbim! Tembellikten ve kibrin/yaşlılığın kötülüklerinden Sana sığınırım. Rabbim! Cehennemdeki ve kabirdeki azaptan Sana sığınırım!» _(Müslim)_\n\n"
+            "5️⃣ *Zararlardan Korunma Duası (3 defa)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "🇹🇷 *Meali:* «İsmiyle yerde ve gökte hiçbir şeyin zarar veremeyeceği Allah'ın adıyla başlarım. O, her şeyi hakkıyla işitendir, hakkıyla bilendir.» _(Tirmizi)_\n\n"
             "6️⃣ *Rıza Zikri (3 defa)*\n"
-            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n"
-            "📖 _«Radîtü billâhi Rabben ve bi’l-İslâmi dînen ve bi-Muhammedin sallallâhü ‘aleyhi ve selleme nebiyyâ.»_\n\n"
+            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n\n"
+            "🇹🇷 *Meali:* «Rab olarak Allah'tan, din olarak İslam'dan, peygamber olarak da Hazreti Muhammed (s.a.v.)'den razı oldum.» _(Ebu Davud)_\n\n"
             "7️⃣ *Tesbih (100 defa)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n"
-            "📖 _«Sübhânallâhi ve bi-hamdihî»_"
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n\n"
+            "🇹🇷 *Meali:* «Allah'ı hamd ile tesbih ederim (O'nu noksan sıfatlardan tenzih ederim).»"
         ),
         'adhkar_evening_text': (
-            "🌇 *AKŞAM ZİKİRLERİ (ARAPÇA METİN, OKUNUŞ VE MEAL)*\n\n"
-            "1️⃣ *Ayet-el Kürsi*\n"
+            "🌇 *AKŞAM ZİKİRLERİ (ARAPÇA METİN VE MEAL)*\n\n"
+            "1️⃣ *Ayet-el Kürsi (Bakara Suresi, 255. Ayet)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
             "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
             "3️⃣ *Seyyidü'l-İstiğfar*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
             "4️⃣ *Akşam Hamd Zikri*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ...\n"
-            "5️⃣ *Yaratılanların Şerrinden Sığınma (3 defa)*\n"
-            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
-            "📖 _«E‘ûzü bi-kelimâtillâhi’t-tâmmâti min şerri mâ halak.»_\n"
-            "🇹🇷 *Meali:* «Yarattıklarının şerrinden Allah'ın eksiksiz kelimelerine sığınırım.»\n\n"
-            "6️⃣ *Zararlardan Korunma (3 defa)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ...\n\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذِهِ اللَّيْلَةِ وَخَيْرَ مَا بَعْدَهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذِهِ اللَّيْلَةِ وَشَرِّ مَا بَعْدَهَا، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "5️⃣ *Yaratılanların Şerrinden Sığınma Duası (3 defa)*\n"
+            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n\n"
+            "🇹🇷 *Meali:* «Yarattıklarının şerrinden Allah'ın tastamam kelimelerine sığınırım.» _(Müslim)_\n\n"
+            "6️⃣ *Zararlardan Korunma Duası (3 defa)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
             "7️⃣ *Tesbih (100 defa)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_salawat_text': (
             "🤲 *EN MUTEBER SALAVATLAR VE MEALLERİ*\n\n"
             "1️⃣ *Salavat-ı İbrahimiye (Namazdaki Salli-Barik)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
-            "📖 _«Allâhümme salli ‘alâ Muhammedin ve ‘alâ âli Muhammed, kemâ salleyte ‘alâ İbrâhîme ve ‘alâ âli İbrâhîm...»_\n"
-            "🇹🇷 *Meali:* «Allah'ım! İbrahim'e ve âline salât ettiğin gibi, Muhammed'e ve âline de salât eyle...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "🇹🇷 *Meali:* «Allah'ım! İbrahim'e ve âline salât ettiğin gibi, Muhammed'e ve âline de salât eyle. Şüphesiz Sen çok övülensin, pek yücesin. Allah'ım! İbrahim'e ve âline bereket ihsan ettiğin gibi, Muhammed'e ve âline de bereket ihsan eyle. Şüphesiz Sen çok övülensin, pek yücesin.» _(Buhari)_\n\n"
             "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَAFِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
-            "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin tıbbi’l-kulûbi ve devâihâ ve ‘âfiyeti’l-ebdâni ve şifâihâ ve nûri’l-ebsâri ve diyâihâ ve ‘alâ âlihî ve sahbihî ve sellim.»_\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
             "🇹🇷 *Meali:* «Allah'ım! Kalplerin tabibi ve devası, bedenlerin afiyeti ve şifası, gözlerin nuru ve aydınlığı olan Efendimiz Muhammed'e, âline ve ashabına salât ve selam eyle.»\n\n"
             "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n"
-            "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedin salâten tüncînâ bihâ min cemî‘i’l-ehvâli ve’l-âfât...»_\n"
-            "🇹🇷 *Meali:* «Allah'ım! Efendimiz Muhammed'e öyle bir salât eyle ki; onunla bizi her türlü korku ve afetten kurtar, bütün ihtiyaçlarımızı gider, bütün günahlardan arındır ve en yüce derecelere eriştir...»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n\n"
+            "🇹🇷 *Meali:* «Allah'ım! Efendimiz Muhammed'e öyle bir salât eyle ki, onun vesilesiyle bizi bütün korku ve afetlerden kurtar, bütün ihtiyaçlarımızı gider, bütün günahlardan arındır, katındaki en yüce derecelere yükselt ve hayatta da vefattan sonra da bütün hayırların en son gayesine ulaştır.»\n\n"
             "4️⃣ *Salavat-ı Fatih*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَى صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَى آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n"
-            "📖 _«Allâhümme salli ‘alâ seyyidinâ Muhammedini’l-fâtihi limâ uğlika ve’l-hâtimi limâ sebaka nâsıri’l-hakkı bi’l-hakkı ve’l-hâdî ilâ sırâtike’l-müstekîm...»_\n"
-            "🇹🇷 *Meali:* «Allah'ım! Kilitli kapıları açan, geçmiş peygamberlerin sonuncusu olan, hakka hak ile yardım eden ve doğru yoluna rehberlik eden Efendimiz Muhammed'e salât eyle.»\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَىٰ صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَىٰ آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n\n"
+            "🇹🇷 *Meali:* «Allah'ım! Kilitli kapıları açan, geçmiş peygamberlerin sonuncusu olan, hakka hak ile yardım eden ve Senin dosdoğru yoluna rehberlik eden Efendimiz Muhammed'e ve O'nun yüce şanına layık bir şekilde âline salât eyle.»\n\n"
             "5️⃣ *Kısa ve Faziletli Salavat*\n"
-            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
-            "📖 _«Sallallâhu ‘aleyhi ve sellem»_ (Allah'ın salât ve selamı O'nun üzerine olsun)."
+            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n\n"
+            "🇹🇷 *Meali:* «Allah'ın salât ve selamı O'nun üzerine olsun.»"
         )
     },
     'ru': {
@@ -1442,20 +1595,23 @@ TEXTS = {
         'menu_title': "📋 Главное меню:",
         'btn_video': "🎬 Скачать видео",
         'btn_prayer': "🕌 Время намаза",
-        'btn_pdf_hub': "📄 PDF & Документы",
-        'btn_exam': "🎓 Экзамены и Таймер",
-        'btn_schedule_img': "🗓️ Расписание (Фото)",
-        'btn_pomodoro': "⏱️ Помодоро & Напоминания",
+        'btn_weather': "🌤️ Прогноз погоды",
+        'btn_pdf_hub': "📄 PDF и Документы",
+        'btn_exam': "🎓 Экзамены & Таймер",
+        'btn_schedule_img': "🗓️ Расписание уроков",
+        'btn_pomodoro': "⏱️ Помодоро & Таймер",
+        'btn_translit': "🔤 Кирилл ⇄ Латиница",
         'btn_adhkar': "📿 Зикры и Салаваты",
-        'btn_translit': "🔤 Кириллица ⇄ Латиница",
         'btn_timezone_hub': "🕒 Время и Геолокация",
         'btn_lang': "🌐 Сменить язык",
         'btn_timezone': "🕒 Часовой пояс",
         'btn_city_label': "Город",
         'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
         'btn_change_prayer_city': "🔄 Сменить город",
+        'btn_change_weather_city': "🔄 Сменить город для погоды",
         'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook, X (Twitter) или YouTube:",
         'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*, *Стамбул*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // ПРОГНОЗ ПОГОДЫ*\n\nНапишите название города, района или населенного пункта:\n_(Например: *Москва*, *Ташкент*, *Коканд*, *Стамбул*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & ДОКУМЕНТЫ*\n\nВыберите действие:",
         'prompt_schedule_img': "🗓️ *РАСПИСАНИЕ ЗАНЯТИЙ (ОБОИ)*\n\nОтправьте расписание по дням (Напр: Понедельник: 09:00 Математика...):\nБот создаст стильные обои 1080x1920 для экрана блокировки.",
         'prompt_pomodoro': "⏱️ *ПОМОДОРО И НАПОМИНАНИЯ*",
@@ -1515,6 +1671,8 @@ TEXTS = {
         'lang_changed': "Язык успешно изменен!",
         'tz_changed': "Часовой пояс успешно обновлен!",
         'city_not_found': "Город не найден. Напишите правильное название.",
+        'weather_loading': "🌤️ Получение прогноза погоды...",
+        'weather_city_not_found': "Населенный пункт не найден. Проверьте правильность написания.",
         'downloading': "Скачивается, пожалуйста подождите...",
         'uploading': "Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
@@ -1527,44 +1685,74 @@ TEXTS = {
         'adhkar_evening_btn': "🌇 Вечерние зикры",
         'adhkar_salawat_btn': "🤲 Салаваты",
         'adhkar_morning_text': (
-            "🌅 *УТРЕННИЕ ЗИКРЫ (АРАБСКИЙ, ТРАНСКРИПЦИЯ И ПЕРЕВОД)*\n\n"
-            "1️⃣ *Аят аль-Курси*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ...\n"
-            "📖 _«Аллаху ляя иляяха илляя хуваль-хайюль-кайюум...»_\n"
-            "🇷🇺 *Перевод:* «Аллах — нет божества, кроме Него, Живого, Вседержителя...»\n\n"
-            "2️⃣ *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас (по 3 раза)*\n"
-            "3️⃣ *Саййид аль-Истигфар*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلКТَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
-            "4️⃣ *Утренняя благодарность*\n"
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
-            "5️⃣ *Мольба о защите (3 раза)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
-            "6️⃣ *Тасбих (100 раз)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
+            "🌅 *УТРЕННИЕ ЗИКРЫ (АРАБСКИЙ ТЕКСТ И ПЕРЕВОД)*\n\n"
+            "1️⃣ *Аят аль-Курси (Сура аль-Бакара, 255 аят)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "🇷🇺 *Перевод:* «Аллах — нет божества, кроме Него, Живого, Вседержителя. Им не овладевают ни дремота, ни сон. Ему принадлежит то, что на небесах, и то, что на земле. Кто станет заступаться перед Ним без Его дозволения? Он знает их будущее и прошлое. Они постигают из Его знания только то, что Он пожелает. Его Престол объемлет небеса и землю, и не тяготит Его оберегание их. Он — Возвышенный, Великий.»\n\n"
+            "2️⃣ *Суры аль-Ихляс, аль-Фаляк, ан-Нас (по 3 раза)*\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
+            "🇷🇺 *Достоинство:* «Кто читает их по три раза утром и вечером, того это защитит от всякого зла.» _(Тирмизи)_\n\n"
+            "3️⃣ *Саййид аль-Истигфар (Господин покаяния)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "🇷🇺 *Перевод:* «О Аллах! Ты — мой Господь, и нет божества, кроме Тебя. Ты создал меня, а я — Твой раб. Я верен завету и обещанию, данному Тебе, пока у меня есть силы. Прибегаю к Тебе от зла того, что я совершил, признаю милость, оказанную Тобой мне, и признаю грех свой. Прости же меня, ведь поистине, никто не прощает грехов, кроме Тебя!» _(Бухари)_\n\n"
+            "4️⃣ *Утренняя благодарность и мольба*\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذَا الْيَوْمِ وَخَيْرَ مَا بَعْدَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذَا الْيَوْمِ وَشَرِّ مَا بَعْدَهُ، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "🇷🇺 *Перевод:* «Мы дожили до утра, и утро застало власть принадлежащей Аллаху, и хвала Аллаху. Нет божества, кроме одного лишь Аллаха, у Которого нет сотоварища. Ему принадлежит власть, Ему — хвала, и Он над всякой вещью властен. Господь мой, я прошу у Тебя блага того, что будет в этот день, и блага того, что последует за ним, и прибегаю к Тебе от зла того, что будет в этот день, и зла того, что последует за ним. Господь мой, прибегаю к Тебе от лени и тягот старости. Господь мой, прибегаю к Тебе от мучений в Огне и мучений в могиле!» _(Муслим)_\n\n"
+            "5️⃣ *Мольба о защите от всякого вреда (3 раза)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "🇷🇺 *Перевод:* «С именем Аллаха, с именем Которого ничто не причинит вреда ни на земле, ни на небе, ведь Он — Слышащий, Знающий!» _(Тирмизи)_\n\n"
+            "6️⃣ *Слова довольства Аллахом (3 раза)*\n"
+            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n\n"
+            "🇷🇺 *Перевод:* «Я доволен Аллахом как Господом, исламом — как религией и Мухаммадом (мир ему и благословение Аллаха) — как Пророком.» _(Абу Давуд)_\n\n"
+            "7️⃣ *Тасбих (100 раз)*\n"
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n\n"
+            "🇷🇺 *Перевод:* «Пречист Аллах и хвала Ему.»"
         ),
         'adhkar_evening_text': (
-            "🌇 *ВЕЧЕРНИЕ ЗИКРЫ (АРАБСКИЙ, ТРАНСКРИПЦИЯ И ПЕРЕВОД)*\n\n"
-            "1️⃣ *Аят аль-Курси*\n"
-            "2️⃣ *Суры Аль-Ихляс, Аль-Фаляк, Ан-Нас (по 3 раза)*\n"
+            "🌇 *ВЕЧЕРНИЕ ЗИКРЫ (АРАБСКИЙ ТЕКСТ И ПЕРЕВОД)*\n\n"
+            "1️⃣ *Аят аль-Курси (Сура аль-Бакара, 255 аят)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "2️⃣ *Суры аль-Ихляс, аль-Фаляк, ан-Нас (по 3 раза)*\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
             "3️⃣ *Саййид аль-Истигфар*\n"
-            "4️⃣ *Вечерняя хвала*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Вечерняя мольба и хвала*\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذِهِ اللَّيْلَةِ وَخَيْرَ مَا بَعْدَهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذِهِ اللَّيْلَةِ وَشَرِّ مَا بَعْدَهَا، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
             "5️⃣ *Защита от зла творений (3 раза)*\n"
-            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
-            "6️⃣ *Тасбих (100 раз)*\n"
+            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n\n"
+            "🇷🇺 *Перевод:* «Прибегаю к совершенным словам Аллаха от зла того, что Он сотворил.» _(Муслим)_\n\n"
+            "6️⃣ *Мольба о защите (3 раза)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "7️⃣ *Тасбих (100 раз)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_salawat_text': (
             "🤲 *ДОСТОВЕРНЫЕ САЛАВАТЫ И ИХ ЗНАЧЕНИЯ*\n\n"
             "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "🇷🇺 *Перевод:* «О Аллах, благослови Мухаммада и семейство Мухаммада, как благословил Ты Ибрахима и семейство Ибрахима, поистине, Ты — Достойный похвалы, Славный! О Аллах, пошли благословения Мухаммаду и семейству Мухаммада, как послал Ты их Ибрахиму и семейству Ибрахима, поистине, Ты — Достойный похвалы, Славный!» _(Бухари)_\n\n"
             "2️⃣ *Салават Тиббиль-Кулюб (Исцеление сердец)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَAFِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "🇷🇺 *Перевод:* «О Аллах! Благослови и приветствуй нашего господина Мухаммада — целителя сердец и их лекарство, дарующего здравие телам и их исцеление, свет взоров и их сияние, а также его семью и сподвижников.»\n\n"
             "3️⃣ *Салават Тунджина (Спасение от бед)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
-            "4️⃣ *Краткий благословенный салават*\n"
-            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
-            "📖 _«Салляллаху ‘алейхи ва саллям»_"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n\n"
+            "🇷🇺 *Перевод:* «О Аллах! Благослови нашего господина Мухаммада таким благословением, посредством которого Ты избавишь нас от всех бед и несчастий, удовлетворишь все наши нужды, очистишь нас от всех грехов, возвысишь нас перед Собой до наивысших степеней и доведешь нас до предела всех благ как при жизни, так и после смерти.»\n\n"
+            "4️⃣ *Салават аль-Фатих*\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَىٰ صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَىٰ آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n\n"
+            "🇷🇺 *Перевод:* «О Аллах! Благослови нашего господина Мухаммада, открывшего закрытое, завершившего предшествовавшее, помогающего истине истиной и ведущего к Твоему прямому пути, а также благослови его семью по мере его великого достоинства и величия.»\n\n"
+            "5️⃣ *Краткий благословенный салават*\n"
+            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n\n"
+            "🇷🇺 *Перевод:* «Да благословит его Аллах и приветствует.»"
         )
     },
     'en': {
@@ -1572,20 +1760,23 @@ TEXTS = {
         'menu_title': "📋 Main Menu:",
         'btn_video': "🎬 Download Video",
         'btn_prayer': "🕌 Prayer Times",
+        'btn_weather': "🌤️ Weather Forecast",
         'btn_pdf_hub': "📄 PDF & Documents",
         'btn_exam': "🎓 Exams & Countdown",
-        'btn_schedule_img': "🗓️ Class Schedule (Image)",
-        'btn_pomodoro': "⏱️ Pomodoro & Reminders",
-        'btn_adhkar': "📿 Adhkar & Salawat",
+        'btn_schedule_img': "🗓️ Class Schedule",
+        'btn_pomodoro': "⏱️ Pomodoro & Timer",
         'btn_translit': "🔤 Cyrillic ⇄ Latin",
+        'btn_adhkar': "📿 Adhkar & Salawat",
         'btn_timezone_hub': "🕒 Time & Location",
         'btn_lang': "🌐 Change Language",
         'btn_timezone': "🕒 Timezone",
         'btn_city_label': "City",
         'btn_auto_loc': "📍 Auto-Detect (Location / City)",
         'btn_change_prayer_city': "🔄 Change City",
+        'btn_change_weather_city': "🔄 Change Weather City",
         'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, X (Twitter), or YouTube:",
         'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // WEATHER SERVICE*\n\nType the name of any city, district, or town:\n_(e.g. *London*, *Istanbul*, *Tashkent*, *Kokand*, *New York*...)_",
         'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & DOCUMENTS HUB*\n\nChoose an action:",
         'prompt_schedule_img': "🗓️ *WEEKLY SCHEDULE WALLPAPER*\n\nSend your schedule line by line (e.g. Monday: 09:00 Math...):\nThe bot will generate an aesthetic 1080x1920 lock-screen wallpaper.",
         'prompt_pomodoro': "⏱️ *POMODORO & REMINDERS HUB*",
@@ -1645,6 +1836,8 @@ TEXTS = {
         'lang_changed': "Language updated successfully!",
         'tz_changed': "Timezone updated successfully!",
         'city_not_found': "City not found. Please enter a valid city name.",
+        'weather_loading': "🌤️ Fetching weather data...",
+        'weather_city_not_found': "Location not found. Please check spelling and try again.",
         'downloading': "Downloading media, please wait...",
         'uploading': "Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
@@ -1657,44 +1850,74 @@ TEXTS = {
         'adhkar_evening_btn': "🌇 Evening Adhkar",
         'adhkar_salawat_btn': "🤲 Salawat",
         'adhkar_morning_text': (
-            "🌅 *MORNING ADHKAR (ARABIC, TRANSLITERATION & MEANING)*\n\n"
-            "1️⃣ *Ayat al-Kursi*\n"
-            "اللَّهُ لَا إِلَهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ...\n"
-            "📖 _«Allahu la ilaha illa Huwa, Al-Hayyul-Qayyum...»_\n"
-            "🇬🇧 *Meaning:* «Allah! There is no deity except Him, the Ever-Living, the Sustainer of all existence...»\n\n"
+            "🌅 *MORNING ADHKAR (ARABIC TEXT & MEANING)*\n\n"
+            "1️⃣ *Ayat al-Kursi (Surah Al-Baqarah, Ayah 255)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "🇬🇧 *Meaning:* «Allah - there is no deity except Him, the Ever-Living, the Sustainer of [all] existence. Neither drowsiness overtakes Him nor sleep. To Him belongs whatever is in the heavens and whatever is on the earth. Who is it that can intercede with Him except by His permission? He knows what is [presently] before them and what will be after them, and they encompass not a thing of His knowledge except for what He wills. His Kursi extends over the heavens and the earth, and their preservation tires Him not. And He is the Most High, the Most Great.»\n\n"
             "2️⃣ *Surahs Al-Ikhlas, Al-Falaq, An-Nas (3 times each)*\n"
-            "3️⃣ *Sayyid al-Istighfar*\n"
-            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n"
-            "4️⃣ *Morning Gratitude*\n"
-            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ...\n"
-            "5️⃣ *Protection Prayer (3 times)*\n"
-            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n"
-            "6️⃣ *Tasbih (100 times)*\n"
-            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
+            "🇬🇧 *Virtue:* «Whoever recites them three times in the morning and in the evening, they will suffice him against everything.» _(Abu Dawud, Tirmidhi)_\n\n"
+            "3️⃣ *Sayyid al-Istighfar (The Master Supplication for Forgiveness)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "🇬🇧 *Meaning:* «O Allah, You are my Lord; there is no deity except You. You created me and I am Your servant, and I abide by Your covenant and promise as best I can. I seek refuge in You from the evil of what I have done. I acknowledge Your favor upon me and I acknowledge my sin, so forgive me, for indeed none forgives sins except You.» _(Bukhari)_\n\n"
+            "4️⃣ *Morning Praise and Supplication*\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذَا الْيَوْمِ وَخَيْرَ مَا بَعْدَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذَا الْيَوْمِ وَشَرِّ مَا بَعْدَهُ، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "🇬🇧 *Meaning:* «We have reached the morning and the dominion belongs to Allah, and all praise is for Allah. There is no deity except Allah alone, without partner. To Him belongs the dominion and to Him belongs praise, and He is over all things competent. My Lord, I ask You for the good of what is in this day and the good of what follows it, and I seek refuge in You from the evil of what is in this day and the evil of what follows it. My Lord, I seek refuge in You from laziness and the hardships of old age. My Lord, I seek refuge in You from punishment in the Fire and punishment in the grave.» _(Muslim)_\n\n"
+            "5️⃣ *Supplication for Protection (3 times)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "🇬🇧 *Meaning:* «In the name of Allah, with whose name nothing can cause harm on earth or in heaven, and He is the All-Hearing, the All-Knowing.» _(Tirmidhi)_\n\n"
+            "6️⃣ *Declaration of Contentment (3 times)*\n"
+            "رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا\n\n"
+            "🇬🇧 *Meaning:* «I am pleased with Allah as my Lord, with Islam as my religion, and with Muhammad (peace and blessings of Allah be upon him) as my Prophet.» _(Abu Dawud)_\n\n"
+            "7️⃣ *Tasbih (100 times)*\n"
+            "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ\n\n"
+            "🇬🇧 *Meaning:* «Glory be to Allah and all praise is due to Him.»"
         ),
         'adhkar_evening_text': (
-            "🌇 *EVENING ADHKAR (ARABIC, TRANSLITERATION & MEANING)*\n\n"
-            "1️⃣ *Ayat al-Kursi*\n"
+            "🌇 *EVENING ADHKAR (ARABIC TEXT & MEANING)*\n\n"
+            "1️⃣ *Ayat al-Kursi (Surah Al-Baqarah, Ayah 255)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
             "2️⃣ *Surahs Al-Ikhlas, Al-Falaq, An-Nas (3 times)*\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
             "3️⃣ *Sayyid al-Istighfar*\n"
-            "4️⃣ *Evening Praise*\n"
-            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ...\n"
-            "5️⃣ *Seeking Refuge (3 times)*\n"
-            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّAMَّاتِ مِنْ شَرِّ مَا خَلَقَ\n"
-            "6️⃣ *Tasbih (100 times)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Evening Praise and Supplication*\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَٰذِهِ اللَّيْلَةِ وَخَيْرَ مَا بَعْدَهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَٰذِهِ اللَّيْلَةِ وَشَرِّ مَا بَعْدَهَا، رَبِّ أَعُوذُ بِكَ مِنَ الْكَسَلِ وَسُوءِ الْكِبَرِ، رَبِّ أَعُوذُ بِكَ مِنْ عَذَابٍ فِي النَّارِ وَعَذَابٍ فِي الْقَبْرِ\n\n"
+            "5️⃣ *Seeking Refuge from the Evil of Creation (3 times)*\n"
+            "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ\n\n"
+            "🇬🇧 *Meaning:* «I seek refuge in the perfect words of Allah from the evil of what He has created.» _(Muslim)_\n\n"
+            "6️⃣ *Supplication for Protection (3 times)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ\n\n"
+            "7️⃣ *Tasbih (100 times)*\n"
             "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
         ),
         'adhkar_salawat_text': (
             "🤲 *AUTHENTIC SALAWAT & TRANSLATIONS*\n\n"
             "1️⃣ *Salawat Ibrahimiyyah (Prayer Salawat)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "🇬🇧 *Meaning:* «O Allah, bestow Your blessings upon Muhammad and the family of Muhammad, as You bestowed blessings upon Ibrahim and the family of Ibrahim. Indeed, You are Praiseworthy and Glorious. O Allah, bless Muhammad and the family of Muhammad, as You blessed Ibrahim and the family of Ibrahim. Indeed, You are Praiseworthy and Glorious.» _(Bukhari)_\n\n"
             "2️⃣ *Salawat Tibbil Qulub (Healing of Hearts)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَAFِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "🇬🇧 *Meaning:* «O Allah, bestow blessings and peace upon our Master Muhammad, the remedy of hearts and their cure, the health of bodies and their healing, the light of eyes and their illumination, and upon his family and companions.»\n\n"
             "3️⃣ *Salawat Munjiyyah (Deliverance)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ...\n"
-            "4️⃣ *Short Salawat*\n"
-            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n"
-            "📖 _«Sallallahu 'alayhi wa sallam»_"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ\n\n"
+            "🇬🇧 *Meaning:* «O Allah, send blessings upon our Master Muhammad, such blessings by which You deliver us from all fears and calamities, fulfill for us all our needs, cleanse us from all sins, raise us to the highest ranks with You, and bring us to the utmost limit of all goodness in life and after death.»\n\n"
+            "4️⃣ *Salawat al-Fatih*\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ الْفَاتِحِ لِمَا أُغْلِقَ، وَالْخَاتِمِ لِمَا سَبَقَ، نَاصِرِ الْحَقِّ بِالْحَقِّ، وَالْهَADِي إِلَىٰ صِرَاطِكَ الْمُسْتَقِيمِ، وَعَلَىٰ آلِهِ حَقَّ قَدْرِهِ وَمِقْدَARِهِ الْعَظِيمِ\n\n"
+            "🇬🇧 *Meaning:* «O Allah, bless our Master Muhammad, the opener of what was closed, the seal of what preceded, the helper of the truth with the truth, and the guide to Your straight path, and bless his family according to his exalted rank and immense stature.»\n\n"
+            "5️⃣ *Short Salawat*\n"
+            "صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ\n\n"
+            "🇬🇧 *Meaning:* «May Allah bless him and grant him peace.»"
         )
     }
 }
@@ -1708,10 +1931,11 @@ def get_reply_menu(user_id, context=None):
     t = TEXTS.get(lang, TEXTS['uz'])
     return ReplyKeyboardMarkup([
         [KeyboardButton(t['btn_video']), KeyboardButton(t['btn_prayer'])],
-        [KeyboardButton(t['btn_pdf_hub']), KeyboardButton(t['btn_exam'])],
-        [KeyboardButton(t['btn_pomodoro']), KeyboardButton(t['btn_schedule_img'])],
-        [KeyboardButton(t['btn_adhkar']), KeyboardButton(t['btn_translit'])],
-        [KeyboardButton(t['btn_timezone_hub']), KeyboardButton(t['btn_lang'])]
+        [KeyboardButton(t['btn_weather']), KeyboardButton(t['btn_pdf_hub'])],
+        [KeyboardButton(t['btn_exam']), KeyboardButton(t['btn_schedule_img'])],
+        [KeyboardButton(t['btn_pomodoro']), KeyboardButton(t['btn_translit'])],
+        [KeyboardButton(t['btn_adhkar']), KeyboardButton(t['btn_timezone_hub'])],
+        [KeyboardButton(t['btn_lang'])]
     ], resize_keyboard=True)
 
 # =====================================================================
@@ -1978,6 +2202,7 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("start", "Botni ishga tushirish"),
             BotCommand("menu", "Asosiy menyu"),
             BotCommand("namoz", "Namoz vaqtlari"),
+            BotCommand("obhavo", "Ob-havo maʼlumoti"),
             BotCommand("pdf", "PDF & Hujjatlar"),
             BotCommand("imtihon", "Imtihonlar taymeri"),
             BotCommand("vaqt", "Vaqt & Joylashuv"),
@@ -1987,6 +2212,7 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("start", "Botu başlat"),
             BotCommand("menu", "Ana menü"),
             BotCommand("namaz", "Namaz vakitleri"),
+            BotCommand("hava", "Hava durumu"),
             BotCommand("pdf", "PDF & Belge araçları"),
             BotCommand("sinav", "Sınav & Geri sayım"),
             BotCommand("saat", "Saat & Konum"),
@@ -1996,6 +2222,7 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("start", "Запустить бота"),
             BotCommand("menu", "Главное меню"),
             BotCommand("namaz", "Время намаза"),
+            BotCommand("weather", "Прогноз погоды"),
             BotCommand("pdf", "PDF и Документы"),
             BotCommand("exam", "Таймер экзаменов"),
             BotCommand("time", "Время и Геолокация"),
@@ -2005,6 +2232,7 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             BotCommand("start", "Start the bot"),
             BotCommand("menu", "Main menu"),
             BotCommand("prayer", "Prayer times"),
+            BotCommand("weather", "Weather forecast"),
             BotCommand("pdf", "PDF & Documents"),
             BotCommand("exam", "Exam countdown"),
             BotCommand("time", "Time & Location"),
@@ -2175,6 +2403,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['mode'] = 'prayer'
         await query.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    # OB-HAVO SHAHARINI O'ZGARTIRISH
+    if data == "change_weather_city":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'weather'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_weather', context),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
         )
@@ -2588,14 +2827,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 1. Menü Butonları Tıklamaları
     btn_keys = {
-        'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_pdf_hub': 'pdf_hub',
-        'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img', 'btn_pomodoro': 'pomodoro',
-        'btn_adhkar': 'adhkar', 'btn_translit': 'translit', 'btn_timezone_hub': 'tz_hub', 'btn_lang': 'lang'
+        'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_weather': 'weather',
+        'btn_pdf_hub': 'pdf_hub', 'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img',
+        'btn_pomodoro': 'pomodoro', 'btn_translit': 'translit', 'btn_adhkar': 'adhkar',
+        'btn_timezone_hub': 'tz_hub', 'btn_lang': 'lang'
     }
     for b_key, mode_val in btn_keys.items():
         allowed_texts = [TEXTS[l].get(b_key, '') for l in TEXTS]
         if b_key == 'btn_translit':
-            allowed_texts.append("🔤 Krill ⇄ Lotin")
+            allowed_texts.extend(["🔤 Krill ⇄ Lotin", "🔤 Kiril ⇄ Latin", "🔤 Кирилл ⇄ Латиница", "🔤 Кириллица ⇄ Латиница"])
         if raw_text in allowed_texts:
             cleanup_user_temp_files(context, user_id)
             if mode_val == 'video':
@@ -2620,6 +2860,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         return
                 context.user_data['mode'] = 'prayer'
                 await update.message.reply_text(get_text(user_id, 'prompt_prayer', context), parse_mode="Markdown")
+            elif mode_val == 'weather':
+                saved_city = get_user_city(user_id)
+                if saved_city:
+                    status = await update.message.reply_text(get_text(user_id, 'weather_loading', context))
+                    try:
+                        w_res = await fetch_weather(saved_city, user_lang)
+                    finally:
+                        try:
+                            await status.delete()
+                        except Exception:
+                            pass
+                    if w_res[0]:
+                        name, admin1, country, c_temp, f_like, hum, wind, code, t_min, t_max = w_res
+                        card = format_weather_card(name, admin1, country, c_temp, f_like, hum, wind, code, t_min, t_max, user_lang)
+                        kb = InlineKeyboardMarkup([
+                            [InlineKeyboardButton(get_text(user_id, 'btn_change_weather_city', context), callback_data="change_weather_city")]
+                        ])
+                        await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
+                        return
+                context.user_data['mode'] = 'weather'
+                await update.message.reply_text(get_text(user_id, 'prompt_weather', context), parse_mode="Markdown")
             elif mode_val == 'pdf_hub':
                 await update.message.reply_text(get_text(user_id, 'prompt_pdf_hub', context), parse_mode="Markdown", reply_markup=get_pdf_hub_keyboard(user_lang))
             elif mode_val == 'exam':
@@ -2811,65 +3072,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if target_dt:
             dt_str = target_dt.strftime("%Y-%m-%d %H:%M")
-            add_user_reminder(user_id, rem_text, dt_str)
-            cleanup_user_temp_files(context, user_id)
-            await update.message.reply_text(f"{get_text(user_id, 'remind_saved', context)}\n\n📌 *{rem_text}*\n⏰ `{dt_str}`", parse_mode="Markdown")
-        else:
-            await update.message.reply_text(get_text(user_id, 'prompt_remind', context), parse_mode="Markdown")
-        return
-
-    # 6. NAMAZ VAKTİ
-    if mode == 'prayer':
-        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text, user_id=user_id)
-        if timings:
-            save_user_city(user_id, d_name)
-            tz_detected = resolve_tz_from_city(raw_text)
-            if tz_detected is not None:
-                save_user_timezone(user_id, tz_detected, locked=True)
-            card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang)
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(get_text(user_id, 'btn_change_prayer_city', context), callback_data="change_prayer_city")]
-            ])
-            await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
-            cleanup_user_temp_files(context, user_id)
-            return
-        await update.message.reply_text(get_text(user_id, 'city_not_found', context))
-        return
-
-    # 7. ÇEVİRİ (KUSURSUZ İKİ YÖNLÜ ÇEVİRİ MOTORU)
-    if mode == 'translit' or len(raw_text.split()) >= 3:
-        if is_mostly_cyrillic(raw_text):
-            await update.message.reply_text(f"🔤 *Lotin:*\n\n{cyrillic_to_latin(raw_text)}", parse_mode="Markdown")
-        else:
-            await update.message.reply_text(f"🔤 *Кирилл:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
-        return
-
-    await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
-
-async def post_init_setup(application):
-    asyncio.create_task(reminders_worker(application))
-
-def main():
-    token = os.environ.get("BOT_TOKEN")
-    if not token:
-        raise ValueError("BOT_TOKEN ortam değişkeni eksik!")
-    load_databases()
-
-    threading.Thread(target=run_health_server, daemon=True).start()
-    threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
-
-    app = ApplicationBuilder().token(token).post_init(post_init_setup).build()
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("menu", menu_command))
-    app.add_handler(CommandHandler("cancel", cancel_command))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Nun Bot 7/24 Kesintisiz Modda Devrede!")
-    app.run_polling(drop_pending_updates=True, timeout=30)
-
-if __name__ == "__main__":
-    main()
+            add_user_reminder(

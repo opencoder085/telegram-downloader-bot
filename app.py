@@ -47,6 +47,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
     filters,
+    TypeHandler,
 )
 import yt_dlp
 
@@ -230,13 +231,19 @@ def remove_admin_id(uid: int) -> tuple:
         return True, "Yönetici başarıyla çıkarıldı."
     return False, "Bu ID yönetici listesinde bulunamadı."
 
+
+async def global_user_tracker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user and not user.is_bot:
+        track_user_activity(user)
+
 def track_user_activity(user):
     global LAST_PROFILE_SAVE_TS
     if not user:
         return
     uid = user.id
     uid_str = str(uid)
-    name = (f"{user.first_name or ''} {user.last_name or ''}").strip() or "User"
+    name = (f"{user.first_name or ''} {user.last_name or ''}").strip() or f"User {uid}"
     username = user.username or ""
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -248,10 +255,18 @@ def track_user_activity(user):
     p['last_active'] = now_str
     USER_PROFILES[uid_str] = p
 
+    # Kullanıcıyı henüz yoksa USER_LANGS içine de kalıcı olarak kaydet
+    if uid_str not in USER_LANGS:
+        tele_lang = getattr(user, 'language_code', None) or 'uz'
+        init_lang = 'tr' if tele_lang.startswith('tr') else ('ru' if tele_lang.startswith('ru') else ('en' if tele_lang.startswith('en') else 'uz'))
+        USER_LANGS[uid_str] = init_lang
+        save_json(LANG_FILE, USER_LANGS)
+
     now_t = time.time()
-    if is_new or (now_t - LAST_PROFILE_SAVE_TS > 30.0):
+    if is_new or (now_t - LAST_PROFILE_SAVE_TS > 15.0):
         LAST_PROFILE_SAVE_TS = now_t
         save_json(USER_PROFILES_FILE, USER_PROFILES)
+        invalidate_users_cache()
 
 def get_ram_usage_mb() -> float:
     try:
@@ -3620,7 +3635,11 @@ def get_all_registered_users() -> list:
 
     all_uids = set()
     for d in (USER_LANGS, USER_TIMEZONES, USER_CITIES, USER_COORDS, USER_EXAMS, USER_REMINDERS, USER_TODOS, USER_PRAYER_NOTIFS, USER_FRIDAY_NOTIFS, USER_PROFILES):
-        all_uids.update(d.keys())
+        all_uids.update(str(k) for k in d.keys())
+    
+    # Yönetici kadrosundaki tüm ID'leri de eksiksiz kullanıcı listesine dahil et
+    for aid in ADMIN_IDS:
+        all_uids.add(str(aid))
 
     users_list = []
     for uid_str in all_uids:
@@ -3776,6 +3795,7 @@ def format_users_directory_page(page: int = 0, page_size: int = 4) -> tuple:
     action_buttons.append(nav_row)
     action_buttons.append([
         InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt"),
+        InlineKeyboardButton("🔄 Eşitle & Güncelle", callback_data="admin_sync_users_prompt"),
         InlineKeyboardButton("🔄 Yenile", callback_data=f"stats_users_page_{page}")
     ])
     action_buttons.append([InlineKeyboardButton("🔙 Ana Yönetici Paneline Dön", callback_data="stats_back_main")])
@@ -4070,6 +4090,89 @@ async def del_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ {msg}", parse_mode="Markdown")
 
 
+
+
+async def sync_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    status_msg = await update.message.reply_text("⏳ Telegram sunucularından tüm kullanıcı profilleri sorgulanıyor ve eşitleniyor...")
+    
+    all_users = get_all_registered_users()
+    updated_count = 0
+    
+    for u in all_users:
+        uid = u['id']
+        uid_str = str(uid)
+        try:
+            chat = await context.bot.get_chat(chat_id=uid)
+            c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {uid}"
+            c_uname = chat.username or ""
+            
+            p = USER_PROFILES.get(uid_str, {})
+            p['id'] = uid
+            p['name'] = c_name
+            p['username'] = c_uname
+            if 'last_active' not in p or p['last_active'] == 'Kayıtlı (Pasif)':
+                p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            USER_PROFILES[uid_str] = p
+            updated_count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            pass
+            
+    save_json(USER_PROFILES_FILE, USER_PROFILES)
+    invalidate_users_cache()
+    
+    final_users = get_all_registered_users()
+    await status_msg.edit_text(
+        f"✅ *KULLANICI VERİTABANI EŞİTLENDİ!*\n\n"
+        f"👥 Toplam Tespit Edilen Kullanıcı: `{len(final_users)}`\n"
+        f"🔄 Profili Güncellenen: `{updated_count}`\n\n"
+        f"Artık tüm kullanıcılar profilleriyle birlikte listede görünmektedir.",
+        parse_mode="Markdown"
+    )
+
+async def add_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("ℹ️ *Kullanım:* `/adduser <Kullanıcı_ID>`\n\n_Örnek:_ `/adduser 123456789`", parse_mode="Markdown")
+        return
+    new_uid = int(args[0])
+    uid_str = str(new_uid)
+    
+    try:
+        chat = await context.bot.get_chat(chat_id=new_uid)
+        c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"Kullanıcı {new_uid}"
+        c_uname = chat.username or ""
+    except Exception:
+        c_name = f"Kullanıcı {new_uid}"
+        c_uname = ""
+        
+    p = USER_PROFILES.get(uid_str, {})
+    p['id'] = new_uid
+    p['name'] = c_name
+    p['username'] = c_uname
+    p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    USER_PROFILES[uid_str] = p
+    
+    if uid_str not in USER_LANGS:
+        USER_LANGS[uid_str] = "tr"
+        save_json(LANG_FILE, USER_LANGS)
+        
+    save_json(USER_PROFILES_FILE, USER_PROFILES)
+    invalidate_users_cache()
+    
+    await update.message.reply_text(
+        f"✅ *Kullanıcı Başarıyla Eklendi!*\n\n"
+        f"👤 İsim: \u200e{safe_md(c_name)}\u200e\n"
+        f"🆔 ID: `{new_uid}`\n"
+        f"🔗 Kullanıcı Adı: @{c_uname if c_uname else 'Yok'}",
+        parse_mode="Markdown"
+    )
 
 async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4378,6 +4481,39 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             BROADCAST_ABORT_FLAG = True
             await query.answer("🛑 Duyuru gönderimi durduruluyor...", show_alert=True)
             await notify_admin_audit_log(context.bot, user_id, "Devam eden toplu duyuru gönderimini acil olarak durdurdu.")
+        return
+
+    if data == "admin_sync_users_prompt":
+        if user_id in ADMIN_IDS:
+            await query.answer("⏳ Kullanıcılar taranıp eşitleniyor...", show_alert=False)
+            status_m = await query.message.reply_text("⏳ Telegram sunucularından tüm kullanıcılar taranıyor...")
+            all_u = get_all_registered_users()
+            up_cnt = 0
+            for u in all_u:
+                uid = u['id']
+                uid_str = str(uid)
+                try:
+                    chat = await context.bot.get_chat(chat_id=uid)
+                    c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {uid}"
+                    c_uname = chat.username or ""
+                    p = USER_PROFILES.get(uid_str, {})
+                    p['id'] = uid
+                    p['name'] = c_name
+                    p['username'] = c_uname
+                    if 'last_active' not in p or p['last_active'] == 'Kayıtlı (Pasif)':
+                        p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                    USER_PROFILES[uid_str] = p
+                    up_cnt += 1
+                except Exception:
+                    pass
+            save_json(USER_PROFILES_FILE, USER_PROFILES)
+            invalidate_users_cache()
+            try:
+                await status_m.delete()
+            except Exception:
+                pass
+            text, kb = format_users_directory_page(0)
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
         return
 
     if data == "admin_search_prompt":
@@ -5818,6 +5954,7 @@ def main():
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).post_init(post_init_setup).build()
+    app.add_handler(TypeHandler(Update, global_user_tracker), group=-1)
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
@@ -5831,6 +5968,8 @@ def main():
     app.add_handler(CommandHandler("broadcast", admin_broadcast_command))
     app.add_handler(CommandHandler("backup", backup_command))
     app.add_handler(CommandHandler(["find", "search"], find_command))
+    app.add_handler(CommandHandler("sync", sync_users_command))
+    app.add_handler(CommandHandler("adduser", add_user_command))
     app.add_handler(CommandHandler("restore", restore_command))
     app.add_handler(CommandHandler("restart", restart_command))
     app.add_handler(CommandHandler("ban", ban_command))

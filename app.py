@@ -19,6 +19,8 @@ import urllib.request
 import calendar
 import html as html_lib
 import resource
+import collections
+import traceback
 from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import httpx
@@ -36,11 +38,13 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     KeyboardButton,
     BotCommand,
     BotCommandScopeChat,
     BotCommandScopeDefault,
 )
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -77,6 +81,19 @@ RE_SUPPORTED_PLATFORMS = [
 # SUNUCU METRİKLERİ & BAŞLANGIÇ ZAMANI
 # =====================================================================
 BOT_START_TIME = time.time()
+
+# =====================================================================
+# SİSTEM GÜNLÜĞÜ (RING BUFFER LOGGING)
+# =====================================================================
+SYSTEM_LOGS = collections.deque(maxlen=40)
+
+def add_system_log(msg: str, level: str = "INFO"):
+    now_str = datetime.now().strftime("%H:%M:%S")
+    entry = f"[{now_str}] [{level}] {msg}"
+    SYSTEM_LOGS.append(entry)
+    print(f"[NUN_LOG] {entry}")
+
+add_system_log("Nun Bot altyapısı ve iş parçacıkları başlatıldı.", level="INIT")
 
 # =====================================================================
 # GLOBAL VE KALICI HTTP BAĞLANTI HAVUZU (KEEP-ALIVE POOL)
@@ -242,14 +259,22 @@ def track_user_activity(user):
     uid = user.id
     uid_str = str(uid)
     name = (f"{user.first_name or ''} {user.last_name or ''}").strip() or f"User {uid}"
-    username = user.username or ""
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     is_new = uid_str not in USER_PROFILES
     p = USER_PROFILES.get(uid_str, {})
     p['id'] = uid
-    p['name'] = name
-    p['username'] = username
+    if name:
+        p['name'] = name
+    elif 'name' not in p:
+        p['name'] = f"User {uid}"
+
+    # Username korumasi: Telegram'dan dolu gelirse guncelle, bos gelirse mevcut kullanici adini asla ezme!
+    if getattr(user, 'username', None):
+        p['username'] = user.username.lstrip('@')
+    elif 'username' not in p:
+        p['username'] = ""
+
     p['last_active'] = now_str
     USER_PROFILES[uid_str] = p
 
@@ -450,21 +475,23 @@ def load_databases():
         except Exception:
             MAINTENANCE_MODE = False
 
-def _write_json_to_disk(fname, data):
+def _write_json_to_disk(fname, payload_str):
     try:
         tmp_fname = f"{fname}.tmp"
         with open(tmp_fname, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
+            f.write(payload_str)
         os.replace(tmp_fname, fname)
     except Exception as e:
-        print(f"save_json hatasi ({fname}): {e}")
+        add_system_log(f"save_json disk hatasi ({fname}): {e}", level="WARN")
 
 def save_json(fname, data):
     try:
+        payload_str = json.dumps(data, ensure_ascii=False)
         loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, _write_json_to_disk, fname, data)
+        loop.run_in_executor(None, _write_json_to_disk, fname, payload_str)
     except RuntimeError:
-        _write_json_to_disk(fname, data)
+        payload_str = json.dumps(data, ensure_ascii=False)
+        _write_json_to_disk(fname, payload_str)
 
 def save_user_lang(user_id, lang_code: str):
     USER_LANGS[str(user_id)] = lang_code
@@ -700,18 +727,29 @@ def cleanup_user_temp_files(context, user_id):
     context.user_data.pop('direct_file_path', None)
     context.user_data.pop('exam_draft_title', None)
     context.user_data.pop('exam_draft_dt', None)
+    context.user_data.pop('prayer_candidates', None)
+    context.user_data.pop('admin_ban_target', None)
+    context.user_data.pop('admin_ban_mode', None)
+    context.user_data.pop('admin_dm_target', None)
+    context.user_data.pop('admin_broadcast_mode', None)
+    context.user_data.pop('admin_search_mode', None)
+    context.user_data.pop('admin_add_mode', None)
+    context.user_data.pop('admin_restore_mode', None)
+    context.user_data.pop('pending_broadcast_text', None)
+    context.user_data.pop('broadcast_target_segment', None)
     context.user_data['mode'] = 'auto'
 
 # =====================================================================
 # BAN, BAKIM, DİSK TEMİZLEME VE YEDEKLEME MOTORU
 # =====================================================================
 
-def ban_user(user_id: int, reason: str = "") -> bool:
+def ban_user(user_id: int, reason: str = "", mode: str = "soft") -> bool:
     global BANNED_USERS
     if user_id in ADMIN_IDS:
         return False
     BANNED_USERS[str(user_id)] = {
         "reason": reason or "Kural ihlali / Spam",
+        "mode": mode, # 'soft' (Standart Ban) veya 'hard' (Tam Men Etme)
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     }
     save_json(BANNED_USERS_FILE, BANNED_USERS)
@@ -731,113 +769,42 @@ def unban_user(user_id: int) -> bool:
 def is_user_banned(user_id: int) -> bool:
     return str(user_id) in BANNED_USERS
 
-def toggle_maintenance_mode() -> bool:
-    global MAINTENANCE_MODE
-    MAINTENANCE_MODE = not MAINTENANCE_MODE
-    save_json(MAINTENANCE_FILE, {"active": MAINTENANCE_MODE})
-    return MAINTENANCE_MODE
+def get_user_ban_info(user_id: int) -> dict:
+    return BANNED_USERS.get(str(user_id), {})
 
-def is_maintenance_active() -> bool:
-    return MAINTENANCE_MODE
-
-def get_disk_usage_info() -> str:
-    try:
-        total, used, free = shutil.disk_usage("/")
-        used_gb = used / (1024**3)
-        total_gb = total / (1024**3)
-        pct = (used / total) * 100
-        return f"{used_gb:.1f} GB / {total_gb:.1f} GB (%{pct:.1f})"
-    except Exception:
-        return "Bilinmiyor"
-
-def cleanup_orphaned_temp_files(max_age_seconds: int = 1800) -> float:
-    freed_bytes = 0
-    now = time.time()
-    target_dirs = [tempfile.gettempdir(), "/tmp", os.getcwd()]
-    for d in target_dirs:
-        if os.path.exists(d):
-            try:
-                for f in os.listdir(d):
-                    fp = os.path.join(d, f)
-                    if os.path.isfile(fp):
-                        ext = os.path.splitext(f)[1].lower()
-                        if ext in ('.mp4', '.jpg', '.jpeg', '.png', '.pdf', '.part', '.ytdl', '.tmp'):
-                            try:
-                                if now - os.path.getmtime(fp) >= max_age_seconds:
-                                    sz = os.path.getsize(fp)
-                                    os.remove(fp)
-                                    freed_bytes += sz
-                            except Exception:
-                                pass
-            except Exception:
-                pass
-    return freed_bytes / (1024 * 1024)
-
-def create_database_backup_zip() -> str:
-    timestamp_str = datetime.now().strftime("%Y_%m_%d_%H%M%S")
-    zip_filename = os.path.join(tempfile.gettempdir(), f"nun_bot_backup_{timestamp_str}.zip")
-    db_files = [
-        LANG_FILE, TZ_FILE, TZ_LOCK_FILE, EXAMS_FILE, REMINDERS_FILE, CITY_FILE,
-        COORDS_FILE, PRAYER_NOTIFS_FILE, FRIDAY_NOTIFS_FILE, TODOS_FILE,
-        RECENT_CITIES_FILE, USER_PROFILES_FILE, ADMINS_FILE, BANNED_USERS_FILE,
-        MAINTENANCE_FILE
-    ]
-    with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in db_files:
-            if os.path.exists(f):
-                zf.write(f)
-    return zip_filename
-
-async def send_backup_to_admins(bot, trigger_type: str = "Manuel"):
-    zip_path = create_database_backup_zip()
-    if not os.path.exists(zip_path):
-        return False
-    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    file_sz_kb = os.path.getsize(zip_path) / 1024.0
-    caption = (
-        f"💾 *NUN PROJECT // VERİTABANI YEDEK DOSYASI*\n\n"
-        f"📌 Tür: `{trigger_type}`\n"
-        f"📅 Tarih: `{now_str}`\n"
-        f"📦 Boyut: `{file_sz_kb:.1f} KB`\n\n"
-        f"_Tüm kullanıcılar, sınavlar, ezan bildirimleri ve to-do kayıtları güvenle paketlendi._"
+async def execute_hard_ban(bot, target_uid: int, reason: str = ""):
+    uid_str = str(target_uid)
+    ban_user(target_uid, reason=reason, mode="hard")
+    USER_PRAYER_NOTIFS.pop(uid_str, None)
+    USER_FRIDAY_NOTIFS.pop(uid_str, None)
+    USER_REMINDERS.pop(uid_str, None)
+    save_json(PRAYER_NOTIFS_FILE, USER_PRAYER_NOTIFS)
+    save_json(FRIDAY_NOTIFS_FILE, USER_FRIDAY_NOTIFS)
+    save_json(REMINDERS_FILE, USER_REMINDERS)
+    farewell_msg = (
+        "⛔ *NUN PROJECT // ERİŞİM KALICI OLARAK SONLANDIRILDI*\n\n"
+        "Bot kullanımınız ve erişiminiz kuralları ihlal ettiğiniz gerekçesiyle yönetim tarafından kalıcı olarak durdurulmuştur.\n\n"
+        "Tüm bildirimleriniz ve bot menünüz tamamen kaldırılmıştır."
     )
-    success = False
-    for aid in ADMIN_IDS:
-        try:
-            with open(zip_path, "rb") as doc_f:
-                await bot.send_document(
-                    chat_id=aid,
-                    document=doc_f,
-                    filename=os.path.basename(zip_path),
-                    caption=caption,
-                    parse_mode="Markdown"
-                )
-            success = True
-        except Exception:
-            pass
     try:
-        os.remove(zip_path)
+        await bot.send_message(chat_id=target_uid, text=farewell_msg, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
     except Exception:
         pass
-    return success
+    try:
+        await bot.delete_my_commands(scope=BotCommandScopeChat(chat_id=target_uid))
+    except Exception:
+        pass
 
-async def nightly_maintenance_worker(app):
-    while True:
-        await asyncio.sleep(60)
-        now = datetime.now()
-        now_date_str = now.strftime("%Y-%m-%d")
-
-        # 1. Gece 03:00 - 03:15 arası otomatik veritabanı yedeği al ve yöneticilere gönder
-        if now.hour == 3 and (0 <= now.minute <= 15):
-            last_b = NIGHTLY_BACKUP_TRACK.get("last_nightly_backup", "")
-            if last_b != now_date_str:
-                NIGHTLY_BACKUP_TRACK["last_nightly_backup"] = now_date_str
-                save_json(NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK)
-                await send_backup_to_admins(app.bot, trigger_type="Otomatik Gece Yedeği (03:00)")
-
-        # 2. Her saat başı geçici çöp dosyaları otomatik temizle
-        if now.minute == 0:
-            cleanup_orphaned_temp_files(max_age_seconds=1800)
+async def execute_soft_ban(bot, target_uid: int, reason: str = ""):
+    ban_user(target_uid, reason=reason, mode="soft")
+    notice_msg = (
+        "⚠️ *NUN PROJECT // HESAP KISITLAMASI*\n\n"
+        "Bot erişiminiz standart olarak kısıtlanmıştır. Komut ve butonlar geçici olarak devre dışıdır."
+    )
+    try:
+        await bot.send_message(chat_id=target_uid, text=notice_msg, parse_mode="Markdown")
+    except Exception:
+        pass
 
 # =====================================================================
 # DENETİM GÜNLÜĞÜ, GERİ YÜKLEME, ARAMA VE YENİDEN BAŞLATMA SİSTEMİ
@@ -1153,6 +1120,77 @@ def generate_schedule_wallpaper(schedule_data: dict, output_path: str, user_lang
     draw.text((width // 2 - 200, height - 70), footer_text, fill=(100, 100, 100), font=font_sub)
     img.save(output_path, quality=95)
     return True
+
+def check_and_repair_databases() -> tuple:
+    db_list = [
+        (LANG_FILE, USER_LANGS),
+        (TZ_FILE, USER_TIMEZONES),
+        (TZ_LOCK_FILE, USER_TZ_LOCKED),
+        (EXAMS_FILE, USER_EXAMS),
+        (REMINDERS_FILE, USER_REMINDERS),
+        (CITY_FILE, USER_CITIES),
+        (COORDS_FILE, USER_COORDS),
+        (PRAYER_NOTIFS_FILE, USER_PRAYER_NOTIFS),
+        (FRIDAY_NOTIFS_FILE, USER_FRIDAY_NOTIFS),
+        (TODOS_FILE, USER_TODOS),
+        (RECENT_CITIES_FILE, USER_RECENT_CITIES),
+        (USER_PROFILES_FILE, USER_PROFILES),
+        (BANNED_USERS_FILE, BANNED_USERS),
+        (NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK),
+        (MAINTENANCE_FILE, None)
+    ]
+    checked_count = 0
+    repaired_count = 0
+    total_records = 0
+
+    for fname, var_ref in db_list:
+        checked_count += 1
+        needs_write = False
+        if not os.path.exists(fname):
+            save_json(fname, var_ref if var_ref is not None else {"active": False})
+            repaired_count += 1
+        else:
+            try:
+                with open(fname, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if not content:
+                        raise ValueError("Boş dosya")
+                    parsed = json.loads(content)
+                    if var_ref is not None:
+                        total_records += len(parsed)
+            except Exception:
+                # Bozuk dosyayı onar ve sıfırla
+                fallback_data = var_ref if var_ref is not None else {"active": False}
+                save_json(fname, fallback_data)
+                repaired_count += 1
+                needs_write = True
+
+    # Kullanıcı tabloları arası senkronizasyon (USER_LANGS / USER_PROFILES)
+    for uid_str in list(USER_LANGS.keys()):
+        if uid_str not in USER_PROFILES:
+            try:
+                uid_int = int(uid_str)
+                USER_PROFILES[uid_str] = {
+                    'id': uid_int,
+                    'name': f"User {uid_int}",
+                    'username': "",
+                    'last_active': "Kayıtlı (Pasif)"
+                }
+            except Exception:
+                pass
+    save_json(USER_PROFILES_FILE, USER_PROFILES)
+    invalidate_users_cache()
+
+    status_msg = (
+        "🩺 *NUN PROJECT // VERİTABANI SAĞLIK RAPORU*\n\n"
+        f"📁 Taranan DB Dosyaları: `{checked_count}` adet\n"
+        f"🛠️ Onarılan / Sıfırlanan: `{repaired_count}` adet\n"
+        f"📊 Toplam Kayıtlı Veri Öğesi: `{total_records}`\n"
+        f"👥 Eşitlenmiş Kullanıcı Profili: `{len(USER_PROFILES)}`\n\n"
+        "✅ _Tüm JSON veri yapıları sağlıklı, eşzamanlı ve kullanıma hazırdır._"
+    )
+    add_system_log(f"DB Sağlık taraması tamamlandı: {checked_count} dosya kontrol edildi, {repaired_count} onarıldı.")
+    return True, status_msg
 
 # =====================================================================
 # POMODORO & ARKA PLAN GÖREVLERİ (HATA DÜZELTMELERİ YAPILDI)
@@ -3496,11 +3534,37 @@ def download_media_sync(url: str, download_dir: str) -> dict:
                 return fallback_x
 
         raise e
-
 # =====================================================================
 # DİNAMİK BOT KOMUTLARI
 # =====================================================================
 USER_COMMANDS_CACHE = {}
+
+def format_system_logs_card() -> tuple:
+    logs_list = list(SYSTEM_LOGS)
+    if not logs_list:
+        log_text = "Henüz kaydedilmiş bir hata/olay logu bulunmuyor."
+    else:
+        log_text = "\n".join(logs_list[-20:])
+
+    card = (
+        "📋 *NUN PROJECT // CANLI SİSTEM & HATA GÜNLÜĞÜ*\n"
+        f"Kayıtlı Olay Sayısı: `{len(logs_list)}` (Hafıza sınırı: Son 40)\n\n"
+        f"```{log_text}```\n\n"
+        "💡 _Not: Beklenmedik hatalar ve arka plan işlemleri buraya anlık işlenir._"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Logları Yenile", callback_data="admin_view_logs")],
+        [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
+    ])
+    return card, kb
+
+async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    card, kb = format_system_logs_card()
+    await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
+
 
 async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: int, lang: str):
     is_admin = user_id in ADMIN_IDS
@@ -3566,6 +3630,7 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
             cmds.append(BotCommand("backup", "💾 Veritabanı Yedeği Al"))
             cmds.append(BotCommand("restore", "📥 Yedekten Geri Yükle"))
             cmds.append(BotCommand("admins", "👑 Yönetici Kadrosu & Yetkiler"))
+            cmds.append(BotCommand("logs", "📋 Sistem & Hata Günlüğü"))
             cmds.append(BotCommand("restart", "🔄 Botu Yeniden Başlat"))
         bot = getattr(context, 'bot', context)
         await bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id=user_id))
@@ -3719,12 +3784,107 @@ def format_admin_stats_panel() -> tuple:
         [InlineKeyboardButton("📢 Segmentli Duyuru Gönder", callback_data="admin_broadcast_prompt"), InlineKeyboardButton("💾 Yedek Al", callback_data="admin_backup_download")],
         [InlineKeyboardButton("📥 Yedekten Geri Yükle", callback_data="admin_restore_prompt"), InlineKeyboardButton("👑 Yöneticileri Yönet", callback_data="admin_manage_panel")],
         [InlineKeyboardButton(f"⛔ Banlı Üyeler ({banned_count})", callback_data="admin_banned_list"), InlineKeyboardButton("🧹 Çöpü Temizle", callback_data="admin_clean_disk")],
+        [InlineKeyboardButton("📋 Sistem Logları", callback_data="admin_view_logs"), InlineKeyboardButton("🩺 DB Sağlık & Onarım", callback_data="admin_db_health")],
         [InlineKeyboardButton(maint_btn_lbl, callback_data="admin_toggle_maintenance"), InlineKeyboardButton("🔄 Botu Yeniden Başlat", callback_data="admin_restart_prompt")],
         [InlineKeyboardButton("🔄 Paneli Yenile", callback_data="stats_refresh"), InlineKeyboardButton("❌ Kapat", callback_data="admin_panel_close")]
     ])
     return report, kb
 
-def format_users_directory_page(page: int = 0, page_size: int = 4) -> tuple:
+def format_user_detail_card(target_uid: int) -> tuple:
+    uid_str = str(target_uid)
+    p = USER_PROFILES.get(uid_str, {})
+    name = p.get('name') or f"User {target_uid}"
+    uname = p.get('username') or ""
+    uname_str = f"@{uname}" if uname else "_(Yok)_"
+    la = p.get('last_active') or "Bilinmiyor"
+    lang_str = (USER_LANGS.get(uid_str) or "uz").upper()
+    city_str = USER_CITIES.get(uid_str) or "Belirtilmedi"
+    tz_val = USER_TIMEZONES.get(uid_str, 0)
+    tz_str = f"UTC{'+' if tz_val >= 0 else ''}{tz_val}" if uid_str in USER_TIMEZONES else "Belirtilmedi"
+    p_notif = USER_PRAYER_NOTIFS.get(uid_str, {}).get("enabled", False)
+    p_status = "🔔 Açık" if p_notif else "🔕 Kapalı"
+
+    is_admin = target_uid in ADMIN_IDS
+    is_banned = is_user_banned(target_uid)
+    ban_info = get_user_ban_info(target_uid) if is_banned else None
+
+    if is_admin:
+        status_str = "👑 Yönetici"
+    elif is_banned:
+        b_mode = ban_info.get('mode', 'soft') if ban_info else 'soft'
+        status_str = f"⛔ Engelli ({'🔴 Tam Men Edilmiş' if b_mode == 'hard' else '🟡 Standart Ban'})"
+    else:
+        status_str = "🟢 Aktif"
+
+    card_lines = [
+        "👤 *NUN PROJECT // KULLANICI YÖNETİM KARTI*",
+        "",
+        f"▫️ *İsim:* \u200e{safe_md(name)}\u200e",
+        f"▫️ *Kullanıcı Adı:* {uname_str}",
+        f"▫️ *Telegram ID:* `{target_uid}`",
+        f"▫️ *Şehir:* `{city_str}` | *Dil:* `{lang_str}` | *Saat:* `{tz_str}`",
+        f"▫️ *Ezan Bildirimi:* {p_status}",
+        f"▫️ *Son Aktiflik:* `{la[:19]}`",
+        f"▫️ *Durum:* {status_str}",
+    ]
+    if is_banned and ban_info:
+        card_lines.append(f"▫️ *Ban Sebebi:* _{safe_md(ban_info.get('reason'))}_")
+        card_lines.append(f"▫️ *Ban Tarihi:* `{ban_info.get('timestamp')}`")
+
+    card_text = "\n".join(card_lines)
+
+    btns = []
+    # 1. Satır: İletişim
+    btns.append([
+        InlineKeyboardButton("✉️ Bot İçi DM", callback_data=f"admin_dm_start_{target_uid}"),
+        InlineKeyboardButton("⚡ 1:1 Sohbet Aç", callback_data=f"admin_direct_invite_{target_uid}")
+    ])
+
+    # 2. Satır: Ban / Unban
+    if is_banned:
+        btns.append([InlineKeyboardButton("✅ Engeli Kaldır (Unban)", callback_data=f"admin_unban_{target_uid}")])
+    else:
+        btns.append([InlineKeyboardButton("⛔ Kullanıcıyı Engelle (Ban)", callback_data=f"admin_ban_choose_{target_uid}")])
+
+    # 3. Satır: Yetkilendirme
+    if is_admin:
+        if len(ADMIN_IDS) > 1:
+            btns.append([InlineKeyboardButton("🔻 Yöneticilikten Çıkar", callback_data=f"admin_demote_{target_uid}")])
+    else:
+        btns.append([InlineKeyboardButton("👑 Yönetici Yetkisi Ver", callback_data=f"admin_promote_{target_uid}")])
+
+    # 4. Satır: Canlı Bilgileri Çek
+    btns.append([InlineKeyboardButton("🔄 Telegram Canlı Bilgilerini Çek (get_chat)", callback_data=f"admin_fetch_chat_{target_uid}")])
+
+    # 5. Satır: Geri Dönüş
+    btns.append([InlineKeyboardButton("🔙 Kullanıcılar Listesine Dön", callback_data="stats_users_page_0")])
+
+    return card_text, InlineKeyboardMarkup(btns)
+
+def format_user_ban_options_card(target_uid: int) -> tuple:
+    p = USER_PROFILES.get(str(target_uid), {})
+    name = safe_md(p.get('name') or f"User {target_uid}")
+    text = (
+        f"⛔ *KULLANICI ENGELLEME SEÇENEKLERİ*\n\n"
+        f"Hedef Kullanıcı: *\u200e{name}\u200e* (`{target_uid}`)\n\n"
+        f"Lütfen uygulamak istediğiniz engelleme türünü seçiniz:\n\n"
+        f"1️⃣ *🟡 Standart Ban (Botta Bırak):*\n"
+        f"Kullanıcı engellenir ve mesajlarına yanıt verilmez. Ancak klavyesi ve bildirim kayıtları silinmez. İleride engel kaldırılırsa ayarları korunur.\n\n"
+        f"2️⃣ *🔴 Tam Men Et (Bottan Tamamen At):*\n"
+        f"Kullanıcının telefonundaki bot klavyesi (`ReplyKeyboardRemove`) ve komut menüsü silinir, tüm ezan ve hatırlatıcı kayıtları temizlenir ve kullanıcı bottan tamamen men edilir."
+    )
+    btns = [
+        [InlineKeyboardButton("🟡 Standart Ban (Botta Bırak)", callback_data=f"admin_ban_soft_prompt_{target_uid}")],
+        [InlineKeyboardButton("🔴 Tam Men Et (Bottan At)", callback_data=f"admin_ban_hard_prompt_{target_uid}")],
+        [
+            InlineKeyboardButton("⚡ Hızlı Standart Ban", callback_data=f"admin_ban_soft_quick_{target_uid}"),
+            InlineKeyboardButton("⚡ Hızlı Tam Men", callback_data=f"admin_ban_hard_quick_{target_uid}")
+        ],
+        [InlineKeyboardButton("❌ İptal / Kullanıcıya Dön", callback_data=f"admin_user_view_{target_uid}")]
+    ]
+    return text, InlineKeyboardMarkup(btns)
+
+def format_users_directory_page(page: int = 0, page_size: int = 6) -> tuple:
     all_users = get_all_registered_users()
     total_users = len(all_users)
     total_pages = max(1, (total_users + page_size - 1) // page_size)
@@ -3736,41 +3896,34 @@ def format_users_directory_page(page: int = 0, page_size: int = 4) -> tuple:
 
     lines = [
         f"👥 *NUN PROJECT // KAYITLI KULLANICILAR DİZİNİ*",
-        f"Toplam: `{total_users}` kullanıcı | Sayfa: `{page + 1}/{total_pages}`\n"
+        f"Toplam: `{total_users}` kullanıcı | Sayfa: `{page + 1}/{total_pages}`\n",
+        f"_İşlem yapmak istediğiniz kullanıcının butonuna dokunun:_\n"
     ]
 
-    action_buttons = []
+    user_buttons = []
     for idx, u in enumerate(page_users, start=start_idx + 1):
         uid = u['id']
         name_clean = safe_md(u['name'])
-        uname_str = f"@{u['username']}" if u['username'] else "_(Username yok)_"
+        uname_str = f"(@{u['username']})" if u['username'] else ""
         la = u['last_active'][:16] if u['last_active'] else "Pasif"
-        city_str = u['city'] or "Belirtilmedi"
-        lang_str = (u['lang'] or "uz").upper()
-        p_status = "🔔 Açık" if u['prayer_active'] else "🔕 Kapalı"
+        b_tag = ""
+        if uid in ADMIN_IDS:
+            b_tag = " [👑]"
+        elif is_user_banned(uid):
+            b_info = get_user_ban_info(uid)
+            b_tag = " [🔴]" if (b_info and b_info.get('mode') == 'hard') else " [🟡]"
 
         lines.append(
-            f"*{idx}.* \u200e{name_clean}\u200e — {uname_str}\n"
-            f"   🆔 ID: `{uid}`\n"
-            f"   📍 Şehir: `{city_str}` | Dil: `{lang_str}` | Ezan: `{p_status}`\n"
-            f"   🕒 Son Aktif: `{la}`\n"
-            f"   💬 Hızlı DM: `/msg_{uid}`\n"
+            f"*{idx}.* \u200e{name_clean}\u200e {uname_str}{b_tag}\n"
+            f"   🆔 ID: `{uid}` | Son: `{la}`"
         )
-        
-        u_short_name = (u['name'] or str(uid))[:12]
-        row_btns = [
-            InlineKeyboardButton(f"⚡ 1:1 Özel Sohbet Başlat", callback_data=f"admin_direct_invite_{uid}"),
-            InlineKeyboardButton(f"✉️ Bot İçi DM Gönder", callback_data=f"admin_dm_start_{uid}")
-        ]
-        action_buttons.append(row_btns)
-        user_admin_row = []
-        if uid not in ADMIN_IDS:
-            if is_user_banned(uid):
-                user_admin_row.append(InlineKeyboardButton(f"✅ Engeli Kaldır ({uid})", callback_data=f"admin_unban_{uid}"))
-            else:
-                user_admin_row.append(InlineKeyboardButton(f"⛔ Engelle ({uid})", callback_data=f"admin_ban_prompt_{uid}"))
-            user_admin_row.append(InlineKeyboardButton(f"👑 Yönetici Yap", callback_data=f"admin_promote_{uid}"))
-            action_buttons.append(user_admin_row)
+
+        btn_label = f"👤 {idx}. {(u['name'] or str(uid))[:15]} {uname_str[:12]}"
+        user_buttons.append([InlineKeyboardButton(btn_label.strip(), callback_data=f"admin_user_view_{uid}")])
+
+    lines.append("\n💡 _Simgeler: [👑] Yönetici | [🟡] Standart Ban | [🔴] Tam Men_")
+
+    action_buttons = list(user_buttons)
 
     nav_row = []
     if page > 0:
@@ -3779,7 +3932,9 @@ def format_users_directory_page(page: int = 0, page_size: int = 4) -> tuple:
     if page < total_pages - 1:
         nav_row.append(InlineKeyboardButton("Sonraki ▶️", callback_data=f"stats_users_page_{page + 1}"))
 
-    action_buttons.append(nav_row)
+    if nav_row:
+        action_buttons.append(nav_row)
+
     action_buttons.append([
         InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt"),
         InlineKeyboardButton("🔄 Eşitle & Güncelle", callback_data="admin_sync_users_prompt"),
@@ -3886,6 +4041,14 @@ async def run_segmented_broadcast(bot, admin_id: int, text: str, target_segment:
             await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
             success_count += 1
             await asyncio.sleep(0.04)
+        except RetryAfter as e:
+            add_system_log(f"Telegram FloodControl (RetryAfter {e.retry_after}s) beklemede...")
+            await asyncio.sleep(e.retry_after + 0.5)
+            try:
+                await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
+                success_count += 1
+            except Exception:
+                fail_count += 1
         except Exception:
             fail_count += 1
 
@@ -3921,6 +4084,14 @@ async def run_broadcast(bot, admin_id: int, text: str, reply_to_message=None):
             await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
             success_count += 1
             await asyncio.sleep(0.05)
+        except RetryAfter as e:
+            add_system_log(f"Telegram FloodControl (RetryAfter {e.retry_after}s) beklemede...")
+            await asyncio.sleep(e.retry_after + 0.5)
+            try:
+                await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
+                success_count += 1
+            except Exception:
+                fail_count += 1
         except Exception:
             fail_count += 1
     
@@ -4238,14 +4409,30 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args or not args[0].isdigit():
-        await update.message.reply_text("ℹ️ *Kullanım:* `/ban <Kullanıcı_ID> [Sebep]`\n\n_Örnek:_ `/ban 123456789 Spam gönderimi`", parse_mode="Markdown")
+        await update.message.reply_text("ℹ️ *Kullanım:* `/ban <Kullanıcı_ID> [soft|hard] [Sebep]`\n\n_Örnek:_ `/ban 123456789 hard Spam gönderimi`", parse_mode="Markdown")
         return
     target_uid = int(args[0])
-    reason = " ".join(args[1:]) if len(args) > 1 else "Kural ihlali"
-    if ban_user(target_uid, reason):
-        await update.message.reply_text(f"⛔ `{target_uid}` ID'li kullanıcı engellendi.\nSebep: _{safe_md(reason)}_", parse_mode="Markdown")
-    else:
+    if target_uid in ADMIN_IDS:
         await update.message.reply_text("⚠️ Yöneticiler engellenemez.")
+        return
+    mode = "soft"
+    reason = "Kural ihlali"
+    if len(args) > 1:
+        if args[1].lower() in ("hard", "tam", "at", "kick"):
+            mode = "hard"
+            reason = " ".join(args[2:]) if len(args) > 2 else "Kural ihlali (Tam Men)"
+        elif args[1].lower() in ("soft", "standart", "beklet"):
+            mode = "soft"
+            reason = " ".join(args[2:]) if len(args) > 2 else "Kural ihlali (Standart)"
+        else:
+            reason = " ".join(args[1:])
+    
+    if mode == "hard":
+        await execute_hard_ban(context.bot, target_uid, reason)
+        await update.message.reply_text(f"🔴 `{target_uid}` ID'li kullanıcı *TAMAMEN MEN EDİLDİ (Bottan Atıldı)*.\nSebep: _{safe_md(reason)}_", parse_mode="Markdown")
+    else:
+        await execute_soft_ban(context.bot, target_uid, reason)
+        await update.message.reply_text(f"🟡 `{target_uid}` ID'li kullanıcı *STANDART BANLANDI (Botta Bırakıldı)*.\nSebep: _{safe_md(reason)}_", parse_mode="Markdown")
 
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4331,6 +4518,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = get_prayer_hub_keyboard(user_id, u_lang)
         await update.message.reply_text(p_card, parse_mode="Markdown", reply_markup=kb)
 
+
 # =====================================================================
 # CALLBACK QUERY İŞLEYİCİSİ (RATE LIMITING KORUMALI)
 # =====================================================================
@@ -4362,7 +4550,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    await query.answer()
+    answered = False
+    async def safe_answer(text=None, show_alert=False):
+        nonlocal answered
+        if not answered:
+            try:
+                if text:
+                    await query.answer(text=text, show_alert=show_alert)
+                else:
+                    await query.answer()
+                answered = True
+            except Exception:
+                pass
+
     data = query.data
     user_lang = get_user_lang(user_id, context)
     t = TEXTS.get(user_lang, TEXTS['uz'])
@@ -4525,11 +4725,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "admin_confirm_restart":
         if user_id in ADMIN_IDS:
+            await safe_answer()
             await query.message.edit_text("🔄 *Bot yeniden başlatılıyor, lütfen bekleyiniz...*", parse_mode="Markdown")
             await notify_admin_audit_log(context.bot, user_id, "Botu uzaktan yeniden başlattı (Restart).")
             def _reboot():
-                time.sleep(1.5)
-                os.execv(sys.executable, [sys.executable] + sys.argv)
+                time.sleep(1.0)
+                try:
+                    script_path = os.path.abspath(__file__)
+                    os.execv(sys.executable, [sys.executable, script_path])
+                except Exception as e:
+                    add_system_log(f"Restart execv hatasi: {e}", level="WARN")
+                    sys.exit(0)
             threading.Thread(target=_reboot, daemon=True).start()
         return
 
@@ -4556,11 +4762,42 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
+    if data == "admin_view_logs":
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            card, kb = format_system_logs_card()
+            await safe_edit_text_markup(query.message, card, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_db_health":
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            ok, msg = check_and_repair_databases()
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]])
+            await safe_edit_text_markup(query.message, msg, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_bc_preview":
+        if user_id in ADMIN_IDS:
+            await safe_answer("👁️ Önizleme mesajınız iletiliyor...", show_alert=False)
+            b_text = context.user_data.get('pending_broadcast_text')
+            if b_text:
+                b_card = (
+                    f"📢 *NUN PROJECT // RESMİ DUYURU (ÖNİZLEME TESTİ)*\n\n"
+                    f"{b_text}\n\n"
+                    f"──────────────────────────────\n"
+                    f"👁️ _Bu bir yönetici önizleme testidir. Kullanıcılara henüz gönderilmedi._"
+                )
+                await context.bot.send_message(chat_id=user_id, text=b_card, parse_mode="Markdown")
+            else:
+                await safe_answer("Önizlenecek duyuru metni bulunamadı.", show_alert=True)
+        return
+
     if data == "admin_clean_disk":
         if user_id in ADMIN_IDS:
             freed_mb = cleanup_orphaned_temp_files(max_age_seconds=0)
             disk_now = get_disk_usage_info()
-            await query.answer(f"🧹 {freed_mb:.1f} MB çöp dosya temizlendi! | Güncel Disk: {disk_now}", show_alert=True)
+            await safe_answer(f"🧹 {freed_mb:.1f} MB çöp temizlendi! | Disk: {disk_now}", show_alert=True)
             report, kb = format_admin_stats_panel()
             await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
         return
@@ -4569,7 +4806,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id in ADMIN_IDS:
             new_st = toggle_maintenance_mode()
             st_text = "AÇILDI (Yalnızca yöneticiler kullanabilir)" if new_st else "KAPATILDI (Herkes kullanabilir)"
-            await query.answer(f"🚧 Bakım Modu {st_text}", show_alert=True)
+            await safe_answer(f"🚧 Bakım Modu {st_text}", show_alert=True)
             await notify_admin_audit_log(context.bot, user_id, f"Bakım modunu {st_text} yaptı.")
             report, kb = format_admin_stats_panel()
             await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
@@ -4577,41 +4814,138 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "admin_banned_list":
         if user_id in ADMIN_IDS:
+            await safe_answer()
             if not BANNED_USERS:
-                await query.answer("Sistemde engellenmiş (banlı) kullanıcı bulunmuyor.", show_alert=True)
+                text = (
+                    "⛔ *NUN PROJECT // ENGELLENMİŞ KULLANICILAR*\n\n"
+                    "_Sistemde şu anda engellenmiş (banlı) kullanıcı bulunmuyor._"
+                )
+                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]])
+                await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
                 return
-            b_lines = ["⛔ *ENGELLENMİŞ KULLANICILAR LİSTESİ:*\n"]
+            b_lines = [
+                "⛔ *NUN PROJECT // ENGELLENMİŞ KULLANICILAR LİSTESİ:*",
+                f"Toplam: `{len(BANNED_USERS)}` kullanıcı\n"
+            ]
             b_btns = []
             for b_uid, b_info in list(BANNED_USERS.items()):
                 p = USER_PROFILES.get(b_uid, {})
                 nm = safe_md(p.get('name') or f"Kullanıcı {b_uid}")
-                b_lines.append(f"▫️ \u200e{nm}\u200e (`{b_uid}`)\n   Sebep: _{safe_md(b_info.get('reason'))}_ | Tarih: `{b_info.get('timestamp')}`")
-                b_btns.append([InlineKeyboardButton(f"✅ Engeli Kaldır: \u200e{nm[:15]}\u200e", callback_data=f"admin_unban_{b_uid}")])
+                b_mode = b_info.get('mode', 'soft')
+                b_mode_str = "🔴 Tam Men" if b_mode == 'hard' else "🟡 Standart Ban"
+                b_lines.append(f"▫️ \u200e{nm}\u200e (`{b_uid}`)\n   Tür: *{b_mode_str}* | Sebep: _{safe_md(b_info.get('reason'))}_\n   Tarih: `{b_info.get('timestamp')}`\n")
+                b_btns.append([
+                    InlineKeyboardButton(f"👤 İşlem ({nm[:12]})", callback_data=f"admin_user_view_{b_uid}"),
+                    InlineKeyboardButton("✅ Engeli Kaldır", callback_data=f"admin_unban_{b_uid}")
+                ])
             b_btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
             await safe_edit_text_markup(query.message, "\n".join(b_lines), reply_markup=InlineKeyboardMarkup(b_btns), parse_mode="Markdown")
         return
 
-    if data.startswith("admin_ban_prompt_"):
+    # Tekil Kullanıcı Yönetim Kartı
+    if data.startswith("admin_user_view_"):
         if user_id in ADMIN_IDS:
-            target_uid = int(data.replace("admin_ban_prompt_", "", 1))
+            await safe_answer()
+            target_uid = int(data.replace("admin_user_view_", "", 1))
+            card_text, kb = format_user_detail_card(target_uid)
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    # Telegram Canlı Bilgilerini Çekme (get_chat)
+    if data.startswith("admin_fetch_chat_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_fetch_chat_", "", 1))
+            try:
+                chat = await context.bot.get_chat(chat_id=target_uid)
+                c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {target_uid}"
+                c_uname = chat.username or ""
+                uid_str = str(target_uid)
+                p = USER_PROFILES.get(uid_str, {})
+                p['id'] = target_uid
+                p['name'] = c_name
+                if c_uname:
+                    p['username'] = c_uname.lstrip('@')
+                USER_PROFILES[uid_str] = p
+                save_json(USER_PROFILES_FILE, USER_PROFILES)
+                invalidate_users_cache()
+                await safe_answer("✅ Bilgiler Telegram'dan güncellendi!", show_alert=True)
+            except Exception as e:
+                await safe_answer(f"⚠️ Bilgi çekilemedi: {e}", show_alert=True)
+            card_text, kb = format_user_detail_card(target_uid)
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    # Ban Seçenekleri Kartı
+    if data.startswith("admin_ban_choose_"):
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            target_uid = int(data.replace("admin_ban_choose_", "", 1))
+            text, kb = format_user_ban_options_card(target_uid)
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data.startswith("admin_ban_soft_prompt_"):
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            target_uid = int(data.replace("admin_ban_soft_prompt_", "", 1))
             context.user_data['admin_ban_target'] = target_uid
+            context.user_data['admin_ban_mode'] = 'soft'
             p = USER_PROFILES.get(str(target_uid), {})
             nm = safe_md(p.get('name') or f"User {target_uid}")
             await query.message.reply_text(
-                f"⛔ *KULLANICI ENGELLEME*\n\nKullanıcı: *\u200e{nm}\u200e* (`{target_uid}`)\n\nEngelleme sebebini yazınız (Doğrudan 'ban' yazarak varsayılan sebeple de engelleyebilirsiniz):",
+                f"🟡 *STANDART BAN (BOTTA BIRAK)*\n\nKullanıcı: *\u200e{nm}\u200e* (`{target_uid}`)\n\nEngelleme sebebini yazınız (Doğrudan 'ban' yazarak varsayılan sebeple de engelleyebilirsiniz):",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
             )
+        return
+
+    if data.startswith("admin_ban_hard_prompt_"):
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            target_uid = int(data.replace("admin_ban_hard_prompt_", "", 1))
+            context.user_data['admin_ban_target'] = target_uid
+            context.user_data['admin_ban_mode'] = 'hard'
+            p = USER_PROFILES.get(str(target_uid), {})
+            nm = safe_md(p.get('name') or f"User {target_uid}")
+            await query.message.reply_text(
+                f"🔴 *TAM MEN ETME (BOTTAN ATMA)*\n\nKullanıcı: *\u200e{nm}\u200e* (`{target_uid}`)\n\nİhraç sebebini yazınız (Doğrudan 'ban' yazarak varsayılan sebeple de atabilirsiniz):",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data.startswith("admin_ban_soft_quick_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_ban_soft_quick_", "", 1))
+            await execute_soft_ban(context.bot, target_uid, reason="Kural ihlali (Standart Ban)")
+            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıya standart ban uyguladı.")
+            await safe_answer("🟡 Standart ban uygulandı!", show_alert=True)
+            card_text, kb = format_user_detail_card(target_uid)
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data.startswith("admin_ban_hard_quick_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_ban_hard_quick_", "", 1))
+            await execute_hard_ban(context.bot, target_uid, reason="Kural ihlali (Bottan Atıldı)")
+            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıyı bottan tamamen attı.")
+            await safe_answer("🔴 Kullanıcı bottan tamamen atıldı!", show_alert=True)
+            card_text, kb = format_user_detail_card(target_uid)
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
         return
 
     if data.startswith("admin_unban_"):
         if user_id in ADMIN_IDS:
             target_uid = int(data.replace("admin_unban_", "", 1))
             unban_user(target_uid)
-            await query.answer(f"✅ {target_uid} kullanıcısının engeli kaldırıldı.", show_alert=True)
+            await safe_answer(f"✅ {target_uid} kullanıcısının engeli kaldırıldı.", show_alert=True)
             await notify_admin_audit_log(context.bot, user_id, f"{target_uid} ID'li kullanıcının engelini (ban) kaldırdı.")
-            report, kb = format_admin_stats_panel()
-            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+            try:
+                card_text, kb = format_user_detail_card(target_uid)
+                await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+            except Exception:
+                report, kb = format_admin_stats_panel()
+                await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
         return
 
     if data == "stats_refresh":
@@ -5350,7 +5684,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status.delete()
         except Exception:
             pass
-
 # =====================================================================
 # METİN MESAJ YÖNLENDİRİCİSİ (RATE LIMIT & TRANSLIT HATASI DÜZELTİLDİ)
 # =====================================================================
@@ -5364,6 +5697,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Ban ve Bakım Modu Kontrolü
     if is_user_banned(user_id):
+        ban_info = get_user_ban_info(user_id) or {}
+        if ban_info.get('mode') == 'hard':
+            try:
+                await update.message.reply_text(
+                    "⛔ Bot erişiminiz sonlandırılmıştır.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+            except Exception:
+                pass
         return
 
     if is_maintenance_active() and user_id not in ADMIN_IDS:
@@ -5406,11 +5748,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # YÖNETİCİ BAN İŞLEMİ YAKALAYICI
     if user_id in ADMIN_IDS and context.user_data.get('admin_ban_target'):
         target_uid = context.user_data.pop('admin_ban_target')
-        ban_user(target_uid, reason=raw_text)
+        ban_mode = context.user_data.pop('admin_ban_mode', 'soft')
         p = USER_PROFILES.get(str(target_uid), {})
         nm = safe_md(p.get('name') or f"User {target_uid}")
-        await update.message.reply_text(f"⛔ *\u200e{nm}\u200e* (`{target_uid}`) başarıyla engellendi.\nSebep: _{safe_md(raw_text)}_", parse_mode="Markdown")
-        await notify_admin_audit_log(context.bot, user_id, f"\\u200e{nm}\\u200e (`{target_uid}`) kullanıcısını engelledi (Sebep: {raw_text}).")
+        if ban_mode == 'hard':
+            await execute_hard_ban(context.bot, target_uid, reason=raw_text)
+            await update.message.reply_text(f"🔴 *\u200e{nm}\u200e* (`{target_uid}`) *TAMAMEN MEN EDİLDİ (Bottan Atıldı)*.\nSebep: _{safe_md(raw_text)}_", parse_mode="Markdown")
+            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıyı bottan tamamen attı (Sebep: {raw_text}).")
+        else:
+            await execute_soft_ban(context.bot, target_uid, reason=raw_text)
+            await update.message.reply_text(f"🟡 *\u200e{nm}\u200e* (`{target_uid}`) *STANDART BANLANDI (Botta Bırakıldı)*.\nSebep: _{safe_md(raw_text)}_", parse_mode="Markdown")
+            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıya standart ban uyguladı (Sebep: {raw_text}).")
         return
 
     # KULLANICI GERİ BİLDİRİM / TICKET GİRİŞİ
@@ -5483,6 +5831,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚠️ Bu duyuruyu tüm kullanıcılara göndermek istediğinizden emin misiniz?"
         )
         kb_confirm = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👁️ Bana Test Gönder (Önizle)", callback_data="admin_bc_preview")],
             [InlineKeyboardButton("✅ Evet, Herkese Gönder", callback_data="confirm_broadcast_send")],
             [InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]
         ])
@@ -5885,6 +6234,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================================================
 # BAŞLATMA VE ANA GÖREV
 # =====================================================================
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    err = context.error
+    err_trace = "".join(traceback.format_exception(None, err, err.__traceback__)) if err else "Bilinmeyen hata"
+    add_system_log(f"UNHANDLED ERROR: {err}", level="ERROR")
+    print(f"[UNHANDLED_ERROR] {err}\n{err_trace}")
+
+    err_card = (
+        "🚨 *NUN PROJECT // SİSTEM HATA BİLDİRİMİ*\n\n"
+        f"⚠️ *Hata Türü:* `{type(err).__name__}`\n"
+        f"📝 *Mesaj:* `{safe_md(str(err)[:250])}`\n"
+        f"🕒 *Zaman:* `{datetime.now().strftime('%d.%m.%Y %H:%M:%S')}`\n\n"
+        f"📋 *Traceback:*\n```{err_trace[-600:]}```"
+    )
+    for aid in ADMIN_IDS:
+        try:
+            await context.bot.send_message(chat_id=aid, text=err_card, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    if update and isinstance(update, Update) and update.effective_message:
+        u_lang = get_user_lang(update.effective_user.id, context) if update.effective_user else "tr"
+        err_msg = {
+            'uz': "⚠️ Uzr, texnik xatolik yuz berdi. Bu haqda maʼmuriyatga xabar berildi.",
+            'tr': "⚠️ Üzgünüz, geçici bir sistem hatası oluştu. Durum teknik yönetime iletildi.",
+            'ru': "⚠️ Извините, произошла техническая ошибка. Администрация уведомлена.",
+            'en': "⚠️ Sorry, an unexpected technical error occurred. Admins have been notified."
+        }.get(u_lang, "⚠️ Geçici bir hata oluştu.")
+        try:
+            await update.effective_message.reply_text(err_msg)
+        except Exception:
+            pass
+
+
 async def post_init_setup(application):
     asyncio.create_task(reminders_worker(application))
     asyncio.create_task(prayer_and_friday_worker(application))
@@ -5919,6 +6301,7 @@ def main():
     threading.Thread(target=run_keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).post_init(post_init_setup).build()
+    app.add_error_handler(global_error_handler)
     app.add_handler(TypeHandler(Update, global_user_tracker), group=-1)
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
@@ -5933,6 +6316,7 @@ def main():
     app.add_handler(CommandHandler("broadcast", admin_broadcast_command))
     app.add_handler(CommandHandler("backup", backup_command))
     app.add_handler(CommandHandler(["find", "search"], find_command))
+    app.add_handler(CommandHandler(["logs", "log"], logs_command))
     app.add_handler(CommandHandler("sync", sync_users_command))
     app.add_handler(CommandHandler("adduser", add_user_command))
     app.add_handler(CommandHandler("restore", restore_command))

@@ -506,7 +506,6 @@ def add_recent_city(user_id: int, city_name: str):
     c_clean = city_name.strip().title()
     if c_clean in USER_RECENT_CITIES[uid]:
         USER_RECENT_CITIES[uid].remove(c_clean)
-    USER_RECENT_CITIES[uid].insert(0, c_clean)
     USER_RECENT_CITIES[uid] = USER_RECENT_CITIES[uid][:3]
     save_json(RECENT_CITIES_FILE, USER_RECENT_CITIES)
 
@@ -1300,7 +1299,7 @@ MAP_CYR_TO_LAT = {
     'Б': 'B', 'б': 'b',
     'В': 'V', 'в': 'v',
     'Г': 'G', 'г': 'g',
-    'Д': 'D', 'д': 'd',
+    'Д': 'D', 'd': 'd',
     'Ж': 'J', 'ж': 'j',
     'З': 'Z', 'з': 'z',
     'И': 'I', 'i': 'i',
@@ -1309,15 +1308,15 @@ MAP_CYR_TO_LAT = {
     'Қ': 'Q', 'қ': 'q',
     'Л': 'L', 'л': 'l',
     'М': 'M', 'm': 'm',
-    'Н': 'N', 'н': 'n',
+    'Н': 'N', 'n': 'n',
     'О': 'O', 'o': 'o',
     'П': 'P', 'p': 'p',
     'Р': 'R', 'r': 'r',
     'С': 'S', 's': 's',
     'Т': 'T', 't': 't',
-    'У': 'U', 'у': 'u',
-    'Ф': 'F', 'ф': 'f',
-    'Х': 'X', 'х': 'x',
+    'У': 'U', 'u': 'u',
+    'Ф': 'F', 'f': 'f',
+    'Х': 'X', 'x': 'x',
     'Ҳ': 'H', 'ҳ': 'h',
     'Э': 'E', 'э': 'e',
 }
@@ -1446,7 +1445,7 @@ def latin_to_cyrillic(text: str) -> str:
             continue
             
         if c in ('c', 'C') and nxt in ('h', 'H'):
-            res.append("Ч" if (c.isupper() and nxt.isupper()) else ("Ch" if c.isupper() else "ч"))
+            res.append("Ч" if (c.isupper() and nxt.isupper()) else ("Ч" if c.isupper() else "ч"))
             i += 2
             continue
             
@@ -2121,7 +2120,7 @@ ISLAMIC_EVENTS = [
     ("2026-06-25", {'uz': "Ashuro kuni", 'tr': "Aşure Günü", 'ru': "День Ашура", 'en': "Day of Ashura"}),
     ("2026-08-25", {'uz': "Mavlid kechasi", 'tr': "Mevlid Kandili", 'ru': "Мавлид ан-Наби", 'en': "Mawlid al-Nabi"}),
     ("2026-12-10", {'uz': "Muborak Uch Oylar (1 Rajab)", 'tr': "Üç Ayların Başlangıcı (1 Recep)", 'ru': "Начало трех священных месяцев (Раджаб)", 'en': "Beginning of Three Holy Months"}),
-    ("2026-12-17", {'uz': "Ragʻoib kechasi", 'tr': "Regaib Kandili", 'ru': "Ночь Раgaib", 'en': "Laylat al-Raghaib"}),
+    ("2026-12-17", {'uz': "Ragʻoib kechasi", 'tr': "Regaib Kandili", 'ru': "Ночь Рагаиб", 'en': "Laylat al-Raghaib"}),
     ("2027-01-05", {'uz': "Isro va Meʼroj kechasi", 'tr': "Mirac Kandili", 'ru': "Ночь Мирадж", 'en': "Laylat al-Mi'raj"}),
     ("2027-01-22", {'uz': "Barot kechasi", 'tr': "Berat Kandili", 'ru': "Ночь Бараат", 'en': "Laylat al-Bara'at"}),
     ("2027-02-08", {'uz': "Muborak Ramazon oyining 1-kuni", 'tr': "Ramazan Başlangıcı", 'ru': "Начало месяца Рамадан", 'en': "First Day of Ramadan"}),
@@ -3113,7 +3112,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             elif mode_val == 'translit':
                 context.user_data['mode'] = 'translit'
-                await update.message.reply_text(get_text(user_id, 'prompt_translit', context), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+                await update.message.reply_text(
+                    get_text(user_id, 'prompt_translit', context),
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]
+                    ])
+                )
             elif mode_val == 'tz_hub':
                 tz_off = get_user_tz_offset(user_id, context)
                 tz_sign = "+" if tz_off >= 0 else ""
@@ -3434,4 +3438,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

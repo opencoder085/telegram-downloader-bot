@@ -3068,7 +3068,8 @@ async def safe_edit_text_markup(message, text: str, reply_markup=None, parse_mod
         await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception:
         try:
-            await message.edit_text(text.replace("*", "").replace("_", "").replace("`", ""), reply_markup=reply_markup)
+            clean = re.sub(r'<[^>]+>', '', text).replace("*", "").replace("_", "").replace("`", "")
+            await message.edit_text(clean, reply_markup=reply_markup)
         except Exception:
             pass
 
@@ -4395,6 +4396,15 @@ def format_user_detail_card(target_uid: int) -> tuple:
     p_notif = USER_PRAYER_NOTIFS.get(uid_str, {}).get("enabled", False)
     p_status = "🔔 Açık" if p_notif else "🔕 Kapalı"
 
+    last_act = p.get('last_action', 'Yok')
+    act_labels = {
+        'video': '🎬 Video İndirme', 'prayer': '🕌 Namaz Vakti',
+        'weather': '🌤️ Hava Durumu', 'pdf_hub': '📄 PDF & OCR',
+        'exam_todo': '🎓 Sınav & To-Do', 'pomodoro': '⏱️ Pomodoro',
+        'translit': '🔤 Çeviri', 'adhkar': '📿 Zikir', 'hadith': '📖 Hadis'
+    }
+    last_act_str = act_labels.get(last_act, last_act.title()) if last_act != 'Yok' else "Henüz işlem yok"
+
     is_admin = target_uid in ADMIN_IDS
     is_banned = is_user_banned(target_uid)
     ban_info = get_user_ban_info(target_uid) if is_banned else None
@@ -4404,6 +4414,8 @@ def format_user_detail_card(target_uid: int) -> tuple:
     elif is_banned:
         b_mode = ban_info.get('mode', 'soft') if ban_info else 'soft'
         status_str = f"⛔ Engelli ({'🔴 Tam Men' if b_mode == 'hard' else '🟡 Standart Ban'})"
+    elif p.get('bot_blocked'):
+        status_str = "🚫 Botu Engelledi"
     else:
         status_str = "🟢 Aktif"
 

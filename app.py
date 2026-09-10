@@ -144,7 +144,7 @@ def is_rate_limited(user_id: int, window: float = 0.5) -> bool:
     return False
 
 # =====================================================================
-# RENDER 7/24 SAĞLIK SUNUCUSU & SELF-PINGER (KIBLE SİLİNDİ)
+# RENDER 7/24 SAĞLIK SUNUCUSU & SELF-PINGER
 # =====================================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -269,7 +269,6 @@ def track_user_activity(user):
     elif 'name' not in p:
         p['name'] = f"User {uid}"
 
-    # Username korumasi: Telegram'dan dolu gelirse guncelle, bos gelirse mevcut kullanici adini asla ezme!
     if getattr(user, 'username', None):
         p['username'] = user.username.lstrip('@')
     elif 'username' not in p:
@@ -278,7 +277,6 @@ def track_user_activity(user):
     p['last_active'] = now_str
     USER_PROFILES[uid_str] = p
 
-    # Kullanıcıyı henüz yoksa USER_LANGS içine de kalıcı olarak kaydet
     if uid_str not in USER_LANGS:
         tele_lang = getattr(user, 'language_code', None) or 'uz'
         init_lang = 'tr' if tele_lang.startswith('tr') else ('ru' if tele_lang.startswith('ru') else ('en' if tele_lang.startswith('en') else 'uz'))
@@ -319,8 +317,8 @@ def get_uptime_string() -> str:
 # =====================================================================
 # FLOODSHIELD (AKILLI ANTİ-SPAM VE SALDIRI KORUMASI)
 # =====================================================================
-FLOOD_JAIL = {} # {user_id: release_time}
-FLOOD_TRACKER = {} # {user_id: deque([request_times])}
+FLOOD_JAIL = {}
+FLOOD_TRACKER = {}
 
 def check_flood_shield(user_id: int) -> bool:
     if not user_id or user_id in ADMIN_IDS:
@@ -347,7 +345,6 @@ def check_flood_shield(user_id: int) -> bool:
 # GELİŞMİŞ SAAT DİLİMİ VE KONUM MOTORU
 # =====================================================================
 CITY_TIMEZONE_MAP = {
-    # O'zbekiston (UTC+5)
     "toshkent": 5, "tashkent": 5, "samarqand": 5, "samarkand": 5, "buxoro": 5, "bukhara": 5,
     "andijon": 5, "andijan": 5, "namangan": 5, "fargona": 5, "fergana": 5, "qoqon": 5, "kokand": 5,
     "urganch": 5, "urgench": 5, "nukus": 5, "qarshi": 5, "karshi": 5, "navoiy": 5, "navoi": 5,
@@ -356,38 +353,31 @@ CITY_TIMEZONE_MAP = {
     "olmaliq": 5, "almalyk": 5, "shahrisabz": 5, "denov": 5, "zarafshon": 5, "bekobod": 5,
     "rishton": 5, "rishtan": 5, "asaka": 5, "shahrixon": 5, "chust": 5, "quva": 5,
 
-    # Turkiya (UTC+3)
     "istanbul": 3, "ankara": 3, "izmir": 3, "bursa": 3, "antalya": 3, "konya": 3, "adana": 3,
     "gaziantep": 3, "sanliurfa": 3, "kocaeli": 3, "mersin": 3, "diyarbakir": 3, "hatay": 3,
     "manisa": 3, "kayseri": 3, "samsun": 3, "balikesir": 3, "kahramanmaras": 3, "van": 3,
     "aydin": 3, "denizli": 3, "sakarya": 3, "erzurum": 3, "mugla": 3, "eskisehir": 3, "trabzon": 3,
     "elazig": 3, "sivas": 3, "batman": 3, "rize": 3, "malatya": 3, "tekirdag": 3, "canakkale": 3,
 
-    # Rossiya
     "moskva": 3, "moscow": 3, "piter": 3, "sankt-peterburg": 3, "spb": 3, "kazan": 3, "sochi": 3,
     "krasnodar": 3, "nizhny novgorod": 3, "samara": 4, "ufa": 5, "yekaterinburg": 5, "ekaterinburg": 5,
     "chelyabinsk": 5, "tyumen": 5, "omsk": 6, "novosibirsk": 7, "krasnoyarsk": 7, "irkutsk": 8,
     "yakutsk": 9, "vladivostok": 10,
 
-    # Markaziy Osiyo & Kavkaz
     "almaty": 5, "astana": 5, "shymkent": 5, "bishkek": 6, "osh": 6, "dushanbe": 5,
     "ashgabat": 5, "baku": 4, "tbilisi": 4, "yerevan": 4,
 
-    # Yaqin Sharq & Ko'rfaz
     "dubai": 4, "dubay": 4, "abu dhabi": 4, "riyadh": 3, "makka": 3, "makkah": 3, "mecca": 3,
     "madina": 3, "medine": 3, "medina": 3, "doha": 3, "kuwait": 3, "muscat": 4, "tehran": 3,
 
-    # Yevropa
     "london": 0, "dublin": 0, "lisbon": 0, "paris": 1, "parij": 1, "berlin": 1, "rome": 1, "rim": 1,
     "madrid": 1, "amsterdam": 1, "brussels": 1, "bryussel": 1, "vienna": 1, "vena": 1, "warsaw": 1,
     "varshava": 1, "prague": 1, "praqa": 1, "budapest": 1, "kyiv": 2, "kiev": 2, "athens": 2,
     "afina": 2, "bucharest": 2, "buxarest": 2, "helsinki": 2, "stockholm": 1, "oslo": 1,
 
-    # Osiyo
     "seoul": 9, "seul": 9, "tokyo": 9, "beijing": 8, "pekin": 8, "shanghai": 8, "hong kong": 8,
     "singapore": 8, "singapur": 8, "kuala lumpur": 8, "bangkok": 7, "jakarta": 7, "delhi": 5, "mumbai": 5,
 
-    # Amerika
     "new york": -5, "ny": -5, "washington": -5, "boston": -5, "miami": -5, "toronto": -5,
     "chicago": -6, "dallas": -6, "houston": -6, "denver": -7, "los angeles": -8, "la": -8,
     "san francisco": -8, "seattle": -8, "vancouver": -8, "sydney": 10, "melbourne": 10
@@ -449,6 +439,7 @@ RECENT_CITIES_FILE = "user_recent_cities.json"
 BANNED_USERS_FILE = "user_banned.json"
 MAINTENANCE_FILE = "maintenance_state.json"
 NIGHTLY_BACKUP_TRACK_FILE = "backup_last.json"
+QAZA_FILE = "user_qaza.json"
 
 BANNED_USERS = {}
 MAINTENANCE_MODE = False
@@ -468,7 +459,6 @@ USER_TODOS = {}
 USER_RECENT_CITIES = {}
 USER_QAZA = {}
 DAILY_PRAYER_CACHE = {}
-QAZA_FILE = "user_qaza.json"
 
 def load_databases():
     global USER_LANGS, USER_TIMEZONES, USER_TZ_LOCKED, USER_EXAMS, USER_REMINDERS, USER_CITIES
@@ -569,28 +559,19 @@ def get_recent_cities(user_id: int) -> list:
 def get_user_city(user_id) -> str:
     return USER_CITIES.get(str(user_id))
 
+# DÜZELTME 4: Konuşma metninden otomatik şehir arama kaldırıldı (Bölüm atlamalarını önleme)
 def silent_background_tz_sync(user_id: int, raw_text: str = None, user_lang_code: str = None):
     uid_str = str(user_id)
     if USER_TZ_LOCKED.get(uid_str):
         return USER_TIMEZONES.get(uid_str, 3)
 
     detected_tz = None
-
     if raw_text:
-        m_tz = re.search(r"(?:(?:utc|gmt)\s*)?([+-]\d{1,2})", raw_text, re.IGNORECASE)
+        m_tz = RE_TZ_SEARCH.search(raw_text)
         if m_tz:
             val = int(m_tz.group(1))
             if -12 <= val <= 14:
                 detected_tz = val
-
-        if detected_tz is None:
-            text_clean = re.sub(r"['’`ʻʼ\-]", "", raw_text.lower()).replace("i̇", "i").replace("ı", "i")
-            for city, tz in CITY_TIMEZONE_MAP.items():
-                pattern = r"\b" + re.escape(city) + r"(?:daman|dasan|damiz|dayam|dayik|da|de|dan|den|ga|ge|ya|ye|a|e|ni|ning|lik|li)?\b"
-                if re.search(pattern, text_clean):
-                    detected_tz = tz
-                    save_user_city(user_id, city.title())
-                    break
 
     if detected_tz is None and uid_str not in USER_TIMEZONES and user_lang_code:
         code = user_lang_code.lower()
@@ -744,6 +725,7 @@ def toggle_user_prayer_notif(user_id, mode: str = "on_time"):
 def get_user_prayer_notif(user_id):
     return USER_PRAYER_NOTIFS.get(str(user_id), {"enabled": False, "offset": 0, "last": ""})
 
+# DÜZELTME 3: Tüm geçici durumları ve bayrakları kökten sıfırlama
 def cleanup_user_temp_files(context, user_id):
     if not context or not context.user_data:
         return
@@ -794,14 +776,13 @@ def reset_user_qaza(user_id: int) -> dict:
 # =====================================================================
 # BAN, BAKIM, DİSK TEMİZLEME VE YEDEKLEME MOTORU
 # =====================================================================
-
 def ban_user(user_id: int, reason: str = "", mode: str = "soft") -> bool:
     global BANNED_USERS
     if user_id in ADMIN_IDS:
         return False
     BANNED_USERS[str(user_id)] = {
         "reason": reason or "Kural ihlali / Spam",
-        "mode": mode, # 'soft' (Standart Ban) veya 'hard' (Tam Men Etme)
+        "mode": mode,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     }
     save_json(BANNED_USERS_FILE, BANNED_USERS)
@@ -907,7 +888,7 @@ def create_database_backup_zip() -> str:
         LANG_FILE, TZ_FILE, TZ_LOCK_FILE, EXAMS_FILE, REMINDERS_FILE, CITY_FILE,
         COORDS_FILE, PRAYER_NOTIFS_FILE, FRIDAY_NOTIFS_FILE, TODOS_FILE,
         RECENT_CITIES_FILE, USER_PROFILES_FILE, ADMINS_FILE, BANNED_USERS_FILE,
-        MAINTENANCE_FILE
+        MAINTENANCE_FILE, QAZA_FILE
     ]
     with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in db_files:
@@ -954,7 +935,6 @@ async def nightly_maintenance_worker(app):
         now = datetime.now()
         now_date_str = now.strftime("%Y-%m-%d")
 
-        # 1. Gece 03:00 - 03:15 arası otomatik veritabanı yedeği al ve yöneticilere gönder
         if now.hour == 3 and (0 <= now.minute <= 15):
             last_b = NIGHTLY_BACKUP_TRACK.get("last_nightly_backup", "")
             if last_b != now_date_str:
@@ -962,15 +942,8 @@ async def nightly_maintenance_worker(app):
                 save_json(NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK)
                 await send_backup_to_admins(app.bot, trigger_type="Otomatik Gece Yedeği (03:00)")
 
-        # 2. Her saat başı geçici çöp dosyaları otomatik temizle
         if now.minute == 0:
             cleanup_orphaned_temp_files(max_age_seconds=1800)
-
-# =====================================================================
-# DENETİM GÜNLÜĞÜ, GERİ YÜKLEME, ARAMA VE YENİDEN BAŞLATMA SİSTEMİ
-# =====================================================================
-
-BROADCAST_ABORT_FLAG = False
 
 async def notify_admin_audit_log(bot, actor_admin_id: int, action_text: str):
     actor_p = USER_PROFILES.get(str(actor_admin_id), {})
@@ -978,7 +951,7 @@ async def notify_admin_audit_log(bot, actor_admin_id: int, action_text: str):
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     log_card = (
         f"🛡️ *NUN PROJECT // GÜVENLİK VE DENETİM GÜNLÜĞÜ*\n\n"
-        f"👤 *İşlemi Yapan:* \u200e{actor_name}\u200e (`{actor_admin_id}`)\n"
+        f"👤 *İşlemi Yapan:* {actor_name} (`{actor_admin_id}`)\n"
         f"📌 *İşlem:* {action_text}\n"
         f"⏰ *Zaman:* `{now_str}`"
     )
@@ -1018,49 +991,6 @@ def search_registered_users(query_text: str) -> list:
         if q in uid_str or q in name_str or q in uname_str:
             matches.append(u)
     return matches
-
-def format_search_results_card(matches: list, query_str: str) -> tuple:
-    if not matches:
-        return f"🔍 *ARAMA SONUCU:*\n\n`{safe_md(query_str)}` kriterine uygun hiçbir kullanıcı bulunamadı.", InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]])
-
-    lines = [
-        f"🔍 *KULLANICI ARAMA SONUÇLARI* (`{len(matches)}` eşleşme)",
-        f"Aranan: `{safe_md(query_str)}`\n"
-    ]
-    btns = []
-    for idx, u in enumerate(matches[:5], start=1):
-        uid = u['id']
-        name_clean = safe_md(u['name'])
-        uname_str = f"@{u['username']}" if u['username'] else "_(Username yok)_"
-        la = u['last_active'][:16] if u['last_active'] else "Pasif"
-        city_str = u['city'] or "Belirtilmedi"
-        lang_str = (u['lang'] or "uz").upper()
-        p_status = "🔔 Açık" if u['prayer_active'] else "🔕 Kapalı"
-
-        lines.append(
-            f"*{idx}.* \u200e{name_clean}\u200e — {uname_str}\n"
-            f"   🆔 ID: `{uid}`\n"
-            f"   📍 Şehir: `{city_str}` | Dil: `{lang_str}` | Ezan: `{p_status}`\n"
-            f"   🕒 Son Aktif: `{la}`\n"
-            f"   💬 Hızlı DM: `/msg_{uid}`\n"
-        )
-        u_short_name = (u['name'] or str(uid))[:12]
-        row_btns = [
-            InlineKeyboardButton(f"⚡ 1:1 Özel Sohbet Başlat", callback_data=f"admin_direct_invite_{uid}"),
-            InlineKeyboardButton(f"✉️ Bot İçi DM Gönder", callback_data=f"admin_dm_start_{uid}")
-        ]
-        btns.append(row_btns)
-        user_admin_row = []
-        if uid not in ADMIN_IDS:
-            if is_user_banned(uid):
-                user_admin_row.append(InlineKeyboardButton(f"✅ Engeli Kaldır ({uid})", callback_data=f"admin_unban_{uid}"))
-            else:
-                user_admin_row.append(InlineKeyboardButton(f"⛔ Engelle ({uid})", callback_data=f"admin_ban_prompt_{uid}"))
-            user_admin_row.append(InlineKeyboardButton(f"👑 Yönetici Yap", callback_data=f"admin_promote_{uid}"))
-            btns.append(user_admin_row)
-
-    btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
-    return "\n".join(lines), InlineKeyboardMarkup(btns)
 
 # =====================================================================
 # PDF DÖNÜŞTÜRME MOTORU
@@ -1306,7 +1236,6 @@ def check_and_repair_databases() -> tuple:
 
     for fname, var_ref in db_list:
         checked_count += 1
-        needs_write = False
         if not os.path.exists(fname):
             save_json(fname, var_ref if var_ref is not None else {"active": False})
             repaired_count += 1
@@ -1320,13 +1249,10 @@ def check_and_repair_databases() -> tuple:
                     if var_ref is not None:
                         total_records += len(parsed)
             except Exception:
-                # Bozuk dosyayı onar ve sıfırla
                 fallback_data = var_ref if var_ref is not None else {"active": False}
                 save_json(fname, fallback_data)
                 repaired_count += 1
-                needs_write = True
 
-    # Kullanıcı tabloları arası senkronizasyon (USER_LANGS / USER_PROFILES)
     for uid_str in list(USER_LANGS.keys()):
         if uid_str not in USER_PROFILES:
             try:
@@ -1353,15 +1279,11 @@ def check_and_repair_databases() -> tuple:
     add_system_log(f"DB Sağlık taraması tamamlandı: {checked_count} dosya kontrol edildi, {repaired_count} onarıldı.")
     return True, status_msg
 
-# =====================================================================
-# GÜNLÜK YÖNETİCİ BÜLTENİ VE EXCEL AKTARIM MOTORU
-# =====================================================================
 async def daily_telemetry_worker(app):
     while True:
         await asyncio.sleep(45)
         now = datetime.now()
         now_date_str = now.strftime("%Y-%m-%d")
-        # Gece 00:00 - 00:10 arasi calisir
         if now.hour == 0 and (0 <= now.minute <= 10):
             last_t = NIGHTLY_BACKUP_TRACK.get("last_daily_telemetry", "")
             if last_t != now_date_str:
@@ -1442,7 +1364,7 @@ def export_users_to_excel(output_path: str) -> bool:
         return False
 
 # =====================================================================
-# POMODORO & ARKA PLAN GÖREVLERİ (HATA DÜZELTMELERİ YAPILDI)
+# POMODORO & ARKA PLAN GÖREVLERİ
 # =====================================================================
 async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: bool, user_lang: str):
     await asyncio.sleep(duration_mins * 60)
@@ -1468,12 +1390,10 @@ async def prayer_and_friday_worker(app):
         now_utc = datetime.now(timezone.utc)
         today_utc_str = now_utc.strftime("%Y-%m-%d")
         
-        # Prune old prayer cache entries safely
         old_cache_keys = [k for k in list(DAILY_PRAYER_CACHE.keys()) if not k.endswith(today_utc_str)]
         for k in old_cache_keys:
             DAILY_PRAYER_CACHE.pop(k, None)
         
-        # Check all users with prayer notifications or friday reminders
         all_uids = set(USER_TIMEZONES.keys()) | set(USER_PRAYER_NOTIFS.keys()) | set(USER_FRIDAY_NOTIFS.keys())
         for uid_str in all_uids:
             try:
@@ -1484,7 +1404,6 @@ async def prayer_and_friday_worker(app):
                 u_lang = get_user_lang(uid)
                 t = TEXTS.get(u_lang, TEXTS['uz'])
 
-                # 1. Friday Special Reminder (Every Friday morning between 08:30 and 09:30)
                 if user_now.weekday() == 4 and (8 <= user_now.hour < 10):
                     last_fri = USER_FRIDAY_NOTIFS.get(uid_str, {}).get("last", "")
                     if last_fri != today_str:
@@ -1498,7 +1417,6 @@ async def prayer_and_friday_worker(app):
                         except Exception:
                             pass
 
-                # 2. Prayer Time Notifications
                 p_cfg = USER_PRAYER_NOTIFS.get(uid_str)
                 if p_cfg and p_cfg.get("enabled", False):
                     u_coords = get_user_coords(uid)
@@ -1577,37 +1495,21 @@ VOWELS_CYR = set("аоуиэеёюяўАОУИЭЕЁЮЯЎ")
 VOWELS_LAT = set("aouieAOUiE")
 
 MAP_CYR_TO_LAT = {
-    'А': 'A', 'а': 'a',
-    'Б': 'B', 'б': 'b',
-    'В': 'V', 'в': 'v',
-    'Г': 'G', 'г': 'g',
-    'Д': 'D', 'д': 'd',
-    'Ж': 'J', 'j': 'j',
-    'З': 'Z', 'з': 'z',
-    'И': 'I', 'i': 'i',
-    'Й': 'Y', 'й': 'y',
-    'К': 'K', 'к': 'k',
-    'Қ': 'Q', 'қ': 'q',
-    'Л': 'L', 'l': 'l',
-    'М': 'M', 'm': 'm',
-    'Н': 'N', 'n': 'n',
-    'О': 'O', 'o': 'o',
-    'П': 'P', 'p': 'p',
-    'Р': 'R', 'r': 'r',
-    'С': 'S', 's': 's',
-    'Т': 'T', 't': 't',
-    'У': 'U', 'u': 'u',
-    'Ф': 'F', 'f': 'f',
-    'Х': 'X', 'x': 'x',
-    'Ҳ': 'H', 'ҳ': 'h',
-    'Э': 'E', 'э': 'e',
+    'А': 'A', 'а': 'a', 'Б': 'B', 'б': 'b', 'В': 'V', 'в': 'v',
+    'Г': 'G', 'г': 'g', 'Д': 'D', 'д': 'd', 'Ж': 'J', 'ж': 'j',
+    'З': 'Z', 'з': 'z', 'И': 'I', 'и': 'i', 'Й': 'Y', 'й': 'y',
+    'К': 'K', 'к': 'k', 'Қ': 'Q', 'қ': 'q', 'Л': 'L', 'l': 'l',
+    'М': 'M', 'm': 'm', 'Н': 'N', 'n': 'n', 'О': 'O', 'o': 'o',
+    'П': 'P', 'p': 'p', 'Р': 'R', 'r': 'r', 'С': 'S', 's': 's',
+    'Т': 'T', 't': 't', 'У': 'U', 'у': 'u', 'Ф': 'F', 'f': 'f',
+    'Х': 'X', 'х': 'x', 'Ҳ': 'H', 'ҳ': 'h', 'Э': 'E', 'э': 'e',
 }
 
 MAP_LAT_TO_CYR = {
     'A': 'А', 'a': 'а', 'B': 'Б', 'b': 'б', 'V': 'В', 'v': 'в',
     'G': 'Г', 'g': 'г', 'D': 'Д', 'd': 'д', 'J': 'Ж', 'j': 'ж',
     'Z': 'З', 'z': 'з', 'I': 'И', 'i': 'и', 'Y': 'Й', 'y': 'й',
-    'K': 'К', 'k': 'к', 'Q': 'Қ', 'q': 'қ', 'L': 'Л', 'l': 'л',
+    'K': 'К', 'k': 'к', 'Q': 'Қ', 'q': 'қ', 'L': 'Л', 'l': 'l',
     'M': 'М', 'm': 'м', 'N': 'Н', 'n': 'н', 'O': 'О', 'o': 'о',
     'P': 'П', 'p': 'п', 'R': 'Р', 'r': 'р', 'S': 'С', 's': 'с',
     'T': 'Т', 't': 'т', 'U': 'У', 'u': 'у', 'F': 'Ф', 'f': 'ф',
@@ -1650,7 +1552,7 @@ def cyrillic_to_latin(text: str) -> str:
             
         if c in ('Ч', 'ч'):
             res.append("CH" if (c.isupper() and nxt.isupper()) else ("Ch" if c.isupper() else "ch"))
-            i += 2
+            i += 1
             continue
             
         if c in ('Ш', 'ш', 'Щ', 'щ'):
@@ -1707,7 +1609,7 @@ def latin_to_cyrillic(text: str) -> str:
             continue
 
         if c in ('y', 'Y') and nxt in ('o', 'O') and nxt2 in APOSTROPHES:
-            res.append("ЙЎ" if (c.isupper() and nxt.isupper()) else ("Йў" if c.isupper() else "йў"))
+            res.append("ЙЎ" if (c.isupper() and nxt2.isupper()) else ("Йў" if c.isupper() else "йў"))
             i += 3
             continue
             
@@ -1832,12 +1734,12 @@ class AstroPrayerTimes:
             if val < -1.0: return 180.0
             return math.degrees(math.acos(val))
 
-        shadow_factor = 2.0  # Hanefi Asr-ı Sânî (2x gölge kuralı)
+        shadow_factor = 2.0
         asr_alt = math.degrees(math.atan(1.0 / (shadow_factor + math.tan(math.radians(abs(self.lat - dec))))))
         
         w_sunrise = hour_angle(sun_rise_angle) / 15.0
-        w_fajr = hour_angle(18.0) / 15.0  # 18° Diyanet & O'MI
-        w_isha = hour_angle(17.0) / 15.0  # 17° Diyanet & O'MI
+        w_fajr = hour_angle(18.0) / 15.0
+        w_isha = hour_angle(17.0) / 15.0
         
         lat_r = math.radians(self.lat)
         dec_r = math.radians(dec)
@@ -1856,7 +1758,6 @@ class AstroPrayerTimes:
         else:
             isha_h = noon + w_isha
 
-        # Resmi Temkin ve Emniyet Ofsetleri
         if self.country_code == 'TR':
             dhuhr_temkin = 5.0 / 60.0
             asr_temkin = 4.0 / 60.0
@@ -1892,9 +1793,6 @@ class AstroPrayerTimes:
             "Isha": fmt(isha_h)
         }
 
-# =====================================================================
-# KERAHAT VAKİTLERİ VE İŞRAK SAYACI (FIKHİ HESAP MOTORU)
-# =====================================================================
 def calculate_kerahat_and_israq(timings: dict, now_dt: datetime) -> dict:
     ref_d = now_dt.date()
     def to_dt(t_str: str) -> datetime:
@@ -3080,6 +2978,8 @@ TEXTS = {
         'btn_adhkar': "📿 Zikrlar & Salovatlar",
         'btn_timezone_hub': "🕒 Vaqt & Joylashuv",
         'btn_lang': "🌐 Tilni tanlash",
+        'btn_reset': "🔄 Qayta boshlash & Tozalash",
+        'reset_success': "🔄 *Bot muvaffaqiyatli yangilandi!*\n\nBarcha vaqtinchalik amallar tozalandi va menyu qayta yuklandi. Asosiy menyudasiz.",
         'btn_timezone': "🕒 Vaqt mintaqasi",
         'btn_city_label': "Shahar",
         'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
@@ -3180,13 +3080,6 @@ TEXTS = {
             "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
             "🇺🇿 *Maʼnosi:* «Alloh – Undan oʻzga iloh yoʻqdir. U doim tirik va barchani idora qilib turuvchi (Qayyum)dir. Uni na mudroq bosar va na uyqu. Osmonlar va yerdagi barcha narsa Unikidir. Uning huzurida Oʻz iznisiz kim ham shafoat qila olardi?! U ularning oldilaridagi va orqalaridagi narsalarni biladi. Ular esa Uning ilmidan faqat Oʻzi xohlaganicha narsanigina qamrab oladilar. Uning Kursiysi osmonlar va yerni qamrab olgandir. Ularni asrab-turish Unga ogʻirlik qilmas. U eng yuksak va buyuk zotdir.»\n\n"
             "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
-            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
-            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
-            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
-            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
-            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
-            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
-            "🇺🇿 *Fazilati:* «Tongda va kechda 3 martadan oʻqilsa, bandani har bir yomonlikdan asrashga kifoya qiladi.» _(Abu Dovud va Termiziy rivoyati)_\n\n"
             "3️⃣ *Sayyidul Istigʻfor (Eng ulugʻ tavba duosi)*\n"
             "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
             "4️⃣ *Tonggi hamd va tavhid zikri*\n"
@@ -3197,7 +3090,6 @@ TEXTS = {
         'adhkar_evening_text': (
             "🌇 *KECHKI ZIKRLAR (ARABCHA MATN VA MAʼNOSI)*\n\n"
             "1️⃣ *Oyatal Kursiy (Baqara surasi, 255-oyat)*\n"
-            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
             "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
             "3️⃣ *Sayyidul Istigʻfor*\n"
             "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
@@ -3211,9 +3103,9 @@ TEXTS = {
             "1️⃣ *Salovati Ibrohimiyya (Namozdagi salovat)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
             "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِfāyihā, وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِfāyihā, وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
             "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
         )
     },
     'tr': {
@@ -3250,6 +3142,8 @@ TEXTS = {
         'btn_adhkar': "📿 Zikirler & Salavat",
         'btn_timezone_hub': "🕒 Saat & Konum Ayarı",
         'btn_lang': "🌐 Dil Seçimi",
+        'btn_reset': "🔄 Yenile & Baştan Başlat",
+        'reset_success': "🔄 *Bot başarıyla yenilendi!*\n\nTüm geçici işlemler temizlendi ve menü sıfırlandı. Ana menüdesiniz.",
         'btn_timezone': "🕒 Saat Dilimi",
         'btn_city_label': "Şehir",
         'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
@@ -3371,11 +3265,11 @@ TEXTS = {
         'adhkar_salawat_text': (
             "🤲 *EN MUTEBER SALAVATLAR VE MEALLERİ*\n\n"
             "1️⃣ *Salavat-ı İbrahimiye (Namazdaki Salli-Barik)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَARِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَARَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
             "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِfāyihā, وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
             "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
         )
     },
     'ru': {
@@ -3412,6 +3306,8 @@ TEXTS = {
         'btn_adhkar': "📿 Зикры и Салаваты",
         'btn_timezone_hub': "🕒 Время и Геолокация",
         'btn_lang': "🌐 Сменить язык",
+        'btn_reset': "🔄 Сброс и Перезапуск",
+        'reset_success': "🔄 *Бот успешно перезапущен!*\n\nВсе временные процессы очищены, меню сброшено. Вы в главном меню.",
         'btn_timezone': "🕒 Часовой пояс",
         'btn_city_label': "Город",
         'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
@@ -3523,7 +3419,7 @@ TEXTS = {
         'adhkar_salawat_text': (
             "🤲 *ДОСТОВЕРНЫЕ САЛАВАТЫ И ИХ ЗНАЧЕНИЯ*\n\n"
             "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَARِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَARَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
         )
     },
     'en': {
@@ -3560,6 +3456,8 @@ TEXTS = {
         'btn_adhkar': "📿 Adhkar & Salawat",
         'btn_timezone_hub': "🕒 Time & Location",
         'btn_lang': "🌐 Change Language",
+        'btn_reset': "🔄 Refresh & Reset",
+        'reset_success': "🔄 *Bot successfully refreshed!*\n\nAll temporary states cleared and menu reset. You are at the main menu.",
         'btn_timezone': "🕒 Timezone",
         'btn_city_label': "City",
         'btn_auto_loc': "📍 Auto-Detect (Location / City)",
@@ -3671,7 +3569,7 @@ TEXTS = {
         'adhkar_salawat_text': (
             "🤲 *AUTHENTIC SALAWAT & TRANSLATIONS*\n\n"
             "1️⃣ *Salawat Ibrahimiyyah (Prayer Salawat)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَARِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَARَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
         )
     }
 }
@@ -3689,7 +3587,7 @@ def get_reply_menu(user_id, context=None):
         [KeyboardButton(t['btn_exam']), KeyboardButton(t['btn_schedule_img'])],
         [KeyboardButton(t['btn_pomodoro']), KeyboardButton(t['btn_translit'])],
         [KeyboardButton(t['btn_timezone_hub']), KeyboardButton(t['btn_lang'])],
-        [KeyboardButton(t['btn_feedback'])],
+        [KeyboardButton(t['btn_feedback']), KeyboardButton(t['btn_reset'])],
     ]
     if user_id in ADMIN_IDS:
         admin_btn_lbl = {
@@ -3867,7 +3765,7 @@ def _yt_dlp_download(url: str, download_dir: str, audio_only: bool = False) -> d
         'noplaylist': True,
         'socket_timeout': 20,
         'retries': 3,
-                'format': 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
+        'format': 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
         'extract_audio': audio_only,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -3940,19 +3838,17 @@ def download_media_sync(url: str, download_dir: str) -> dict:
     except FileTooLargeError:
         raise
     except Exception as e:
-        print(f"[DOWNLOAD_WARNING] yt-dlp ile indirilemedi ({e}). Akilli yedek indirme motoru devreye giriyor...")
+        print(f"[DOWNLOAD_WARNING] yt-dlp ile indirilemedi ({e}). Akilli yedek motoru devrede...")
 
         if insta_code:
             fallback_res = fallback_instagram_download(insta_code, download_dir)
             if fallback_res:
-                print(f"[DOWNLOAD_SUCCESS] Instagram yedek motoru ile basariyla indirildi: {insta_code}")
                 return fallback_res
 
         m_x = re.search(r'(?:twitter\.com|x\.com)/(?:[^/]+/)?status/(\d+)', clean_url)
         if m_x:
             fallback_x = fallback_twitter_download(m_x.group(1), download_dir)
             if fallback_x:
-                print(f"[DOWNLOAD_SUCCESS] X/Twitter yedek motoru ile basariyla indirildi: {m_x.group(1)}")
                 return fallback_x
 
         raise e
@@ -3967,6 +3863,7 @@ def download_audio_sync(url: str, download_dir: str) -> dict:
     except Exception as e:
         add_system_log(f"Audio indirme hatasi: {e}", level="WARN")
         raise e
+
 # =====================================================================
 # DİNAMİK BOT KOMUTLARI
 # =====================================================================
@@ -3987,7 +3884,7 @@ def format_system_logs_card() -> tuple:
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Logları Yenile", callback_data="admin_view_logs")],
-        [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
+        [InlineKeyboardButton("🔙 Sistem Paneline Dön", callback_data="admin_hub_system")]
     ])
     return card, kb
 
@@ -3998,7 +3895,6 @@ async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     card, kb = format_system_logs_card()
     await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
 
-
 async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: int, lang: str):
     is_admin = user_id in ADMIN_IDS
     cache_key = (lang, is_admin)
@@ -4008,41 +3904,45 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
         'uz': [
             BotCommand("start", "Botni ishga tushirish"),
             BotCommand("menu", "Asosiy menyu"),
-            BotCommand("namoz", "Namoz vaqtlari"),
+            BotCommand("namoz", "Namoz & Ibodat markazi"),
             BotCommand("obhavo", "Ob-havo maʼlumoti"),
             BotCommand("pdf", "PDF & Hujjatlar"),
             BotCommand("imtihon", "Imtihonlar taymeri"),
             BotCommand("vaqt", "Vaqt & Joylashuv"),
+            BotCommand("reset", "Botni yangilash & Tozalash"),
             BotCommand("cancel", "Bekor qilish"),
         ],
         'tr': [
             BotCommand("start", "Botu başlat"),
             BotCommand("menu", "Ana menü"),
-            BotCommand("namaz", "Namaz vakitleri"),
+            BotCommand("namaz", "Namaz & İbadet merkezi"),
             BotCommand("hava", "Hava durumu"),
             BotCommand("pdf", "PDF & Belge araçları"),
             BotCommand("sinav", "Sınav & Geri sayım"),
             BotCommand("saat", "Saat & Konum"),
+            BotCommand("reset", "Botu yenile & Baştan başlat"),
             BotCommand("cancel", "İptal et"),
         ],
         'ru': [
             BotCommand("start", "Запустить бота"),
             BotCommand("menu", "Главное меню"),
-            BotCommand("namaz", "Время намаза"),
+            BotCommand("namaz", "Намаз и Ибадат"),
             BotCommand("weather", "Прогноз погоды"),
             BotCommand("pdf", "PDF и Документы"),
             BotCommand("exam", "Таймер экзаменов"),
             BotCommand("time", "Время и Геолокация"),
+            BotCommand("reset", "Сброс и перезапуск бота"),
             BotCommand("cancel", "Отмена"),
         ],
         'en': [
             BotCommand("start", "Start the bot"),
             BotCommand("menu", "Main menu"),
-            BotCommand("prayer", "Prayer times"),
+            BotCommand("prayer", "Prayer & Worship hub"),
             BotCommand("weather", "Weather forecast"),
             BotCommand("pdf", "PDF & Documents"),
             BotCommand("exam", "Exam countdown"),
             BotCommand("time", "Time & Location"),
+            BotCommand("reset", "Refresh & Reset bot"),
             BotCommand("cancel", "Cancel action"),
         ],
     }
@@ -4072,7 +3972,7 @@ async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: 
         pass
 
 # =====================================================================
-# TELEGRAM KOMUT HANDLER'LARI
+# TELEGRAM TEMEL KOMUTLARI
 # =====================================================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -4101,10 +4001,20 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cleanup_user_temp_files(context, user_id)
     await update.message.reply_text(get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
 
-# =====================================================================
-# GELİŞMİŞ SAHİP & GELİŞTİRİCİ KONTROL SİSTEMİ (TELEMETRİ, DİZİN, ÇİFT YÖNLÜ DM)
-# =====================================================================
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    cleanup_user_temp_files(context, user_id)
+    context.user_data.clear()
+    context.user_data['mode'] = 'auto'
+    u_lang = get_user_lang(user_id, context)
+    await update_user_bot_commands(context, user_id, u_lang)
+    await update.message.reply_text(get_text(user_id, 'reset_success', context), parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
 
+# =====================================================================
+# SAHİP VE GELİŞTİRİCİ KONTROL PANELİ
+# =====================================================================
 USERS_CACHE_DATA = None
 USERS_CACHE_TS = 0.0
 
@@ -4163,6 +4073,7 @@ def get_all_registered_users() -> list:
     USERS_CACHE_TS = now_t
     return users_list
 
+# DÜZELTME 1: Mobilde sade, şık ve ferah 3 satırlı ana kontrol paneli
 def format_admin_stats_panel() -> tuple:
     all_users = get_all_registered_users()
     user_count = len(all_users)
@@ -4175,64 +4086,107 @@ def format_admin_stats_panel() -> tuple:
     uptime_str = get_uptime_string()
     ram_mb = get_ram_usage_mb()
     disk_info = get_disk_usage_info()
-    maint_lbl = "🔴 AÇIK (Yalnızca Yöneticiler)" if is_maintenance_active() else "🟢 KAPALI (Normal Çalışma)"
-
-    preview_lines = []
-    for idx, u in enumerate(all_users[:5], start=1):
-        uid = u['id']
-        name_clean = safe_md(u['name'])
-        uname_part = f"(@{u['username']})" if u['username'] else "_(Username yok)_"
-        la = u['last_active'][:16] if u['last_active'] else "Pasif"
-        b_tag = " [⛔ Banlı]" if is_user_banned(uid) else ""
-        preview_lines.append(
-            f"*{idx}.* \u200e{name_clean}\u200e {uname_part}{b_tag}\n"
-            f"   🆔 ID: `{uid}` | Son: `{la}` | DM: `/msg_{uid}`"
-        )
-
-    users_preview = "\n".join(preview_lines) if preview_lines else "_Henüz kayıtlı kullanıcı bulunmuyor._"
+    maint_lbl = "AÇIK 🔴" if is_maintenance_active() else "KAPALI 🟢"
 
     report = (
         f"👑 *NUN PROJECT // YÖNETİCİ KONTROL MERKEZİ*\n\n"
-        f"📊 *KULLANICI VE İBADET İSTATİSTİKLERİ:*\n"
-        f"  ▫️ Toplam Kayıtlı Kullanıcı: `{user_count}`\n"
-        f"  ▫️ Vakit Bildirimi Aktif: `{prayer_notif_count}`\n"
-        f"  ▫️ Cuma Hatırlatıcı Aktif: `{friday_notif_count}`\n"
-        f"  ▫️ Aktif Sınav Kayıtları: `{exam_count}`\n"
-        f"  ▫️ Aktif Hatırlatıcılar: `{remind_count}`\n"
-        f"  ▫️ Toplam To-Do Hedefi: `{todo_count}`\n"
-        f"  ▫️ Engellenen (Banlı) Sayısı: `{banned_count}`\n\n"
-        f"⚡ *SİSTEM, SUNUCU VE DİSK SAĞLIĞI:*\n"
-        f"  ▫️ Kesintisiz Çalışma (Uptime): `{uptime_str}`\n"
-        f"  ▫️ Bellek Tüketimi (RAM): `{ram_mb:.1f} MB`\n"
-        f"  ▫️ Disk Durumu: `{disk_info}`\n"
+        f"📊 *SİSTEM ÖZETİ:*\n"
+        f"  ▫️ Toplam Kullanıcı: `{user_count}` | Banlı: `{banned_count}`\n"
+        f"  ▫️ Vakit Bildirimi: `{prayer_notif_count}` | Cuma: `{friday_notif_count}`\n"
+        f"  ▫️ Sınavlar: `{exam_count}` | Görevler: `{todo_count}`\n\n"
+        f"⚡ *SUNUCU SAĞLIĞI:*\n"
+        f"  ▫️ Çalışma Süresi: `{uptime_str}`\n"
+        f"  ▫️ Bellek (RAM): `{ram_mb:.1f} MB` | Disk: `{disk_info}`\n"
         f"  ▫️ Bakım Modu: `{maint_lbl}`\n\n"
-        f"👥 *SON KULLANICILAR (Kısa Önizleme):*\n"
-        f"{users_preview}\n\n"
-        f"💡 _İpucu: Kullanıcıları listelemek, duyuru göndermek veya sistemi yönetmek için aşağıdaki butonları kullanabilirsiniz._"
+        f"📱 _Yönetmek istediğiniz kategoriyi seçiniz:_"
     )
 
-    maint_btn_lbl = "🚧 Bakım: Kapat 🟢" if is_maintenance_active() else "🚧 Bakım: Aç 🔴"
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"👥 Kayıtlı Kullanıcılar ({user_count})", callback_data="stats_users_page_0")],
-        [InlineKeyboardButton("📢 Segmentli Duyuru Gönder", callback_data="admin_broadcast_prompt"), InlineKeyboardButton("📊 Excel İndir (.xlsx)", callback_data="admin_export_excel")],
-        [InlineKeyboardButton("💾 Yedek Al (ZIP)", callback_data="admin_backup_download"), InlineKeyboardButton("📥 Yedekten Geri Yükle", callback_data="admin_restore_prompt")],
-        [InlineKeyboardButton("👑 Yöneticileri Yönet", callback_data="admin_manage_panel"), InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt")],
-        [InlineKeyboardButton(f"⛔ Banlı Üyeler ({banned_count})", callback_data="admin_banned_list"), InlineKeyboardButton("🧹 Çöpü Temizle", callback_data="admin_clean_disk")],
-        [InlineKeyboardButton("📋 Sistem Logları", callback_data="admin_view_logs"), InlineKeyboardButton("🩺 DB Sağlık & Onarım", callback_data="admin_db_health")],
-        [InlineKeyboardButton(maint_btn_lbl, callback_data="admin_toggle_maintenance"), InlineKeyboardButton("🔄 Botu Yeniden Başlat", callback_data="admin_restart_prompt")],
-        [InlineKeyboardButton("🔄 Paneli Yenile", callback_data="stats_refresh"), InlineKeyboardButton("❌ Kapat", callback_data="admin_panel_close")]
+        [
+            InlineKeyboardButton(f"👥 Kullanıcı İşlemleri ({user_count})", callback_data="admin_hub_users"),
+            InlineKeyboardButton("📢 Toplu Duyuru Merkezi", callback_data="admin_broadcast_prompt")
+        ],
+        [
+            InlineKeyboardButton("⚙️ Sistem & Veritabanı", callback_data="admin_hub_system"),
+            InlineKeyboardButton("🛡️ Güvenlik & Bakım", callback_data="admin_hub_security")
+        ],
+        [
+            InlineKeyboardButton("🔄 Paneli Yenile", callback_data="stats_refresh"),
+            InlineKeyboardButton("❌ Kapat", callback_data="admin_panel_close")
+        ]
     ])
     return report, kb
 
+def format_admin_users_hub() -> tuple:
+    all_users = get_all_registered_users()
+    banned_cnt = len(BANNED_USERS)
+    text = (
+        "👥 *NUN PROJECT // KULLANICI YÖNETİM MERKEZİ*\n\n"
+        f"▫️ Kayıtlı Kullanıcı Sayısı: `{len(all_users)}`\n"
+        f"▫️ Engellenen (Banlı) Üye: `{banned_cnt}`\n\n"
+        "_Yapmak istediğiniz işlemi seçiniz:_"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"👥 Kayıtlı Kullanıcılar Dizini ({len(all_users)})", callback_data="stats_users_page_0")],
+        [InlineKeyboardButton("🔍 Kullanıcı Ara (ID / İsim)", callback_data="admin_search_prompt")],
+        [InlineKeyboardButton("📊 Excel Listesi İndir (.xlsx)", callback_data="admin_export_excel")],
+        [InlineKeyboardButton(f"⛔ Engellenen (Banlı) Üyeler ({banned_cnt})", callback_data="admin_banned_list")],
+        [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
+    ])
+    return text, kb
+
+def format_admin_system_hub() -> tuple:
+    ram_mb = get_ram_usage_mb()
+    disk_info = get_disk_usage_info()
+    text = (
+        "⚙️ *NUN PROJECT // SİSTEM & VERİTABANI YÖNETİMİ*\n\n"
+        f"▫️ Bellek (RAM): `{ram_mb:.1f} MB`\n"
+        f"▫️ Disk Durumu: `{disk_info}`\n"
+        f"▫️ Kesintisiz Çalışma: `{get_uptime_string()}`\n\n"
+        "_Veritabanı ve telemetri kontrolleri:_"
+    )
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("💾 Veritabanı Yedeği Al (ZIP)", callback_data="admin_backup_download"),
+            InlineKeyboardButton("📥 Yedekten Geri Yükle", callback_data="admin_restore_prompt")
+        ],
+        [
+            InlineKeyboardButton("🩺 DB Sağlık Taraması & Onarım", callback_data="admin_db_health"),
+            InlineKeyboardButton("📋 Canlı Sistem Logları", callback_data="admin_view_logs")
+        ],
+        [InlineKeyboardButton("🧹 Geçici Çöp Dosyaları Temizle", callback_data="admin_clean_disk")],
+        [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
+    ])
+    return text, kb
+
+def format_admin_security_hub() -> tuple:
+    maint_lbl = "Bakım Modu: AÇIK 🔴" if is_maintenance_active() else "Bakım Modu: KAPALI 🟢"
+    maint_btn = "🚧 Bakımı Kapat 🟢" if is_maintenance_active() else "🚧 Bakımı Aç 🔴"
+    text = (
+        "🛡️ *NUN PROJECT // GÜVENLİK VE BAKIM KONTROLÜ*\n\n"
+        f"▫️ Mevcut Durum: *{maint_lbl}*\n"
+        f"▫️ Yetkili Yönetici Sayısı: `{len(ADMIN_IDS)}`\n\n"
+        "_Güvenlik, yetki ve sunucu operasyonları:_"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👑 Yönetici Kadrosu & Yetkiler", callback_data="admin_manage_panel")],
+        [InlineKeyboardButton(maint_btn, callback_data="admin_toggle_maintenance")],
+        [InlineKeyboardButton("🔄 Botu Yeniden Başlat (Reboot)", callback_data="admin_restart_prompt")],
+        [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
+    ])
+    return text, kb
+
+# DÜZELTME 2: HTML modunda hatasız güvenli kullanıcı kartı
 def format_user_detail_card(target_uid: int) -> tuple:
     uid_str = str(target_uid)
     p = USER_PROFILES.get(uid_str, {})
     name = p.get('name') or f"User {target_uid}"
+    clean_name = html_lib.escape(name)
     uname = p.get('username') or ""
-    uname_str = f"@{uname}" if uname else "_(Yok)_"
+    uname_str = f"@{html_lib.escape(uname)}" if uname else "<i>(Yok)</i>"
     la = p.get('last_active') or "Bilinmiyor"
     lang_str = (USER_LANGS.get(uid_str) or "uz").upper()
-    city_str = USER_CITIES.get(uid_str) or "Belirtilmedi"
+    city_str = html_lib.escape(USER_CITIES.get(uid_str) or "Belirtilmedi")
     tz_val = USER_TIMEZONES.get(uid_str, 0)
     tz_str = f"UTC{'+' if tz_val >= 0 else ''}{tz_val}" if uid_str in USER_TIMEZONES else "Belirtilmedi"
     p_notif = USER_PRAYER_NOTIFS.get(uid_str, {}).get("enabled", False)
@@ -4246,66 +4200,58 @@ def format_user_detail_card(target_uid: int) -> tuple:
         status_str = "👑 Yönetici"
     elif is_banned:
         b_mode = ban_info.get('mode', 'soft') if ban_info else 'soft'
-        status_str = f"⛔ Engelli ({'🔴 Tam Men Edilmiş' if b_mode == 'hard' else '🟡 Standart Ban'})"
+        status_str = f"⛔ Engelli ({'🔴 Tam Men' if b_mode == 'hard' else '🟡 Standart Ban'})"
     else:
         status_str = "🟢 Aktif"
 
     card_lines = [
-        "👤 *NUN PROJECT // KULLANICI YÖNETİM KARTI*",
-        "",
-        f"▫️ *İsim:* \u200e{safe_md(name)}\u200e",
-        f"▫️ *Kullanıcı Adı:* {uname_str}",
-        f"▫️ *Telegram ID:* `{target_uid}`",
-        f"▫️ *Şehir:* `{city_str}` | *Dil:* `{lang_str}` | *Saat:* `{tz_str}`",
-        f"▫️ *Ezan Bildirimi:* {p_status}",
-        f"▫️ *Son Aktiflik:* `{la[:19]}`",
-        f"▫️ *Durum:* {status_str}",
+        "👤 <b>NUN PROJECT // KULLANICI YÖNETİM KARTI</b>\n",
+        f"▫️ <b>İsim:</b> {clean_name}",
+        f"▫️ <b>Kullanıcı Adı:</b> {uname_str}",
+        f"▫️ <b>Telegram ID:</b> <code>{target_uid}</code>",
+        f"▫️ <b>Şehir:</b> <code>{city_str}</code> | <b>Dil:</b> <code>{lang_str}</code> | <b>Saat:</b> <code>{tz_str}</code>",
+        f"▫️ <b>Ezan Bildirimi:</b> {p_status}",
+        f"▫️ <b>Son Aktiflik:</b> <code>{la[:19]}</code>",
+        f"▫️ <b>Durum:</b> {status_str}",
     ]
     if is_banned and ban_info:
-        card_lines.append(f"▫️ *Ban Sebebi:* _{safe_md(ban_info.get('reason'))}_")
-        card_lines.append(f"▫️ *Ban Tarihi:* `{ban_info.get('timestamp')}`")
+        card_lines.append(f"▫️ <b>Ban Sebebi:</b> <i>{html_lib.escape(ban_info.get('reason', ''))}</i>")
+        card_lines.append(f"▫️ <b>Ban Tarihi:</b> <code>{ban_info.get('timestamp', '')}</code>")
 
     card_text = "\n".join(card_lines)
 
     btns = []
-    # 1. Satır: İletişim
     btns.append([
         InlineKeyboardButton("✉️ Bot İçi DM", callback_data=f"admin_dm_start_{target_uid}"),
         InlineKeyboardButton("⚡ 1:1 Sohbet Aç", callback_data=f"admin_direct_invite_{target_uid}")
     ])
-
-    # 2. Satır: Ban / Unban
     if is_banned:
         btns.append([InlineKeyboardButton("✅ Engeli Kaldır (Unban)", callback_data=f"admin_unban_{target_uid}")])
     else:
         btns.append([InlineKeyboardButton("⛔ Kullanıcıyı Engelle (Ban)", callback_data=f"admin_ban_choose_{target_uid}")])
 
-    # 3. Satır: Yetkilendirme
     if is_admin:
         if len(ADMIN_IDS) > 1:
             btns.append([InlineKeyboardButton("🔻 Yöneticilikten Çıkar", callback_data=f"admin_demote_{target_uid}")])
     else:
         btns.append([InlineKeyboardButton("👑 Yönetici Yetkisi Ver", callback_data=f"admin_promote_{target_uid}")])
 
-    # 4. Satır: Canlı Bilgileri Çek
-    btns.append([InlineKeyboardButton("🔄 Telegram Canlı Bilgilerini Çek (get_chat)", callback_data=f"admin_fetch_chat_{target_uid}")])
-
-    # 5. Satır: Geri Dönüş
+    btns.append([InlineKeyboardButton("🔄 Canlı Bilgileri Çek (get_chat)", callback_data=f"admin_fetch_chat_{target_uid}")])
     btns.append([InlineKeyboardButton("🔙 Kullanıcılar Listesine Dön", callback_data="stats_users_page_0")])
 
     return card_text, InlineKeyboardMarkup(btns)
 
 def format_user_ban_options_card(target_uid: int) -> tuple:
     p = USER_PROFILES.get(str(target_uid), {})
-    name = safe_md(p.get('name') or f"User {target_uid}")
+    name = html_lib.escape(p.get('name') or f"User {target_uid}")
     text = (
-        f"⛔ *KULLANICI ENGELLEME SEÇENEKLERİ*\n\n"
-        f"Hedef Kullanıcı: *\u200e{name}\u200e* (`{target_uid}`)\n\n"
+        f"⛔ <b>KULLANICI ENGELLEME SEÇENEKLERİ</b>\n\n"
+        f"Hedef Kullanıcı: <b>{name}</b> (<code>{target_uid}</code>)\n\n"
         f"Lütfen uygulamak istediğiniz engelleme türünü seçiniz:\n\n"
-        f"1️⃣ *🟡 Standart Ban (Botta Bırak):*\n"
-        f"Kullanıcı engellenir ve mesajlarına yanıt verilmez. Ancak klavyesi ve bildirim kayıtları silinmez. İleride engel kaldırılırsa ayarları korunur.\n\n"
-        f"2️⃣ *🔴 Tam Men Et (Bottan Tamamen At):*\n"
-        f"Kullanıcının telefonundaki bot klavyesi (`ReplyKeyboardRemove`) ve komut menüsü silinir, tüm ezan ve hatırlatıcı kayıtları temizlenir ve kullanıcı bottan tamamen men edilir."
+        f"1️⃣ <b>🟡 Standart Ban (Botta Bırak):</b>\n"
+        f"Kullanıcı engellenir ve mesajlarına yanıt verilmez. Ancak ayarları korunur.\n\n"
+        f"2️⃣ <b>🔴 Tam Men Et (Bottan Tamamen At):</b>\n"
+        f"Kullanıcının telefonundaki bot menüsü silinir, bildirimleri tamamen kaldırılır."
     )
     btns = [
         [InlineKeyboardButton("🟡 Standart Ban (Botta Bırak)", callback_data=f"admin_ban_soft_prompt_{target_uid}")],
@@ -4329,16 +4275,16 @@ def format_users_directory_page(page: int = 0, page_size: int = 6) -> tuple:
     page_users = all_users[start_idx:end_idx]
 
     lines = [
-        f"👥 *NUN PROJECT // KAYITLI KULLANICILAR DİZİNİ*",
-        f"Toplam: `{total_users}` kullanıcı | Sayfa: `{page + 1}/{total_pages}`\n",
-        f"_İşlem yapmak istediğiniz kullanıcının butonuna dokunun:_\n"
+        "👥 <b>NUN PROJECT // KAYITLI KULLANICILAR DİZİNİ</b>",
+        f"Toplam: <code>{total_users}</code> kullanıcı | Sayfa: <code>{page + 1}/{total_pages}</code>\n",
+        "<i>İşlem yapmak istediğiniz kullanıcının butonuna dokunun:</i>\n"
     ]
 
     user_buttons = []
     for idx, u in enumerate(page_users, start=start_idx + 1):
         uid = u['id']
-        name_clean = safe_md(u['name'])
-        uname_str = f"(@{u['username']})" if u['username'] else ""
+        name_clean = html_lib.escape(u['name'])
+        uname_str = f"(@{html_lib.escape(u['username'])})" if u['username'] else ""
         la = u['last_active'][:16] if u['last_active'] else "Pasif"
         b_tag = ""
         if uid in ADMIN_IDS:
@@ -4348,17 +4294,16 @@ def format_users_directory_page(page: int = 0, page_size: int = 6) -> tuple:
             b_tag = " [🔴]" if (b_info and b_info.get('mode') == 'hard') else " [🟡]"
 
         lines.append(
-            f"*{idx}.* \u200e{name_clean}\u200e {uname_str}{b_tag}\n"
-            f"   🆔 ID: `{uid}` | Son: `{la}`"
+            f"<b>{idx}.</b> {name_clean} {uname_str}{b_tag}\n"
+            f"   🆔 ID: <code>{uid}</code> | Son: <code>{la}</code>"
         )
 
         btn_label = f"👤 {idx}. {(u['name'] or str(uid))[:15]} {uname_str[:12]}"
         user_buttons.append([InlineKeyboardButton(btn_label.strip(), callback_data=f"admin_user_view_{uid}")])
 
-    lines.append("\n💡 _Simgeler: [👑] Yönetici | [🟡] Standart Ban | [🔴] Tam Men_")
+    lines.append("\n💡 <i>[👑] Yönetici | [🟡] Standart Ban | [🔴] Tam Men</i>")
 
     action_buttons = list(user_buttons)
-
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("◀️ Önceki", callback_data=f"stats_users_page_{page - 1}"))
@@ -4374,9 +4319,41 @@ def format_users_directory_page(page: int = 0, page_size: int = 6) -> tuple:
         InlineKeyboardButton("🔄 Eşitle & Güncelle", callback_data="admin_sync_users_prompt"),
         InlineKeyboardButton("🔄 Yenile", callback_data=f"stats_users_page_{page}")
     ])
-    action_buttons.append([InlineKeyboardButton("🔙 Ana Yönetici Paneline Dön", callback_data="stats_back_main")])
+    action_buttons.append([InlineKeyboardButton("🔙 Kullanıcı Merkezine Dön", callback_data="admin_hub_users")])
 
     return "\n".join(lines), InlineKeyboardMarkup(action_buttons)
+
+def format_search_results_card(matches: list, query_str: str) -> tuple:
+    if not matches:
+        return f"🔍 <b>ARAMA SONUCU:</b>\n\n<code>{html_lib.escape(query_str)}</code> için sonuç bulunamadı.", InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]])
+
+    lines = [
+        f"🔍 <b>KULLANICI ARAMA SONUÇLARI</b> (<code>{len(matches)}</code> eşleşme)",
+        f"Aranan: <code>{html_lib.escape(query_str)}</code>\n"
+    ]
+    btns = []
+    for idx, u in enumerate(matches[:5], start=1):
+        uid = u['id']
+        name_clean = html_lib.escape(u['name'])
+        uname_str = f"@{html_lib.escape(u['username'])}" if u['username'] else "<i>(Yok)</i>"
+        la = u['last_active'][:16] if u['last_active'] else "Pasif"
+        city_str = html_lib.escape(u['city'] or "Belirtilmedi")
+        p_status = "🔔 Açık" if u['prayer_active'] else "🔕 Kapalı"
+
+        lines.append(
+            f"<b>{idx}.</b> {name_clean} — {uname_str}\n"
+            f"   🆔 ID: <code>{uid}</code> | Şehir: <code>{city_str}</code>\n"
+            f"   🕒 Son Aktif: <code>{la}</code> | Ezan: {p_status}\n"
+            f"   💬 Hızlı DM: <code>/msg_{uid}</code>\n"
+        )
+        row_btns = [
+            InlineKeyboardButton(f"⚡ 1:1 Sohbet Başlat", callback_data=f"admin_direct_invite_{uid}"),
+            InlineKeyboardButton(f"✉️ Bot İçi DM", callback_data=f"admin_dm_start_{uid}")
+        ]
+        btns.append(row_btns)
+
+    btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
+    return "\n".join(lines), InlineKeyboardMarkup(btns)
 
 async def send_admin_dm_to_user(bot, admin_id: int, target_uid: int, text: str, reply_to_message=None):
     clean_text = text.strip()
@@ -4384,27 +4361,27 @@ async def send_admin_dm_to_user(bot, admin_id: int, target_uid: int, text: str, 
         return False, "Mesaj metni boş olamaz."
 
     target_card = (
-        f"📩 *NUN PROJECT // YÖNETİCİ MESAJI*\n\n"
-        f"{clean_text}\n\n"
-        f"──────────────────────────────\n"
-        f"💬 _Bu mesaja doğrudan yanıt (reply) vererek yöneticiye yazabilirsiniz._"
+        "📩 <b>NUN PROJECT // YÖNETİCİ MESAJI</b>\n\n"
+        f"{html_lib.escape(clean_text)}\n\n"
+        "──────────────────────────────\n"
+        "💬 <i>Bu mesaja doğrudan yanıt (reply) vererek yöneticiye yazabilirsiniz.</i>"
     )
     try:
-        await bot.send_message(chat_id=target_uid, text=target_card, parse_mode="Markdown")
+        await bot.send_message(chat_id=target_uid, text=target_card, parse_mode="HTML")
         p = USER_PROFILES.get(str(target_uid), {})
-        nm = safe_md(p.get('name') or f"User {target_uid}")
-        success_msg = f"✅ *Mesaj başarıyla iletildi!*\n👤 Alıcı: \u200e{nm}\u200e (`{target_uid}`)\n\n📝 *İletilen Mesaj:*\n_{safe_md(clean_text)}_"
+        nm = html_lib.escape(p.get('name') or f"User {target_uid}")
+        success_msg = f"✅ <b>Mesaj başarıyla iletildi!</b>\n👤 Alıcı: {nm} (<code>{target_uid}</code>)\n\n📝 <b>İletilen Mesaj:</b>\n<i>{html_lib.escape(clean_text)}</i>"
         if reply_to_message:
-            await reply_to_message.reply_text(success_msg, parse_mode="Markdown")
+            await reply_to_message.reply_text(success_msg, parse_mode="HTML")
         else:
-            await bot.send_message(chat_id=admin_id, text=success_msg, parse_mode="Markdown")
+            await bot.send_message(chat_id=admin_id, text=success_msg, parse_mode="HTML")
         return True, "İletildi"
     except Exception as e:
-        err_msg = f"❌ *Mesaj iletilemedi!* (ID: `{target_uid}`)\nNedeni: `{e}`\n_(Kullanıcı botu engellemiş veya hiç /start göndermemiş olabilir)_"
+        err_msg = f"❌ <b>Mesaj iletilemedi!</b> (ID: <code>{target_uid}</code>)\nNedeni: <code>{html_lib.escape(str(e))}</code>\n<i>(Kullanıcı botu engellemiş olabilir)</i>"
         if reply_to_message:
-            await reply_to_message.reply_text(err_msg, parse_mode="Markdown")
+            await reply_to_message.reply_text(err_msg, parse_mode="HTML")
         else:
-            await bot.send_message(chat_id=admin_id, text=err_msg, parse_mode="Markdown")
+            await bot.send_message(chat_id=admin_id, text=err_msg, parse_mode="HTML")
         return False, str(e)
 
 def format_broadcast_audience_menu() -> tuple:
@@ -4500,111 +4477,6 @@ async def run_segmented_broadcast(bot, admin_id: int, text: str, target_segment:
     except Exception:
         await bot.send_message(chat_id=admin_id, text=result_card, parse_mode="Markdown")
 
-async def run_broadcast(bot, admin_id: int, text: str, reply_to_message=None):
-    all_users = get_all_registered_users()
-    total = len(all_users)
-    status_msg = await bot.send_message(chat_id=admin_id, text=f"⏳ Duyuru iletiliyor... Toplam hedef: `{total}` kullanıcı.")
-    success_count = 0
-    fail_count = 0
-    b_card = (
-        f"📢 *NUN PROJECT // GENEL DUYURU*\n\n"
-        f"{text}\n\n"
-        f"──────────────────────────────\n"
-        f"_Nun Bot Resmi Bildirimidir._"
-    )
-    for u in all_users:
-        uid = u['id']
-        try:
-            await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
-            success_count += 1
-            await asyncio.sleep(0.05)
-        except RetryAfter as e:
-            add_system_log(f"Telegram FloodControl (RetryAfter {e.retry_after}s) beklemede...")
-            await asyncio.sleep(e.retry_after + 0.5)
-            try:
-                await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
-                success_count += 1
-            except Exception:
-                fail_count += 1
-        except Exception:
-            fail_count += 1
-    
-    result_card = (
-        f"📢 *TOPLU DUYURU TAMAMLANDI*\n\n"
-        f"👥 Toplam Hedef: `{total}`\n"
-        f"✅ Başarıyla İletilen: `{success_count}`\n"
-        f"❌ Ulaşılamayan / Engelleyen: `{fail_count}`\n\n"
-        f"📝 *İletilen Metin:*\n_{safe_md(text)}_"
-    )
-    try:
-        await status_msg.edit_text(result_card, parse_mode="Markdown")
-    except Exception:
-        await bot.send_message(chat_id=admin_id, text=result_card, parse_mode="Markdown")
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    track_user_activity(user)
-
-    if user_id not in ADMIN_IDS:
-        return
-
-    report, kb = format_admin_stats_panel()
-    await update.message.reply_text(report, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
-
-async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    track_user_activity(user)
-
-    if user_id not in ADMIN_IDS:
-        return
-
-    text, kb = format_users_directory_page(0)
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
-
-async def admin_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        return
-    args = context.args
-    if not args:
-        await update.message.reply_text(
-            "ℹ️ *Kullanım:* `/msg <Kullanıcı_ID> <Mesajınız>`\n\n_Örnek:_ `/msg 2146753102 Merhaba nasılsınız?`",
-            parse_mode="Markdown"
-        )
-        return
-    if not args[0].isdigit():
-        await update.message.reply_text("⚠️ Geçersiz Kullanıcı ID. Lütfen sayısal bir Telegram ID giriniz.")
-        return
-    target_uid = int(args[0])
-    if len(args) < 2:
-        context.user_data['admin_dm_target'] = target_uid
-        p = USER_PROFILES.get(str(target_uid), {})
-        nm = safe_md(p.get('name') or f"User {target_uid}")
-        await update.message.reply_text(
-            f"✍️ *\u200e{nm}\u200e* (`{target_uid}`) kullanıcısına göndermek istediğiniz mesajı yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
-            parse_mode="Markdown"
-        )
-        return
-    msg_text = " ".join(args[1:])
-    await send_admin_dm_to_user(context.bot, user_id, target_uid, msg_text, update.message)
-
-async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        return
-    args = context.args
-    if not args:
-        context.user_data['admin_broadcast_mode'] = True
-        await update.message.reply_text(
-            "📢 *TOPLU DUYURU MODU*\n\nTüm kayıtlı kullanıcılara göndermek istediğiniz duyuru metnini yazıp gönderin:\n\n_(İptal etmek için /cancel yazabilirsiniz)_",
-            parse_mode="Markdown"
-        )
-        return
-    broadcast_text = " ".join(args)
-    await run_broadcast(context.bot, user_id, broadcast_text, update.message)
-
 def format_admins_panel() -> tuple:
     lines = [
         "👑 *NUN PROJECT // YÖNETİCİ KADROSU & YETKİLENDİRME*",
@@ -4615,14 +4487,65 @@ def format_admins_panel() -> tuple:
         p = USER_PROFILES.get(str(aid), {})
         nm = safe_md(p.get('name') or f"Admin {aid}")
         un = f"(@{p.get('username')})" if p.get('username') else ""
-        lines.append(f"*{idx}.* \u200e{nm}\u200e {un}\n   🆔 ID: `{aid}`")
+        lines.append(f"*{idx}.* {nm} {un}\n   🆔 ID: `{aid}`")
         if len(ADMIN_IDS) > 1:
-            btns.append([InlineKeyboardButton(f"➖ Yetkisini Al: \u200e{nm[:12]}\u200e", callback_data=f"admin_demote_{aid}")])
+            btns.append([InlineKeyboardButton(f"➖ Yetkisini Al: {nm[:12]}", callback_data=f"admin_demote_{aid}")])
 
     btns.append([InlineKeyboardButton("➕ Yeni Yönetici Ekle (ID ile)", callback_data="admin_add_prompt")])
-    btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
+    btns.append([InlineKeyboardButton("🔙 Güvenlik Paneline Dön", callback_data="admin_hub_security")])
 
     return "\n".join(lines), InlineKeyboardMarkup(btns)
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    if user_id not in ADMIN_IDS:
+        return
+    report, kb = format_admin_stats_panel()
+    await update.message.reply_text(report, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
+
+async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    if user_id not in ADMIN_IDS:
+        return
+    text, kb = format_users_directory_page(0)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+
+async def admin_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text("ℹ️ *Kullanım:* `/msg <Kullanıcı_ID> <Mesajınız>`", parse_mode="Markdown")
+        return
+    if not args[0].isdigit():
+        await update.message.reply_text("⚠️ Geçersiz Kullanıcı ID. Sayısal Telegram ID giriniz.")
+        return
+    target_uid = int(args[0])
+    if len(args) < 2:
+        context.user_data['admin_dm_target'] = target_uid
+        p = USER_PROFILES.get(str(target_uid), {})
+        nm = safe_md(p.get('name') or f"User {target_uid}")
+        await update.message.reply_text(f"✍️ *{nm}* (`{target_uid}`) kullanıcısına mesajınızı yazınız:", parse_mode="Markdown")
+        return
+    msg_text = " ".join(args[1:])
+    await send_admin_dm_to_user(context.bot, user_id, target_uid, msg_text, update.message)
+
+async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        msg, kb = format_broadcast_audience_menu()
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
+        return
+    broadcast_text = " ".join(args)
+    await run_segmented_broadcast(context.bot, user_id, broadcast_text, "all", update.message)
 
 async def admins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4638,26 +4561,16 @@ async def add_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args or not args[0].isdigit():
         context.user_data['admin_add_mode'] = True
-        await update.message.reply_text(
-            "👑 *YENİ YÖNETİCİ EKLEME*\n\nLütfen yönetici yapmak istediğiniz kişinin sayısal Telegram ID'sini yazıp gönderin:\n\n_Örnek:_ `123456789`\n_(İptal için /cancel yazabilirsiniz)_",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("👑 *YENİ YÖNETİCİ EKLEME*\n\nLütfen Telegram ID'sini yazıp gönderin:", parse_mode="Markdown")
         return
     new_aid = int(args[0])
     add_admin_id(new_aid)
     u_lang = USER_LANGS.get(str(new_aid), 'tr')
     try:
         await update_user_bot_commands(context, new_aid, u_lang)
-        await context.bot.send_message(
-            chat_id=new_aid,
-            text="🎉 *Tebrikler!* Nun Bot yöneticisi olarak yetkilendirildiniz.\n/stats veya /users komutlarıyla yönetim paneline erişebilirsiniz.",
-            parse_mode="Markdown"
-        )
     except Exception:
         pass
-    p = USER_PROFILES.get(str(new_aid), {})
-    nm = safe_md(p.get('name') or f"Kullanıcı {new_aid}")
-    await update.message.reply_text(f"✅ *\u200e{nm}\u200e* (`{new_aid}`) başarıyla yönetici kadrosuna eklendi!", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ `{new_aid}` başarıyla yönetici kadrosuna eklendi!", parse_mode="Markdown")
 
 async def del_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4665,29 +4578,19 @@ async def del_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args or not args[0].isdigit():
-        await update.message.reply_text("ℹ️ *Kullanım:* `/deladmin <Kullanıcı_ID>`\n\n_Örnek:_ `/deladmin 123456789`", parse_mode="Markdown")
+        await update.message.reply_text("ℹ️ *Kullanım:* `/deladmin <Kullanıcı_ID>`", parse_mode="Markdown")
         return
     rem_aid = int(args[0])
     ok, msg = remove_admin_id(rem_aid)
-    if ok:
-        u_lang = USER_LANGS.get(str(rem_aid), 'tr')
-        try:
-            await update_user_bot_commands(context, rem_aid, u_lang)
-        except Exception:
-            pass
-        await update.message.reply_text(f"✅ `{rem_aid}` ID'li yöneticinin yetkisi başarıyla kaldırıldı.", parse_mode="Markdown")
-    else:
-        await update.message.reply_text(f"⚠️ {msg}", parse_mode="Markdown")
+    await update.message.reply_text(f"{'✅' if ok else '⚠️'} {msg}", parse_mode="Markdown")
 
 async def sync_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
         return
-    status_msg = await update.message.reply_text("⏳ Telegram sunucularından tüm kullanıcı profilleri sorgulanıyor ve eşitleniyor...")
-    
+    status_msg = await update.message.reply_text("⏳ Kullanıcı profilleri Telegram sunucularından taranıyor...")
     all_users = get_all_registered_users()
-    updated_count = 0
-    
+    up_cnt = 0
     for u in all_users:
         uid = u['id']
         uid_str = str(uid)
@@ -4695,30 +4598,18 @@ async def sync_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             chat = await context.bot.get_chat(chat_id=uid)
             c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {uid}"
             c_uname = chat.username or ""
-            
             p = USER_PROFILES.get(uid_str, {})
             p['id'] = uid
             p['name'] = c_name
-            p['username'] = c_uname
-            if 'last_active' not in p or p['last_active'] == 'Kayıtlı (Pasif)':
-                p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            p['username'] = c_uname.lstrip('@')
             USER_PROFILES[uid_str] = p
-            updated_count += 1
-            await asyncio.sleep(0.05)
+            up_cnt += 1
+            await asyncio.sleep(0.04)
         except Exception:
             pass
-            
     save_json(USER_PROFILES_FILE, USER_PROFILES)
     invalidate_users_cache()
-    
-    final_users = get_all_registered_users()
-    await status_msg.edit_text(
-        f"✅ *KULLANICI VERİTABANI EŞİTLENDİ!*\n\n"
-        f"👥 Toplam Tespit Edilen Kullanıcı: `{len(final_users)}`\n"
-        f"🔄 Profili Güncellenen: `{updated_count}`\n\n"
-        f"Artık tüm kullanıcılar profilleriyle birlikte listede görünmektedir.",
-        parse_mode="Markdown"
-    )
+    await status_msg.edit_text(f"✅ Kullanıcılar eşitlendi! ({up_cnt} profil güncellendi)")
 
 async def add_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4726,40 +4617,29 @@ async def add_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args or not args[0].isdigit():
-        await update.message.reply_text("ℹ️ *Kullanım:* `/adduser <Kullanıcı_ID>`\n\n_Örnek:_ `/adduser 123456789`", parse_mode="Markdown")
+        await update.message.reply_text("ℹ️ *Kullanım:* `/adduser <Kullanıcı_ID>`", parse_mode="Markdown")
         return
     new_uid = int(args[0])
     uid_str = str(new_uid)
-    
     try:
         chat = await context.bot.get_chat(chat_id=new_uid)
-        c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"Kullanıcı {new_uid}"
+        c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {new_uid}"
         c_uname = chat.username or ""
     except Exception:
-        c_name = f"Kullanıcı {new_uid}"
+        c_name = f"User {new_uid}"
         c_uname = ""
-        
     p = USER_PROFILES.get(uid_str, {})
     p['id'] = new_uid
     p['name'] = c_name
-    p['username'] = c_uname
+    p['username'] = c_uname.lstrip('@')
     p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     USER_PROFILES[uid_str] = p
-    
     if uid_str not in USER_LANGS:
-        USER_LANGS[uid_str] = "tr"
+        USER_LANGS[uid_str] = "uz"
         save_json(LANG_FILE, USER_LANGS)
-        
     save_json(USER_PROFILES_FILE, USER_PROFILES)
     invalidate_users_cache()
-    
-    await update.message.reply_text(
-        f"✅ *Kullanıcı Başarıyla Eklendi!*\n\n"
-        f"👤 İsim: \u200e{safe_md(c_name)}\u200e\n"
-        f"🆔 ID: `{new_uid}`\n"
-        f"🔗 Kullanıcı Adı: @{c_uname if c_uname else 'Yok'}",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"✅ Kullanıcı eklendi: {safe_md(c_name)} (`{new_uid}`)", parse_mode="Markdown")
 
 async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4768,15 +4648,12 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         context.user_data['admin_search_mode'] = True
-        await update.message.reply_text(
-            "🔍 *KULLANICI ARAMA MOTORU*\n\nLütfen aramak istediğiniz kullanıcının Telegram ID'sini, ismini veya @kullaniciadını yazıp gönderin:\n\n_Örnek:_ `/find 2146753102` veya `/find Muhammed`",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("🔍 *KULLANICI ARAMA*\n\nID veya isim yazınız:", parse_mode="Markdown")
         return
     q_str = " ".join(args)
     matches = search_registered_users(q_str)
     card_text, kb_search = format_search_results_card(matches, q_str)
-    await update.message.reply_text(card_text, parse_mode="Markdown", reply_markup=kb_search, disable_web_page_preview=True)
+    await update.message.reply_text(card_text, parse_mode="HTML", reply_markup=kb_search, disable_web_page_preview=True)
 
 async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4784,7 +4661,7 @@ async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     rep_msg = update.message.reply_to_message
     if rep_msg and rep_msg.document and rep_msg.document.file_name and rep_msg.document.file_name.endswith(".zip"):
-        status_dl = await update.message.reply_text("⏳ Yedek dosyası indiriliyor ve açılıyor...")
+        status_dl = await update.message.reply_text("⏳ Yedek dosyası indiriliyor...")
         try:
             file_obj = await rep_msg.document.get_file()
             tmp_z = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
@@ -4793,20 +4670,13 @@ async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ok, res_msg = restore_database_from_zip(tmp_z.name)
             os.remove(tmp_z.name)
             await status_dl.delete()
-            if ok:
-                await update.message.reply_text(f"✅ *Veritabanı Başarıyla Geri Yüklendi!*\n\n{res_msg}", parse_mode="Markdown")
-                await notify_admin_audit_log(context.bot, user_id, f"Veritabanını ZIP yedek dosyasından geri yükledi ({res_msg}).")
-            else:
-                await update.message.reply_text(f"❌ *Geri Yükleme Başarısız:* {res_msg}", parse_mode="Markdown")
+            await update.message.reply_text(f"{'✅' if ok else '❌'} {res_msg}")
         except Exception as e:
             await update.message.reply_text(f"❌ Hata: {e}")
         return
 
     context.user_data['admin_restore_mode'] = True
-    await update.message.reply_text(
-        "📥 *VERİTABANI GERİ YÜKLEME (RESTORE)*\n\nLütfen geri yüklemek istediğiniz `nun_bot_backup_*.zip` dosyasını bu sohbete belge (document) olarak gönderiniz.\n\n_(İptal için /cancel yazabilirsiniz)_",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text("📥 Lütfen yedek ZIP dosyasını belge olarak gönderin:")
 
 async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4816,26 +4686,19 @@ async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ Evet, Botu Yeniden Başlat", callback_data="admin_confirm_restart")],
         [InlineKeyboardButton("❌ İptal", callback_data="cancel_action")]
     ])
-    await update.message.reply_text(
-        "⚠️ *BOTU YENİDEN BAŞLATMA ONAYI*\n\nBot tüm açık oturumları güvenle tamamlayıp temiz bir süreç olarak baştan başlayacaktır. Onaylıyor musunuz?",
-        parse_mode="Markdown",
-        reply_markup=kb_reboot
-    )
+    await update.message.reply_text("⚠️ Bot yeniden başlatılacaktır. Onaylıyor musunuz?", parse_mode="Markdown", reply_markup=kb_reboot)
 
 async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
         return
-    status_wait = await update.message.reply_text("⏳ Veritabanı yedeği alınıyor...")
+    status_wait = await update.message.reply_text("⏳ Yedek alınıyor...")
     ok = await send_backup_to_admins(context.bot, trigger_type="Komut Talebi (/backup)")
     try:
         await status_wait.delete()
     except Exception:
         pass
-    if ok:
-        await update.message.reply_text("✅ Veritabanı yedeği tüm yöneticilere gönderildi.")
-    else:
-        await update.message.reply_text("❌ Yedek dosyası oluşturulamadı.")
+    await update.message.reply_text("✅ Yedek yöneticilere gönderildi." if ok else "❌ Yedek alınamadı.")
 
 async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4843,7 +4706,7 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args or not args[0].isdigit():
-        await update.message.reply_text("ℹ️ *Kullanım:* `/ban <Kullanıcı_ID> [soft|hard] [Sebep]`\n\n_Örnek:_ `/ban 123456789 hard Spam gönderimi`", parse_mode="Markdown")
+        await update.message.reply_text("ℹ️ *Kullanım:* `/ban <ID> [soft|hard] [Sebep]`", parse_mode="Markdown")
         return
     target_uid = int(args[0])
     if target_uid in ADMIN_IDS:
@@ -4851,22 +4714,17 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     mode = "soft"
     reason = "Kural ihlali"
-    if len(args) > 1:
-        if args[1].lower() in ("hard", "tam", "at", "kick"):
-            mode = "hard"
-            reason = " ".join(args[2:]) if len(args) > 2 else "Kural ihlali (Tam Men)"
-        elif args[1].lower() in ("soft", "standart", "beklet"):
-            mode = "soft"
-            reason = " ".join(args[2:]) if len(args) > 2 else "Kural ihlali (Standart)"
-        else:
-            reason = " ".join(args[1:])
-    
+    if len(args) > 1 and args[1].lower() in ("hard", "tam", "at"):
+        mode = "hard"
+        reason = " ".join(args[2:]) if len(args) > 2 else "Kural ihlali (Tam Men)"
+    else:
+        reason = " ".join(args[1:]) if len(args) > 1 else "Kural ihlali"
     if mode == "hard":
         await execute_hard_ban(context.bot, target_uid, reason)
-        await update.message.reply_text(f"🔴 `{target_uid}` ID'li kullanıcı *TAMAMEN MEN EDİLDİ (Bottan Atıldı)*.\nSebep: _{safe_md(reason)}_", parse_mode="Markdown")
+        await update.message.reply_text(f"🔴 `{target_uid}` tamamen men edildi.")
     else:
         await execute_soft_ban(context.bot, target_uid, reason)
-        await update.message.reply_text(f"🟡 `{target_uid}` ID'li kullanıcı *STANDART BANLANDI (Botta Bırakıldı)*.\nSebep: _{safe_md(reason)}_", parse_mode="Markdown")
+        await update.message.reply_text(f"🟡 `{target_uid}` standart banlandı.")
 
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4874,26 +4732,24 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if not args or not args[0].isdigit():
-        await update.message.reply_text("ℹ️ *Kullanım:* `/unban <Kullanıcı_ID>`\n\n_Örnek:_ `/unban 123456789`", parse_mode="Markdown")
+        await update.message.reply_text("ℹ️ *Kullanım:* `/unban <ID>`", parse_mode="Markdown")
         return
     target_uid = int(args[0])
-    if unban_user(target_uid):
-        await update.message.reply_text(f"✅ `{target_uid}` ID'li kullanıcının engeli kaldırıldı.", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("⚠️ Bu kullanıcı banlı listesinde bulunamadı.")
+    ok = unban_user(target_uid)
+    await update.message.reply_text("✅ Engel kaldırıldı." if ok else "⚠️ Bu kullanıcı banlı değil.")
 
 async def banned_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
         return
     if not BANNED_USERS:
-        await update.message.reply_text("Sistemde engellenmiş (banlı) kullanıcı bulunmuyor.")
+        await update.message.reply_text("Engellenmiş kullanıcı bulunmuyor.")
         return
     b_lines = ["⛔ *ENGELLENMİŞ KULLANICILAR:*\n"]
     for b_uid, b_info in list(BANNED_USERS.items()):
         p = USER_PROFILES.get(b_uid, {})
         nm = safe_md(p.get('name') or f"User {b_uid}")
-        b_lines.append(f"▫️ \u200e{nm}\u200e (`{b_uid}`) — _{safe_md(b_info.get('reason'))}_")
+        b_lines.append(f"▫️ {nm} (`{b_uid}`) — _{safe_md(b_info.get('reason'))}_")
     await update.message.reply_text("\n".join(b_lines), parse_mode="Markdown")
 
 async def maintenance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4901,7 +4757,7 @@ async def maintenance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if user_id not in ADMIN_IDS:
         return
     new_st = toggle_maintenance_mode()
-    st_text = "AÇILDI 🔴 (Yalnızca yöneticiler kullanabilir)" if new_st else "KAPATILDI 🟢 (Herkes kullanabilir)"
+    st_text = "AÇILDI 🔴 (Yalnızca yöneticiler)" if new_st else "KAPATILDI 🟢 (Herkes erişebilir)"
     await update.message.reply_text(f"🚧 *Bakım Modu:* {st_text}", parse_mode="Markdown")
 
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4952,9 +4808,8 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = get_prayer_hub_keyboard(user_id, u_lang)
         await update.message.reply_text(p_card, parse_mode="Markdown", reply_markup=kb)
 
-
 # =====================================================================
-# CALLBACK QUERY İŞLEYİCİSİ (RATE LIMITING KORUMALI)
+# CALLBACK QUERY İŞLEYİCİSİ (DÜZELTME 1 & DÜZELTME 2 ENTEGRE EDİLDİ)
 # =====================================================================
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -4962,7 +4817,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     track_user_activity(user)
 
-    # Ban ve Bakım Modu Kontrolü
     if is_user_banned(user_id):
         try:
             await query.answer("⛔ Erişiminiz kısıtlanmıştır.", show_alert=True)
@@ -5001,6 +4855,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = get_user_lang(user_id, context)
     t = TEXTS.get(user_lang, TEXTS['uz'])
 
+    # DÜZELTME 1: Admin Mobil Kategori Merkezleri
+    if data == "admin_hub_users":
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            text, kb = format_admin_users_hub()
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_hub_system":
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            text, kb = format_admin_system_hub()
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_hub_security":
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            text, kb = format_admin_security_hub()
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
     if data == "admin_manage_panel":
         if user_id in ADMIN_IDS:
             text, kb = format_admins_panel()
@@ -5011,7 +4887,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id in ADMIN_IDS:
             context.user_data['admin_add_mode'] = True
             await query.message.reply_text(
-                "👑 *YENİ YÖNETİCİ EKLEME*\n\nLütfen yetki vermek istediğiniz kullanıcının sayısal Telegram ID'sini yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
+                "👑 *YENİ YÖNETİCİ EKLEME*\n\nLütfen Telegram ID'sini yazınız:",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
             )
@@ -5024,16 +4900,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             u_lang = USER_LANGS.get(str(target_aid), 'tr')
             try:
                 await update_user_bot_commands(context, target_aid, u_lang)
-                await context.bot.send_message(
-                    chat_id=target_aid,
-                    text="🎉 *Tebrikler!* Nun Bot yöneticisi olarak yetkilendirildiniz.\n/stats veya /users komutlarıyla yönetim paneline erişebilirsiniz.",
-                    parse_mode="Markdown"
-                )
             except Exception:
                 pass
-            p = USER_PROFILES.get(str(target_aid), {})
-            nm = safe_md(p.get('name') or f"User {target_aid}")
-            await query.message.reply_text(f"👑 *\u200e{nm}\u200e* (`{target_aid}`) başarıyla yönetici kadrosuna eklendi!", parse_mode="Markdown")
+            await safe_answer("👑 Yönetici kadrosuna eklendi!", show_alert=True)
+            card_text, kb = format_user_detail_card(target_aid)
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data.startswith("admin_demote_"):
@@ -5052,83 +4923,94 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.answer(msg, show_alert=True)
         return
 
+    # DÜZELTME 2: 1:1 Sohbet Davetini HTML ve hatasız gönderme
     if data.startswith("admin_direct_invite_"):
         if user_id in ADMIN_IDS:
             target_uid = int(data.replace("admin_direct_invite_", "", 1))
             admin_user = query.from_user
-            admin_name = safe_md(admin_user.first_name or "Yönetici")
+            admin_raw_name = (f"{admin_user.first_name or ''} {admin_user.last_name or ''}").strip() or "Yönetici"
+            clean_admin_name = html_lib.escape(admin_raw_name)
             admin_uname = admin_user.username
 
-            invite_url = f"https://t.me/{admin_uname}" if admin_uname else f"tg://user?id={user_id}"
-            btn_chat_label = f"💬 {admin_name} ile Özel Sohbeti Aç"
+            p = USER_PROFILES.get(str(target_uid), {})
+            t_raw_name = p.get('name') or f"User {target_uid}"
+            clean_target_name = html_lib.escape(t_raw_name)
+
+            if admin_uname:
+                invite_url = f"https://t.me/{admin_uname.lstrip('@')}"
+                admin_link_html = f'<a href="{invite_url}"><b>{clean_admin_name}</b></a>'
+                kb_invite = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"💬 {clean_admin_name[:20]} ile Sohbeti Başlat", url=invite_url)]
+                ])
+            else:
+                admin_link_html = f'<a href="tg://user?id={user_id}"><b>{clean_admin_name}</b></a>'
+                kb_invite = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✉️ Bot Üzerinden Yanıt Yaz", callback_data="open_feedback_user")]
+                ])
+
             invite_card = (
-                f"👤 *NUN PROJECT // YÖNETİCİ GÖRÜŞME TALEBİ*\n\n"
-                f"Bot yöneticimiz *\u200e{admin_name}\u200e* sizinle doğrudan özel olarak görüşmek istiyor.\n\n"
-                f"Aşağıdaki butona dokunarak yöneticimizle 1:1 kişisel Telegram sohbetini hemen başlatabilirsiniz:"
+                "👤 <b>NUN PROJECT // YÖNETİCİ GÖRÜŞME TALEBİ</b>\n\n"
+                f"Bot yöneticimiz {admin_link_html} sizinle doğrudan kişisel olarak görüşmek istiyor.\n\n"
+                "Yöneticimizle 1:1 Telegram sohbetini hemen başlatmak için aşağıdaki bağlantıyı kullanabilirsiniz:"
             )
-            kb_invite = InlineKeyboardMarkup([
-                [InlineKeyboardButton(btn_chat_label, url=invite_url)]
-            ])
+
             try:
-                await context.bot.send_message(chat_id=target_uid, text=invite_card, parse_mode="Markdown", reply_markup=kb_invite)
-                p = USER_PROFILES.get(str(target_uid), {})
-                t_name = safe_md(p.get('name') or f"User {target_uid}")
-                await query.message.reply_text(
-                    f"⚡ *1:1 Özel Sohbet Daveti İletildi!*\n\n"
-                    f"Alıcı: *\u200e{t_name}\u200e* (`{target_uid}`)\n"
-                    f"Kullanıcıya özel mesaj butonunuz başarıyla ulaştırıldı. Dokunduğunda doğrudan özel mesaj kutunuz açılacaktır.",
-                    parse_mode="Markdown"
+                await context.bot.send_message(chat_id=target_uid, text=invite_card, parse_mode="HTML", reply_markup=kb_invite)
+                admin_confirm_text = (
+                    "⚡ <b>1:1 Özel Sohbet Daveti İletildi!</b>\n\n"
+                    f"Alıcı: <b>{clean_target_name}</b> (<code>{target_uid}</code>)\n\n"
+                    "Kullanıcıya özel mesaj davetiniz ve profil bağlantınız başarıyla ulaştırıldı."
                 )
+                await query.message.reply_text(admin_confirm_text, parse_mode="HTML")
+                await safe_answer("✅ Davet başarıyla gönderildi!")
             except Exception as e:
-                await query.message.reply_text(f"❌ Davet iletilemedi (ID: `{target_uid}`): {e}\n_(Kullanıcı botu engellemiş olabilir)_", parse_mode="Markdown")
+                err_text = f"❌ <b>Davet iletilemedi:</b> <code>{html_lib.escape(str(e))}</code>\n<i>(Kullanıcı botu engellemiş olabilir)</i>"
+                await query.message.reply_text(err_text, parse_mode="HTML")
+                await safe_answer("❌ İletilemedi", show_alert=True)
+        return
+
+    if data == "open_feedback_user":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'feedback_input'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_feedback', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
         return
 
     if data == "admin_abort_broadcast":
         if user_id in ADMIN_IDS:
             global BROADCAST_ABORT_FLAG
             BROADCAST_ABORT_FLAG = True
-            await query.answer("🛑 Duyuru gönderimi durduruluyor...", show_alert=True)
-            await notify_admin_audit_log(context.bot, user_id, "Devam eden toplu duyuru gönderimini acil olarak durdurdu.")
+            await query.answer("🛑 Duyuru durduruluyor...", show_alert=True)
         return
 
     if data == "admin_sync_users_prompt":
         if user_id in ADMIN_IDS:
-            await query.answer("⏳ Kullanıcılar taranıp eşitleniyor...", show_alert=False)
-            status_m = await query.message.reply_text("⏳ Telegram sunucularından tüm kullanıcılar taranıyor...")
+            await safe_answer("⏳ Kullanıcılar eşitleniyor...", show_alert=False)
             all_u = get_all_registered_users()
-            up_cnt = 0
             for u in all_u:
-                uid = u['id']
-                uid_str = str(uid)
                 try:
-                    chat = await context.bot.get_chat(chat_id=uid)
-                    c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {uid}"
-                    c_uname = chat.username or ""
-                    p = USER_PROFILES.get(uid_str, {})
-                    p['id'] = uid
-                    p['name'] = c_name
-                    p['username'] = c_uname
-                    if 'last_active' not in p or p['last_active'] == 'Kayıtlı (Pasif)':
-                        p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                    USER_PROFILES[uid_str] = p
-                    up_cnt += 1
+                    chat = await context.bot.get_chat(chat_id=u['id'])
+                    p = USER_PROFILES.get(str(u['id']), {})
+                    p['id'] = u['id']
+                    p['name'] = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {u['id']}"
+                    p['username'] = (chat.username or "").lstrip('@')
+                    USER_PROFILES[str(u['id'])] = p
                 except Exception:
                     pass
             save_json(USER_PROFILES_FILE, USER_PROFILES)
             invalidate_users_cache()
-            try:
-                await status_m.delete()
-            except Exception:
-                pass
             text, kb = format_users_directory_page(0)
-            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data == "admin_search_prompt":
         if user_id in ADMIN_IDS:
             context.user_data['admin_search_mode'] = True
             await query.message.reply_text(
-                "🔍 *KULLANICI ARAMA MOTORU*\n\nLütfen aramak istediğiniz kullanıcının Telegram ID'sini, ismini veya @kullaniciadını yazıp gönderin:\n\n_Örnek:_ `2146753102` veya `Muhammed` veya `@trstudent8`\n_(İptal için /cancel yazabilirsiniz)_",
+                "🔍 *KULLANICI ARAMA MOTORU*\n\nLütfen Telegram ID'sini, ismini veya @kullanıcıadını yazıp gönderin:",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
             )
@@ -5138,7 +5020,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id in ADMIN_IDS:
             context.user_data['admin_restore_mode'] = True
             await query.message.reply_text(
-                "📥 *VERİTABANI GERİ YÜKLEME (RESTORE)*\n\nLütfen geri yüklemek istediğiniz `nun_bot_backup_*.zip` yedek arşivini bu sohbete belge (document) olarak gönderiniz.\n\n⚠️ _Uyarı: Yüklenen dosyadaki veriler mevcut veritabanının üzerine yazılacaktır._\n_(İptal için /cancel yazabilirsiniz)_",
+                "📥 *VERİTABANI GERİ YÜKLEME*\n\nLütfen `nun_bot_backup_*.zip` dosyasını bu sohbete belge olarak gönderin:",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
             )
@@ -5167,8 +5049,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     script_path = os.path.abspath(__file__)
                     os.execv(sys.executable, [sys.executable, script_path])
-                except Exception as e:
-                    add_system_log(f"Restart execv hatasi: {e}", level="WARN")
+                except Exception:
                     sys.exit(0)
             threading.Thread(target=_reboot, daemon=True).start()
         return
@@ -5180,7 +5061,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['admin_broadcast_mode'] = True
             seg_title = {"all": "Tüm Kullanıcılar", "tr": "Türkçe (TR)", "uz": "Özbekçe (UZ)", "ru": "Rusça (RU)", "en": "İngilizce (EN)", "prayer": "Ezan Bildirimi Açıklar"}.get(target_seg, target_seg)
             await query.message.reply_text(
-                f"📢 *TOPLU DUYURU: [{seg_title.upper()}]*\n\nLütfen bu hedef kitleye göndermek istediğiniz duyuru metnini yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
+                f"📢 *TOPLU DUYURU: [{seg_title.upper()}]*\n\nLütfen göndermek istediğiniz duyuru metnini yazıp gönderin:\n\n_(İptal için /cancel)_",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
             )
@@ -5188,7 +5069,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "admin_backup_download":
         if user_id in ADMIN_IDS:
-            status_wait = await query.message.reply_text("⏳ Veritabanı arşivi hazırlanıyor...")
+            status_wait = await query.message.reply_text("⏳ Yedek hazırlanıyor...")
             await send_backup_to_admins(context.bot, trigger_type="Panel İndirme Talebi")
             try:
                 await status_wait.delete()
@@ -5207,32 +5088,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id in ADMIN_IDS:
             await safe_answer()
             ok, msg = check_and_repair_databases()
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]])
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Sistem Paneline Dön", callback_data="admin_hub_system")]])
             await safe_edit_text_markup(query.message, msg, reply_markup=kb, parse_mode="Markdown")
         return
 
     if data == "admin_bc_preview":
         if user_id in ADMIN_IDS:
-            await safe_answer("👁️ Önizleme mesajınız iletiliyor...", show_alert=False)
             b_text = context.user_data.get('pending_broadcast_text')
             if b_text:
-                b_card = (
-                    f"📢 *NUN PROJECT // RESMİ DUYURU (ÖNİZLEME TESTİ)*\n\n"
-                    f"{b_text}\n\n"
-                    f"──────────────────────────────\n"
-                    f"👁️ _Bu bir yönetici önizleme testidir. Kullanıcılara henüz gönderilmedi._"
-                )
+                b_card = f"📢 *NUN PROJECT // RESMİ DUYURU (ÖNİZLEME)*\n\n{b_text}\n\n_Bu bir yönetici önizlemesidir._"
                 await context.bot.send_message(chat_id=user_id, text=b_card, parse_mode="Markdown")
-            else:
-                await safe_answer("Önizlenecek duyuru metni bulunamadı.", show_alert=True)
-        return
+            return
 
-    
-    # EXCEL AKTARIM
     if data == "admin_export_excel":
         if user_id in ADMIN_IDS:
             await safe_answer("📊 Excel tablosu hazırlanıyor...", show_alert=False)
-            status_ex = await query.message.reply_text("⏳ Tüm kayıtlı kullanıcılar Excel tablosuna aktarılıyor...")
+            status_ex = await query.message.reply_text("⏳ Excel tablosu oluşturuluyor...")
             with tempfile.TemporaryDirectory() as tmp_dir:
                 excel_path = os.path.join(tmp_dir, "nun_bot_kullanicilar.xlsx")
                 ok = export_users_to_excel(excel_path)
@@ -5242,18 +5113,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             chat_id=user_id,
                             document=f_ex,
                             filename="nun_bot_kullanicilar.xlsx",
-                            caption=f"📊 *NUN PROJECT // KAYITLI KULLANICI LİSTESİ (EXCEL)*\n\n📅 Tarih: `{datetime.now().strftime('%d.%m.%Y %H:%M')}`\n👥 Toplam Kullanıcı: `{len(get_all_registered_users())}`",
+                            caption=f"📊 *KULLANICI LİSTESİ (EXCEL)*\n👥 Toplam: `{len(get_all_registered_users())}`",
                             parse_mode="Markdown"
                         )
-                else:
-                    await query.message.reply_text("❌ Excel dosyası oluşturulamadı.")
             try:
                 await status_ex.delete()
             except Exception:
                 pass
         return
 
-    # KAZA NAMAZI TAKİPÇİSİ
     if data == "open_qaza_tracker":
         await safe_answer()
         card_text = format_qaza_card(user_id, user_lang)
@@ -5303,7 +5171,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(get_text(user_id, 'prompt_prayer', context), parse_mode="Markdown")
         return
 
-    # RAMAZAN SAHUR & İFTAR CANLI SAYACI
     if data == "open_ramadan_countdown":
         await safe_answer()
         card_rc = format_ramadan_countdown_card(user_id, user_lang, user_now=get_user_now(user_id, context))
@@ -5311,9 +5178,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit_text_markup(query.message, card_rc, reply_markup=kb_rc, parse_mode="Markdown")
         return
 
-    # VİDEODAN SES (MP3) ÇIKARMA
     if data == "dl_audio_extract":
-        await safe_answer("🎵 MP3 hazırlanıyor, lütfen bekleyiniz...")
+        await safe_answer("🎵 MP3 hazırlanıyor...")
         target_url = context.user_data.get('last_video_url')
         if target_url:
             status_aud = await query.message.reply_text(get_text(user_id, 'audio_downloading', context))
@@ -5336,8 +5202,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await status_aud.delete()
                 except Exception:
                     pass
-        else:
-            await query.message.reply_text("⚠️ İndirilecek medya bağlantısı bulunamadı.")
         return
 
     if data == "admin_clean_disk":
@@ -5345,154 +5209,118 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             freed_mb = cleanup_orphaned_temp_files(max_age_seconds=0)
             disk_now = get_disk_usage_info()
             await safe_answer(f"🧹 {freed_mb:.1f} MB çöp temizlendi! | Disk: {disk_now}", show_alert=True)
-            report, kb = format_admin_stats_panel()
-            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+            text, kb = format_admin_system_hub()
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
         return
 
     if data == "admin_toggle_maintenance":
         if user_id in ADMIN_IDS:
             new_st = toggle_maintenance_mode()
-            st_text = "AÇILDI (Yalnızca yöneticiler kullanabilir)" if new_st else "KAPATILDI (Herkes kullanabilir)"
+            st_text = "AÇILDI (Yalnızca yöneticiler)" if new_st else "KAPATILDI (Herkes erişebilir)"
             await safe_answer(f"🚧 Bakım Modu {st_text}", show_alert=True)
-            await notify_admin_audit_log(context.bot, user_id, f"Bakım modunu {st_text} yaptı.")
-            report, kb = format_admin_stats_panel()
-            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+            text, kb = format_admin_security_hub()
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
         return
 
     if data == "admin_banned_list":
         if user_id in ADMIN_IDS:
             await safe_answer()
             if not BANNED_USERS:
-                text = (
-                    "⛔ *NUN PROJECT // ENGELLENMİŞ KULLANICILAR*\n\n"
-                    "_Sistemde şu anda engellenmiş (banlı) kullanıcı bulunmuyor._"
-                )
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]])
+                text = "⛔ *ENGELLENMİŞ KULLANICILAR*\n\n_Sistemde banlı kullanıcı bulunmuyor._"
+                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kullanıcı Merkezine Dön", callback_data="admin_hub_users")]])
                 await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
                 return
-            b_lines = [
-                "⛔ *NUN PROJECT // ENGELLENMİŞ KULLANICILAR LİSTESİ:*",
-                f"Toplam: `{len(BANNED_USERS)}` kullanıcı\n"
-            ]
+            b_lines = [f"⛔ *ENGELLENMİŞ KULLANICILAR LİSTESİ:* ({len(BANNED_USERS)} kişi)\n"]
             b_btns = []
             for b_uid, b_info in list(BANNED_USERS.items()):
                 p = USER_PROFILES.get(b_uid, {})
-                nm = safe_md(p.get('name') or f"Kullanıcı {b_uid}")
-                b_mode = b_info.get('mode', 'soft')
-                b_mode_str = "🔴 Tam Men" if b_mode == 'hard' else "🟡 Standart Ban"
-                b_lines.append(f"▫️ \u200e{nm}\u200e (`{b_uid}`)\n   Tür: *{b_mode_str}* | Sebep: _{safe_md(b_info.get('reason'))}_\n   Tarih: `{b_info.get('timestamp')}`\n")
+                nm = safe_md(p.get('name') or f"User {b_uid}")
+                b_lines.append(f"▫️ {nm} (`{b_uid}`) — _{safe_md(b_info.get('reason'))}_\n")
                 b_btns.append([
-                    InlineKeyboardButton(f"👤 İşlem ({nm[:12]})", callback_data=f"admin_user_view_{b_uid}"),
+                    InlineKeyboardButton(f"👤 {nm[:15]}", callback_data=f"admin_user_view_{b_uid}"),
                     InlineKeyboardButton("✅ Engeli Kaldır", callback_data=f"admin_unban_{b_uid}")
                 ])
-            b_btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
+            b_btns.append([InlineKeyboardButton("🔙 Kullanıcı Merkezine Dön", callback_data="admin_hub_users")])
             await safe_edit_text_markup(query.message, "\n".join(b_lines), reply_markup=InlineKeyboardMarkup(b_btns), parse_mode="Markdown")
         return
 
-    # Tekil Kullanıcı Yönetim Kartı
     if data.startswith("admin_user_view_"):
         if user_id in ADMIN_IDS:
             await safe_answer()
             target_uid = int(data.replace("admin_user_view_", "", 1))
             card_text, kb = format_user_detail_card(target_uid)
-            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="HTML")
         return
 
-    # Telegram Canlı Bilgilerini Çekme (get_chat)
     if data.startswith("admin_fetch_chat_"):
         if user_id in ADMIN_IDS:
             target_uid = int(data.replace("admin_fetch_chat_", "", 1))
             try:
                 chat = await context.bot.get_chat(chat_id=target_uid)
-                c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {target_uid}"
-                c_uname = chat.username or ""
                 uid_str = str(target_uid)
                 p = USER_PROFILES.get(uid_str, {})
                 p['id'] = target_uid
-                p['name'] = c_name
-                if c_uname:
-                    p['username'] = c_uname.lstrip('@')
+                p['name'] = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {target_uid}"
+                p['username'] = (chat.username or "").lstrip('@')
                 USER_PROFILES[uid_str] = p
                 save_json(USER_PROFILES_FILE, USER_PROFILES)
                 invalidate_users_cache()
-                await safe_answer("✅ Bilgiler Telegram'dan güncellendi!", show_alert=True)
+                await safe_answer("✅ Bilgiler güncellendi!", show_alert=True)
             except Exception as e:
                 await safe_answer(f"⚠️ Bilgi çekilemedi: {e}", show_alert=True)
             card_text, kb = format_user_detail_card(target_uid)
-            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="HTML")
         return
 
-    # Ban Seçenekleri Kartı
     if data.startswith("admin_ban_choose_"):
         if user_id in ADMIN_IDS:
             await safe_answer()
             target_uid = int(data.replace("admin_ban_choose_", "", 1))
             text, kb = format_user_ban_options_card(target_uid)
-            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data.startswith("admin_ban_soft_prompt_"):
         if user_id in ADMIN_IDS:
-            await safe_answer()
             target_uid = int(data.replace("admin_ban_soft_prompt_", "", 1))
             context.user_data['admin_ban_target'] = target_uid
             context.user_data['admin_ban_mode'] = 'soft'
-            p = USER_PROFILES.get(str(target_uid), {})
-            nm = safe_md(p.get('name') or f"User {target_uid}")
-            await query.message.reply_text(
-                f"🟡 *STANDART BAN (BOTTA BIRAK)*\n\nKullanıcı: *\u200e{nm}\u200e* (`{target_uid}`)\n\nEngelleme sebebini yazınız (Doğrudan 'ban' yazarak varsayılan sebeple de engelleyebilirsiniz):",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
-            )
+            await query.message.reply_text("🟡 Standart ban sebebi yazınız:", parse_mode="Markdown")
         return
 
     if data.startswith("admin_ban_hard_prompt_"):
         if user_id in ADMIN_IDS:
-            await safe_answer()
             target_uid = int(data.replace("admin_ban_hard_prompt_", "", 1))
             context.user_data['admin_ban_target'] = target_uid
             context.user_data['admin_ban_mode'] = 'hard'
-            p = USER_PROFILES.get(str(target_uid), {})
-            nm = safe_md(p.get('name') or f"User {target_uid}")
-            await query.message.reply_text(
-                f"🔴 *TAM MEN ETME (BOTTAN ATMA)*\n\nKullanıcı: *\u200e{nm}\u200e* (`{target_uid}`)\n\nİhraç sebebini yazınız (Doğrudan 'ban' yazarak varsayılan sebeple de atabilirsiniz):",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
-            )
+            await query.message.reply_text("🔴 Tam men sebebi yazınız:", parse_mode="Markdown")
         return
 
     if data.startswith("admin_ban_soft_quick_"):
         if user_id in ADMIN_IDS:
             target_uid = int(data.replace("admin_ban_soft_quick_", "", 1))
-            await execute_soft_ban(context.bot, target_uid, reason="Kural ihlali (Standart Ban)")
-            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıya standart ban uyguladı.")
+            await execute_soft_ban(context.bot, target_uid, reason="Kural ihlali")
             await safe_answer("🟡 Standart ban uygulandı!", show_alert=True)
             card_text, kb = format_user_detail_card(target_uid)
-            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data.startswith("admin_ban_hard_quick_"):
         if user_id in ADMIN_IDS:
             target_uid = int(data.replace("admin_ban_hard_quick_", "", 1))
-            await execute_hard_ban(context.bot, target_uid, reason="Kural ihlali (Bottan Atıldı)")
-            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıyı bottan tamamen attı.")
-            await safe_answer("🔴 Kullanıcı bottan tamamen atıldı!", show_alert=True)
+            await execute_hard_ban(context.bot, target_uid, reason="Kural ihlali")
+            await safe_answer("🔴 Kullanıcı bottan atıldı!", show_alert=True)
             card_text, kb = format_user_detail_card(target_uid)
-            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data.startswith("admin_unban_"):
         if user_id in ADMIN_IDS:
             target_uid = int(data.replace("admin_unban_", "", 1))
             unban_user(target_uid)
-            await safe_answer(f"✅ {target_uid} kullanıcısının engeli kaldırıldı.", show_alert=True)
-            await notify_admin_audit_log(context.bot, user_id, f"{target_uid} ID'li kullanıcının engelini (ban) kaldırdı.")
-            try:
-                card_text, kb = format_user_detail_card(target_uid)
-                await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
-            except Exception:
-                report, kb = format_admin_stats_panel()
-                await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+            await safe_answer("✅ Engel kaldırıldı!", show_alert=True)
+            card_text, kb = format_user_detail_card(target_uid)
+            await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data == "stats_refresh":
@@ -5511,7 +5339,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id in ADMIN_IDS:
             p_num = int(data.replace("stats_users_page_", "", 1))
             text, kb = format_users_directory_page(p_num)
-            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="HTML")
         return
 
     if data == "admin_panel_close":
@@ -5532,8 +5360,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
                 await run_segmented_broadcast(context.bot, user_id, b_text, target_segment=target_seg)
-            else:
-                await query.answer("Gönderilecek duyuru metni bulunamadı.", show_alert=True)
         return
 
     if data == "admin_broadcast_prompt":
@@ -5548,17 +5374,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['admin_dm_target'] = target_uid
             p = USER_PROFILES.get(str(target_uid), {})
             nm = safe_md(p.get('name') or f"User {target_uid}")
-            prompt = (
-                f"✍️ *DOĞRUDAN MESAJ GÖNDERME*\n\n"
-                f"👤 Alıcı: \u200e{nm}\u200e (ID: `{target_uid}`)\n\n"
-                f"Lütfen bu kullanıcıya bot üzerinden iletmek istediğiniz mesajı yazıp gönderin.\n"
-                f"_(İptal etmek için /cancel yazabilirsiniz)_"
-            )
-            await query.message.reply_text(
-                prompt,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
-            )
+            await query.message.reply_text(f"✍️ *{nm}* (`{target_uid}`) kullanıcısına mesajınızı yazınız:", parse_mode="Markdown")
         return
 
     if data == "cancel_action":
@@ -5582,55 +5398,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         await update_user_bot_commands(context, user_id, l_code)
-        
         t_new = TEXTS[l_code]
-        prompt_msg = (
-            f"✅ *{t_new['lang_changed']}*\n\n"
-            f"📍 *{t_new['prompt_city_sync_title']}*\n"
-            f"{t_new['prompt_city_sync_desc']}"
-        )
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=prompt_msg,
-            parse_mode="Markdown",
-            reply_markup=get_reply_menu(user_id, context)
-        )
+        prompt_msg = f"✅ *{t_new['lang_changed']}*\n\n📍 *{t_new['prompt_city_sync_title']}*\n{t_new['prompt_city_sync_desc']}"
+        await context.bot.send_message(chat_id=user_id, text=prompt_msg, parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
         return
 
     if data == "open_tz_selector":
-        await query.message.reply_text(
-            get_text(user_id, 'prompt_timezone', context),
-            parse_mode="Markdown",
-            reply_markup=get_timezone_keyboard(user_lang)
-        )
+        await query.message.reply_text(get_text(user_id, 'prompt_timezone', context), parse_mode="Markdown", reply_markup=get_timezone_keyboard(user_lang))
         return
 
     if data == "tz_req_location":
         cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'awaiting_location_or_city'
-        await query.message.reply_text(
-            get_text(user_id, 'prompt_send_location', context),
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
-        )
+        await query.message.reply_text(get_text(user_id, 'prompt_send_location', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
         return
 
     if data.startswith("settz_"):
         city_tz_defaults = {
-            "settz_5": ("Toshkent", 5),
-            "settz_3": ("Istanbul", 3),
-            "settz_3_ru": ("Moskva", 3),
-            "settz_4": ("Dubay", 4),
-            "settz_0": ("London", 0),
-            "settz_1": ("Berlin", 1),
-            "settz_5_kz": ("Olmaota", 5),
-            "settz_-5": ("New York", -5),
+            "settz_5": ("Toshkent", 5), "settz_3": ("Istanbul", 3), "settz_3_ru": ("Moskva", 3),
+            "settz_4": ("Dubay", 4), "settz_0": ("London", 0), "settz_1": ("Berlin", 1),
+            "settz_5_kz": ("Olmaota", 5), "settz_-5": ("New York", -5),
         }
         city_name, val = city_tz_defaults.get(data, (None, None))
         if val is None:
-            parts = data.split("_")
             try:
-                val = int(parts[1])
+                val = int(data.split("_")[1])
             except Exception:
                 val = 3
         if city_name:
@@ -5640,18 +5432,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception:
             pass
-        
         user_now = get_user_now(user_id, context)
         now_str = user_now.strftime("%H:%M")
         tz_sign = "+" if val >= 0 else ""
         c_label = f"\n📍 {t['btn_city_label']}: *{city_name}*" if city_name else ""
-        
-        msg = (
-            f"✅ *{t['tz_changed']}*{c_label}\n\n"
-            f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{val}`\n"
-            f"⏰ {t['current_time_lbl']}: `{now_str}`\n\n"
-            f"_{t['tz_synced_hint']}_"
-        )
+        msg = f"✅ *{t['tz_changed']}*{c_label}\n\n🕒 {t['btn_timezone']}: `UTC{tz_sign}{val}`\n⏰ {t['current_time_lbl']}: `{now_str}`\n\n_{t['tz_synced_hint']}_"
         await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         return
 
@@ -5691,7 +5476,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 out_pdf = os.path.join(tmp_dir, f"imsakiye_{user_id}.pdf")
                 tz_off = get_user_tz_offset(user_id, context)
                 generate_imsakiye_pdf(out_pdf, saved_c, u_coords['lat'], u_coords['lon'], u_coords.get('elevation', 0.0), float(tz_off), u_coords.get('country', ''), user_lang)
-                cap = f"📄 *{saved_c}* — " + {'uz': "30 kunlik namoz va imsokiya taqvimi", 'tr': "30 Günlük Namaz ve İmsakiye Çizelgesi", 'ru': "Расписание намаза на 30 дней", 'en': "30-Day Prayer and Ramadan Timetable"}.get(user_lang, "İmsakiye")
+                cap = f"📄 *{saved_c}* — 30 kunlik namoz taqvimi (PDF)"
                 with open(out_pdf, "rb") as f_doc:
                     await query.message.reply_document(document=f_doc, filename=f"imsakiye_{user_lang}.pdf", caption=cap, parse_mode="Markdown")
         finally:
@@ -5805,12 +5590,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "change_prayer_city":
         cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'prayer'
+        recents = get_recent_cities(user_id)
+        kb_rows = []
+        if recents:
+            recent_btns = [InlineKeyboardButton(f"📍 {rc}", callback_data=f"sel_recent_city_{rc}") for rc in recents[:2]]
+            kb_rows.append(recent_btns)
+        kb_rows.append([InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")])
         await query.message.reply_text(
             get_text(user_id, 'prompt_prayer', context),
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            reply_markup=InlineKeyboardMarkup(kb_rows)
         )
         return
+
+    if data.startswith("sel_recent_city_"):
+        c_name = data.replace("sel_recent_city_", "", 1)
+        cleanup_user_temp_files(context, user_id)
+        res_p = await fetch_prayer_times(c_name, user_id=user_id, user_lang=user_lang)
+        timings, d_name, dt_s, h_s, src = res_p[0], res_p[1], res_p[2], res_p[3], res_p[4]
+        if timings:
+            card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang, user_now=get_user_now(user_id, context), user_id=user_id)
+            kb = get_prayer_hub_keyboard(user_id, user_lang)
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await context.bot.send_message(chat_id=user_id, text=card, parse_mode="Markdown", reply_markup=kb)
+            return
 
     if data == "change_weather_city":
         cleanup_user_temp_files(context, user_id)
@@ -5890,7 +5696,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("pomo_"):
         mins = int(data.replace("pomo_", "", 1))
         is_break = mins in (5, 10)
-        
         user_now = get_user_now(user_id, context)
         end_time = user_now + timedelta(minutes=mins)
         tz_off = get_user_tz_offset(user_id, context)
@@ -6024,7 +5829,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 # =====================================================================
-# BELGE & DOSYA İŞLEYİCİSİ (HATA DÜZELTİLDİ: raw_text/user_lang NameError)
+# BELGE & DOSYA İŞLEYİCİSİ
 # =====================================================================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -6153,6 +5958,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Hata: {e}")
         await update.message.reply_text(get_text(user_id, 'error_general', context))
     finally:
+        gc.collect()
         try:
             await status.delete()
         except Exception:
@@ -6227,12 +6033,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Hata: {e}")
         await update.message.reply_text(get_text(user_id, 'error_general', context))
     finally:
+        gc.collect()
         try:
             await status.delete()
         except Exception:
             pass
+
 # =====================================================================
-# METİN MESAJ YÖNLENDİRİCİSİ (RATE LIMIT & TRANSLIT HATASI DÜZELTİLDİ)
+# METİN MESAJ YÖNLENDİRİCİSİ (DÜZELTME 4: BÖLÜM ATLAMALARI KÖKTEN ÇÖZÜLDÜ)
 # =====================================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -6242,15 +6050,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     track_user_activity(user)
 
-    # Ban ve Bakım Modu Kontrolü
     if is_user_banned(user_id):
         ban_info = get_user_ban_info(user_id) or {}
         if ban_info.get('mode') == 'hard':
             try:
-                await update.message.reply_text(
-                    "⛔ Bot erişiminiz sonlandırılmıştır.",
-                    reply_markup=ReplyKeyboardRemove()
-                )
+                await update.message.reply_text("⛔ Bot erişiminiz sonlandırılmıştır.", reply_markup=ReplyKeyboardRemove())
             except Exception:
                 pass
         return
@@ -6262,7 +6066,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_rate_limited(user_id, 0.5):
         return
 
-    # FloodShield Kontrolu
     if check_flood_shield(user_id):
         try:
             await update.message.reply_text(get_text(user_id, 'flood_jail_alert', context))
@@ -6274,164 +6077,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
 
-    # DÜZELTME: mode değişkeni fonksiyon başında güvenle tanımlandı
-    mode = context.user_data.get('mode', 'auto') if context and context.user_data else 'auto'
-
     tele_code = user.language_code if user else None
     silent_background_tz_sync(user_id, raw_text=raw_text, user_lang_code=tele_code)
 
-    # YÖNETİCİ PANELİ BUTON TETİKLEYİCİSİ
-    admin_panel_labels = [
-        "👑 Yönetici Paneli", "👑 Boshqaruv Paneli", "👑 Панель Управления", "👑 Admin Panel",
-        "/admin", "/panel"
-    ]
-    if raw_text in admin_panel_labels:
-        if user_id in ADMIN_IDS:
-            cleanup_user_temp_files(context, user_id)
-            report, kb = format_admin_stats_panel()
-            await update.message.reply_text(report, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
-            return
-
-    # YÖNETİCİ KULLANICI ARAMA GİRİŞİ
-    if user_id in ADMIN_IDS and context.user_data.get('admin_search_mode'):
-        context.user_data.pop('admin_search_mode', None)
-        matches = search_registered_users(raw_text)
-        card_text, kb_search = format_search_results_card(matches, raw_text)
-        await update.message.reply_text(card_text, parse_mode="Markdown", reply_markup=kb_search, disable_web_page_preview=True)
-        return
-
-    # YÖNETİCİ BAN İŞLEMİ YAKALAYICI
-    if user_id in ADMIN_IDS and context.user_data.get('admin_ban_target'):
-        target_uid = context.user_data.pop('admin_ban_target')
-        ban_mode = context.user_data.pop('admin_ban_mode', 'soft')
-        p = USER_PROFILES.get(str(target_uid), {})
-        nm = safe_md(p.get('name') or f"User {target_uid}")
-        if ban_mode == 'hard':
-            await execute_hard_ban(context.bot, target_uid, reason=raw_text)
-            await update.message.reply_text(f"🔴 *\u200e{nm}\u200e* (`{target_uid}`) *TAMAMEN MEN EDİLDİ (Bottan Atıldı)*.\nSebep: _{safe_md(raw_text)}_", parse_mode="Markdown")
-            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıyı bottan tamamen attı (Sebep: {raw_text}).")
-        else:
-            await execute_soft_ban(context.bot, target_uid, reason=raw_text)
-            await update.message.reply_text(f"🟡 *\u200e{nm}\u200e* (`{target_uid}`) *STANDART BANLANDI (Botta Bırakıldı)*.\nSebep: _{safe_md(raw_text)}_", parse_mode="Markdown")
-            await notify_admin_audit_log(context.bot, user_id, f"`{target_uid}` ID'li kullanıcıya standart ban uyguladı (Sebep: {raw_text}).")
-        return
-
-    # KULLANICI GERİ BİLDİRİM / TICKET GİRİŞİ
-    if mode == 'feedback_input':
+    # 1. EN BAŞTA: YENİLE & BAŞTAN BAŞLAT BUTONU / KOMUTU (DÜZELTME 3)
+    reset_labels = [TEXTS[l].get('btn_reset', '') for l in TEXTS] + ["/reset", "/restart_user", "🔄 Yenile & Baştan Başlat", "🔄 Qayta boshlash & Tozalash"]
+    if raw_text in reset_labels:
         cleanup_user_temp_files(context, user_id)
-        u_name = safe_md((f"{user.first_name or ''} {user.last_name or ''}").strip() or f"User {user_id}")
-        u_name_tag = f"(@{user.username})" if user.username else "_(Username yok)_"
-        u_city = get_user_city(user_id) or "Belirtilmedi"
-        ticket_msg = (
-            f"📬 *YENİ DESTEK & ÖNERİ BİLDİRİMİ (TICKET)*\n\n"
-            f"👤 Gönderen: *\u200e{u_name}\u200e* {u_name_tag}\n"
-            f"🆔 ID: `{user_id}`\n"
-            f"📍 Şehir: `{u_city}` | Dil: `{user_lang.upper()}`\n\n"
-            f"💬 *Mesaj:*\n"
-            f"{safe_md(raw_text)}"
+        context.user_data.clear()
+        context.user_data['mode'] = 'auto'
+        await update_user_bot_commands(context, user_id, user_lang)
+        await update.message.reply_text(
+            get_text(user_id, 'reset_success', context),
+            parse_mode="Markdown",
+            reply_markup=get_reply_menu(user_id, context)
         )
-        kb_ticket = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(f"⚡ 1:1 Sohbet Başlat", callback_data=f"admin_direct_invite_{user_id}"),
-                InlineKeyboardButton(f"✉️ Bot İçi DM", callback_data=f"admin_dm_start_{user_id}")
-            ]
-        ])
-        for aid in ADMIN_IDS:
-            try:
-                await context.bot.send_message(chat_id=aid, text=ticket_msg, parse_mode="Markdown", reply_markup=kb_ticket)
-            except Exception:
-                pass
-        await update.message.reply_text(get_text(user_id, 'feedback_sent', context), parse_mode="Markdown")
         return
 
-    # 0. YÖNETİCİ EKLEME / DM / BROADCAST / KULLANICI YANIT KÖPRÜSÜ
-    if user_id in ADMIN_IDS and context.user_data.get('admin_add_mode'):
-        context.user_data.pop('admin_add_mode', None)
-        id_cleaned = re.sub(r"\D", "", raw_text)
-        if id_cleaned:
-            new_aid = int(id_cleaned)
-            add_admin_id(new_aid)
-            u_lang = USER_LANGS.get(str(new_aid), 'tr')
-            try:
-                await update_user_bot_commands(context, new_aid, u_lang)
-                await context.bot.send_message(
-                    chat_id=new_aid,
-                    text="🎉 *Tebrikler!* Nun Bot yöneticisi olarak yetkilendirildiniz.\n/stats veya /users komutlarıyla yönetim paneline erişebilirsiniz.",
-                    parse_mode="Markdown"
-                )
-            except Exception:
-                pass
-            p = USER_PROFILES.get(str(new_aid), {})
-            nm = safe_md(p.get('name') or f"Kullanıcı {new_aid}")
-            await update.message.reply_text(f"✅ *\u200e{nm}\u200e* (`{new_aid}`) başarıyla yönetici kadrosuna eklendi!", parse_mode="Markdown")
-        else:
-            await update.message.reply_text("⚠️ Geçersiz Telegram ID. Sayısal bir ID girmelisiniz.")
-        return
-
-    if user_id in ADMIN_IDS and context.user_data.get('admin_dm_target'):
-        target_uid = context.user_data.pop('admin_dm_target')
-        await send_admin_dm_to_user(context.bot, user_id, target_uid, raw_text, update.message)
-        return
-
-    if user_id in ADMIN_IDS and context.user_data.get('admin_broadcast_mode'):
-        context.user_data.pop('admin_broadcast_mode', None)
-        context.user_data['pending_broadcast_text'] = raw_text
-        all_u = get_all_registered_users()
-        total_recipients = len(all_u)
-        confirm_card = (
-            f"📢 *TOPLU DUYURU ONAYI*\n\n"
-            f"👥 *Toplam Alıcı:* `{total_recipients}` kayıtlı kullanıcı\n\n"
-            f"📝 *İletilecek Mesaj:*\n"
-            f"{raw_text}\n\n"
-            f"⚠️ Bu duyuruyu tüm kullanıcılara göndermek istediğinizden emin misiniz?"
-        )
-        kb_confirm = InlineKeyboardMarkup([
-            [InlineKeyboardButton("👁️ Bana Test Gönder (Önizle)", callback_data="admin_bc_preview")],
-            [InlineKeyboardButton("✅ Evet, Herkese Gönder", callback_data="confirm_broadcast_send")],
-            [InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]
-        ])
-        await update.message.reply_text(confirm_card, parse_mode="Markdown", reply_markup=kb_confirm)
-        return
-
-    if user_id in ADMIN_IDS and raw_text.startswith("/msg_"):
-        parts = raw_text.split(maxsplit=1)
-        target_str = parts[0].replace("/msg_", "")
-        if target_str.isdigit():
-            target_uid = int(target_str)
-            if len(parts) > 1:
-                await send_admin_dm_to_user(context.bot, user_id, target_uid, parts[1], update.message)
-            else:
-                context.user_data['admin_dm_target'] = target_uid
-                p = USER_PROFILES.get(str(target_uid), {})
-                nm = safe_md(p.get('name') or f"User {target_uid}")
-                await update.message.reply_text(
-                    f"✍️ *\u200e{nm}\u200e* (`{target_uid}`) kullanıcısına göndermek istediğiniz mesajı yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
-                    parse_mode="Markdown"
-                )
-            return
-
-    # Kullanıcı yönetici mesajına doğrudan reply (cevap) verdiğinde
-    if update.message.reply_to_message and "YÖNETİCİ MESAJI" in (update.message.reply_to_message.text or ""):
-        for aid in ADMIN_IDS:
-            try:
-                nm = safe_md(user.first_name or f"User {user_id}")
-                uname = f"(@{user.username})" if user.username else "_(Username yok)_"
-                rep_text = (
-                    f"📨 *KULLANICIDAN YÖNETİCİYE YANIT!*\n\n"
-                    f"👤 Gönderen: \u200e{nm}\u200e {uname}\n"
-                    f"🆔 ID: `{user_id}`\n\n"
-                    f"💬 *Mesaj:*\n{safe_md(raw_text)}"
-                )
-                kb_reply = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"✉️ Bu Kullanıcıya Yanıt Ver ({user_id})", callback_data=f"admin_dm_start_{user_id}")]
-                ])
-                await context.bot.send_message(chat_id=aid, text=rep_text, parse_mode="Markdown", reply_markup=kb_reply)
-            except Exception:
-                pass
-        await update.message.reply_text("✅ Yanıtınız yöneticiye başarıyla iletildi.", parse_mode="Markdown")
-        return
-
-    # 1. Menü Butonları Tıklamaları
+    # 2. EN BAŞTA: TÜM MENÜ BUTONLARI KONTROLÜ (DÜZELTME 4: Asılı kalan modları derhal iptal eder!)
     btn_keys = {
         'btn_video': 'video', 'btn_prayer': 'prayer', 'btn_weather': 'weather',
         'btn_pdf_hub': 'pdf_hub', 'btn_exam': 'exam', 'btn_schedule_img': 'schedule_img',
@@ -6528,7 +6191,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
                 )
-                return
             elif mode_val == 'translit':
                 context.user_data['mode'] = 'translit'
                 await update.message.reply_text(
@@ -6555,9 +6217,90 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Tilni tanlang / Dil seçimi / Выберите язык / Select language:", reply_markup=get_language_keyboard())
             return
 
+    # 3. YÖNETİCİ ÖZEL BUTONU
+    admin_panel_labels = ["👑 Yönetici Paneli", "👑 Boshqaruv Paneli", "👑 Панель Управления", "👑 Admin Panel", "/admin", "/panel"]
+    if raw_text in admin_panel_labels:
+        if user_id in ADMIN_IDS:
+            cleanup_user_temp_files(context, user_id)
+            report, kb = format_admin_stats_panel()
+            await update.message.reply_text(report, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
+            return
+
+    # YÖNETİCİ ARAMA / BAN / DM İŞLEYİCİLERİ
+    if user_id in ADMIN_IDS and context.user_data.get('admin_search_mode'):
+        context.user_data.pop('admin_search_mode', None)
+        matches = search_registered_users(raw_text)
+        card_text, kb_search = format_search_results_card(matches, raw_text)
+        await update.message.reply_text(card_text, parse_mode="HTML", reply_markup=kb_search, disable_web_page_preview=True)
+        return
+
+    if user_id in ADMIN_IDS and context.user_data.get('admin_ban_target'):
+        target_uid = context.user_data.pop('admin_ban_target')
+        ban_mode = context.user_data.pop('admin_ban_mode', 'soft')
+        p = USER_PROFILES.get(str(target_uid), {})
+        nm = safe_md(p.get('name') or f"User {target_uid}")
+        if ban_mode == 'hard':
+            await execute_hard_ban(context.bot, target_uid, reason=raw_text)
+            await update.message.reply_text(f"🔴 *{nm}* (`{target_uid}`) *TAMAMEN MEN EDİLDİ*.", parse_mode="Markdown")
+        else:
+            await execute_soft_ban(context.bot, target_uid, reason=raw_text)
+            await update.message.reply_text(f"🟡 *{nm}* (`{target_uid}`) *STANDART BANLANDI*.", parse_mode="Markdown")
+        return
+
+    if user_id in ADMIN_IDS and context.user_data.get('admin_dm_target'):
+        target_uid = context.user_data.pop('admin_dm_target')
+        await send_admin_dm_to_user(context.bot, user_id, target_uid, raw_text, update.message)
+        return
+
+    if user_id in ADMIN_IDS and context.user_data.get('admin_broadcast_mode'):
+        context.user_data.pop('admin_broadcast_mode', None)
+        context.user_data['pending_broadcast_text'] = raw_text
+        all_u = get_all_registered_users()
+        total_recipients = len(all_u)
+        confirm_card = (
+            f"📢 *TOPLU DUYURU ONAYI*\n\n"
+            f"👥 *Toplam Alıcı:* `{total_recipients}` kayıtlı kullanıcı\n\n"
+            f"📝 *İletilecek Mesaj:*\n{raw_text}\n\n"
+            f"⚠️ Bu duyuruyu göndermek istediğinizden emin misiniz?"
+        )
+        kb_confirm = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👁️ Önizle (Bana Gönder)", callback_data="admin_bc_preview")],
+            [InlineKeyboardButton("✅ Evet, Herkese Gönder", callback_data="confirm_broadcast_send")],
+            [InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]
+        ])
+        await update.message.reply_text(confirm_card, parse_mode="Markdown", reply_markup=kb_confirm)
+        return
+
     mode = context.user_data.get('mode', 'auto') if context and context.user_data else 'auto'
 
-    # DİL SEÇİMİNDEN SONRA ŞEHİR
+    # KULLANICI GERİ BİLDİRİM GİRİŞİ
+    if mode == 'feedback_input':
+        cleanup_user_temp_files(context, user_id)
+        u_name = safe_md((f"{user.first_name or ''} {user.last_name or ''}").strip() or f"User {user_id}")
+        u_name_tag = f"(@{user.username})" if user.username else "_(Username yok)_"
+        u_city = get_user_city(user_id) or "Belirtilmedi"
+        ticket_msg = (
+            f"📬 *YENİ DESTEK & ÖNERİ BİLDİRİMİ (TICKET)*\n\n"
+            f"👤 Gönderen: *{u_name}* {u_name_tag}\n"
+            f"🆔 ID: `{user_id}`\n"
+            f"📍 Şehir: `{u_city}` | Dil: `{user_lang.upper()}`\n\n"
+            f"💬 *Mesaj:*\n{safe_md(raw_text)}"
+        )
+        kb_ticket = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(f"⚡ 1:1 Sohbet Başlat", callback_data=f"admin_direct_invite_{user_id}"),
+                InlineKeyboardButton(f"✉️ Bot İçi DM", callback_data=f"admin_dm_start_{user_id}")
+            ]
+        ])
+        for aid in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=aid, text=ticket_msg, parse_mode="Markdown", reply_markup=kb_ticket)
+            except Exception:
+                pass
+        await update.message.reply_text(get_text(user_id, 'feedback_sent', context), parse_mode="Markdown")
+        return
+
+    # DİL SEÇİMİNDEN SONRA ŞEHİR GİRİŞİ
     if mode in ('awaiting_city_after_lang', 'awaiting_location_or_city'):
         tz_detected = parse_tz_from_text(raw_text)
         t = TEXTS.get(user_lang, TEXTS['uz'])
@@ -6568,7 +6311,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_now = get_user_now(user_id, context)
             now_str = user_now.strftime("%H:%M")
             tz_sign = "+" if tz_detected >= 0 else ""
-            
             res_p = await fetch_prayer_times(raw_text, user_id=user_id, user_lang=user_lang)
             timings, d_name = res_p[0], (res_p[1] if isinstance(res_p[1], str) else raw_text.title())
             prayer_sync_text = f"\n\n🕌 *{d_name}* {t['tz_prayer_synced_lbl']}" if timings else ""
@@ -6586,7 +6328,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(t['city_not_found'], reply_markup=get_reply_menu(user_id, context))
             return
 
-    # OB-HAVO İSTEĞİ REJİMİ
+    # HAVA DURUMU GİRİŞİ
     if mode == 'weather':
         status = await update.message.reply_text(get_text(user_id, 'weather_loading', context))
         try:
@@ -6610,7 +6352,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_text(user_id, 'weather_city_not_found', context))
         return
 
-    # 2. Medya Linki Kontrolü
+    # 4. MEDYA İNDİRME LİNKİ
     if is_supported_url(raw_text):
         m_url = re.search(r'https?://[^\s]+', raw_text)
         if m_url:
@@ -6627,11 +6369,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     if media_res['is_photo']:
                         with open(f_path, 'rb') as f:
-                            await context.bot.send_photo(
-                                chat_id=chat_id,
-                                photo=f,
-                                caption=f"📸 {clean_t}"
-                            )
+                            await context.bot.send_photo(chat_id=chat_id, photo=f, caption=f"📸 {clean_t}")
                     else:
                         with open(f_path, 'rb') as f:
                             context.user_data['last_video_url'] = clean_url
@@ -6665,7 +6403,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
             return
 
-    # 3. KORUMALI SINAV GİRİŞİ (CANLI AYARLAYICI)
+    # 5. TO-DO MAQSAD QOʻSHISH
     if mode == 'todo_input':
         add_user_todo(user_id, raw_text)
         cleanup_user_temp_files(context, user_id)
@@ -6675,6 +6413,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(card_t, parse_mode="Markdown", reply_markup=kb_t)
         return
 
+    # 6. IMTIHON QOʻSHISH
     if mode == 'exam_title_input':
         title_clean = raw_text.strip()
         context.user_data['exam_draft_title'] = title_clean
@@ -6690,7 +6429,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(format_scheduler_card(title, cur_dt, user_lang), parse_mode="Markdown", reply_markup=build_scheduler_keyboard(user_lang))
         return
 
-    # 4. ÇOK DİLLİ HAFTALIK DERS PROGRAMI GÖRSELİ
+    # 7. DARS JADVALI GÖRSELİ
     if mode == 'schedule_img_input':
         status = await update.message.reply_text(get_text(user_id, 'schedule_processing', context))
         parsed_data = parse_schedule_text(raw_text, user_lang)
@@ -6711,7 +6450,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # 5. HATIRLATICI
+    # 8. HATIRLATICI GİRİŞİ
     if mode == 'remind_input':
         user_now = get_user_now(user_id, context)
         target_dt = None
@@ -6745,7 +6484,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'prompt_remind', context), parse_mode="Markdown")
         return
 
-    # 6. NAMAZ VAKTİ
+    # 9. NAMAZ VAKTİ GİRİŞİ
     if mode == 'prayer':
         res_p = await fetch_prayer_times(raw_text, user_id=user_id, user_lang=user_lang)
         timings, d_name, dt_s, h_s, src, status_type = res_p[0], res_p[1], res_p[2], res_p[3], res_p[4], res_p[5]
@@ -6777,7 +6516,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_text(user_id, 'city_not_found', context))
         return
 
-    # 7. ÇEVİRİ (HATA DÜZELTİLDİ: Normal mesajları gasp etmesi engellendi)
+    # 10. ÇEVİRİ (DÜZELTME 4: SADECE mode == 'translit' İKEN ÇALIŞIR! Normal konuşmaları ASLA gasp etmez!)
     if mode == 'translit':
         lbl_latin = {'uz': "Lotin", 'tr': "Latin", 'ru': "Латиница", 'en': "Latin"}.get(user_lang, "Latin")
         lbl_cyril = {'uz': "Kirill", 'tr': "Kiril", 'ru': "Кириллица", 'en': "Cyrillic"}.get(user_lang, "Kirill")
@@ -6787,10 +6526,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🔤 *{lbl_cyril}:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
         return
 
+    # 11. VARSAYILAN: Hiçbir modda değilse ana menü kartını göster
     await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
 
 # =====================================================================
-# BAŞLATMA VE ANA GÖREV
+# BAŞLATMA VE HATA YÖNETİCİSİ
 # =====================================================================
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     err = context.error
@@ -6799,15 +6539,15 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
     print(f"[UNHANDLED_ERROR] {err}\n{err_trace}")
 
     err_card = (
-        "🚨 *NUN PROJECT // SİSTEM HATA BİLDİRİMİ*\n\n"
-        f"⚠️ *Hata Türü:* `{type(err).__name__}`\n"
-        f"📝 *Mesaj:* `{safe_md(str(err)[:250])}`\n"
-        f"🕒 *Zaman:* `{datetime.now().strftime('%d.%m.%Y %H:%M:%S')}`\n\n"
-        f"📋 *Traceback:*\n```{err_trace[-600:]}```"
+        "🚨 <b>NUN PROJECT // SİSTEM HATA BİLDİRİMİ</b>\n\n"
+        f"⚠️ <b>Hata Türü:</b> <code>{html_lib.escape(type(err).__name__)}</code>\n"
+        f"📝 <b>Mesaj:</b> <code>{html_lib.escape(str(err)[:250])}</code>\n"
+        f"🕒 <b>Zaman:</b> <code>{datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</code>\n\n"
+        f"📋 <b>Traceback:</b>\n<pre>{html_lib.escape(err_trace[-600:])}</pre>"
     )
     for aid in ADMIN_IDS:
         try:
-            await context.bot.send_message(chat_id=aid, text=err_card, parse_mode="Markdown")
+            await context.bot.send_message(chat_id=aid, text=err_card, parse_mode="HTML")
         except Exception:
             pass
 
@@ -6824,14 +6564,12 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
 
-
 async def post_init_setup(application):
     asyncio.create_task(reminders_worker(application))
     asyncio.create_task(prayer_and_friday_worker(application))
     asyncio.create_task(nightly_maintenance_worker(application))
     asyncio.create_task(daily_telemetry_worker(application))
 
-    # Yöneticilere açılış teyit bildirimi gönder
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     boot_msg = (
         f"🚀 *NUN PROJECT // SİSTEM BAŞLATILDI*\n\n"
@@ -6846,10 +6584,10 @@ async def post_init_setup(application):
         except Exception:
             pass
     
-    # Genel kullanıcılar için varsayılan komut listesi (/stats ASLA yer almaz)
     default_cmds = [
         BotCommand("start", "Botni ishga tushirish / Başlat"),
         BotCommand("menu", "Asosiy menyu / Ana Menü"),
+        BotCommand("reset", "Botni yangilash / Yenile & Sıfırla"),
         BotCommand("cancel", "Bekor qilish / İptal"),
     ]
     try:
@@ -6857,7 +6595,6 @@ async def post_init_setup(application):
     except Exception:
         pass
 
-    # Yalnızca yetkili yöneticilere özel /stats içeren komut menüsünü tanımla
     for aid in ADMIN_IDS:
         try:
             u_lang = USER_LANGS.get(str(aid), 'tr')
@@ -6880,6 +6617,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
+    app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler(["admin", "panel"], stats_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("users", users_command))

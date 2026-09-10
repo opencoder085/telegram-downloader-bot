@@ -283,11 +283,148 @@ def track_user_activity(user):
         USER_LANGS[uid_str] = init_lang
         save_json(LANG_FILE, USER_LANGS)
 
+    p['bot_blocked'] = False
+    if is_new:
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(notify_new_user_to_admins(user))
+        except RuntimeError:
+            pass
+
     now_t = time.time()
     if is_new or (now_t - LAST_PROFILE_SAVE_TS > 15.0):
         LAST_PROFILE_SAVE_TS = now_t
         save_json(USER_PROFILES_FILE, USER_PROFILES)
         invalidate_users_cache()
+
+
+def log_module_action(module_name: str, user_id: int = None):
+    if module_name in MODULE_STATS:
+        MODULE_STATS[module_name] += 1
+    else:
+        MODULE_STATS[module_name] = 1
+    save_json(MODULE_STATS_FILE, MODULE_STATS)
+    if user_id:
+        uid_str = str(user_id)
+        if uid_str in USER_PROFILES:
+            USER_PROFILES[uid_str]['last_action'] = module_name
+            save_json(USER_PROFILES_FILE, USER_PROFILES)
+
+def mark_user_blocked(user_id: int):
+    uid_str = str(user_id)
+    if uid_str in USER_PROFILES:
+        USER_PROFILES[uid_str]['bot_blocked'] = True
+        save_json(USER_PROFILES_FILE, USER_PROFILES)
+        invalidate_users_cache()
+
+def calculate_activity_metrics():
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    dau, wau, passive = 0, 0, 0
+    for p in USER_PROFILES.values():
+        la_str = p.get('last_active', '')
+        if not la_str or "Kayıtlı" in la_str:
+            passive += 1
+            continue
+        try:
+            la_dt = datetime.strptime(la_str[:19], "%Y-%m-%d %H:%M:%S")
+            diff = now - la_dt
+            if diff <= timedelta(days=1):
+                dau += 1
+            if diff <= timedelta(days=7):
+                wau += 1
+            if diff > timedelta(days=30):
+                passive += 1
+        except Exception:
+            passive += 1
+    return dau, wau, passive
+
+async def notify_new_user_to_admins(user):
+    global GLOBAL_BOT
+    if not GLOBAL_BOT:
+        return
+    uid = user.id
+    raw_name = (f"{user.first_name or ''} {user.last_name or ''}").strip() or f"User {uid}"
+    name_clean = html_lib.escape(raw_name)
+    uname = user.username
+    uname_str = f"@{html_lib.escape(uname)}" if uname else "<i>(Username yok)</i>"
+    tele_lang = (user.language_code or "uz").upper()
+    total_users = len(get_all_registered_users())
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+    card = (
+        "🎉 <b>NUN PROJECT // YENİ KULLANICI KATILDI!</b>\n\n"
+        f"👤 <b>İsim:</b> {name_clean}\n"
+        f"🔗 <b>Kullanıcı Adı:</b> {uname_str}\n"
+        f"🆔 <b>Telegram ID:</b> <code>{uid}</code>\n"
+        f"🌐 <b>Cihaz Dili:</b> <code>{tele_lang}</code>\n"
+        f"⏰ <b>Kayıt Zamanı:</b> <code>{now_str}</code>\n\n"
+        f"📊 <b>Toplam Kayıtlı Kullanıcı:</b> <code>{total_users}</code>"
+    )
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("👤 Kullanıcıyı Aç", callback_data=f"admin_user_view_{uid}"),
+            InlineKeyboardButton("✉️ DM Gönder", callback_data=f"admin_dm_start_{uid}")
+        ]
+    ])
+    for aid in ADMIN_IDS:
+        try:
+            await GLOBAL_BOT.send_message(chat_id=aid, text=card, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            pass
+
+async def notify_security_flood_alert(user_id: int, req_count: int):
+    global GLOBAL_BOT
+    if not GLOBAL_BOT:
+        return
+    p = USER_PROFILES.get(str(user_id), {})
+    nm = html_lib.escape(p.get('name') or f"User {user_id}")
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    alert_card = (
+        "🚨 <b>NUN PROJECT // GÜVENLİK ALARMI (FLOODSHIELD)</b>\n\n"
+        "⚠️ <b>Şüpheli İstek Saldırısı Tespit Edildi!</b>\n"
+        f"👤 <b>Kullanıcı:</b> {nm} (<code>{user_id}</code>)\n"
+        f"⚡ <b>Hız:</b> 10 saniyede <code>{req_count}</code> istek\n"
+        "🛡️ <b>Otomatik Tedbir:</b> 10 dakika boyunca kısıtlandı (Jail)\n"
+        f"⏰ <b>Zaman:</b> <code>{now_str}</code>"
+    )
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("👤 Kullanıcıyı İncele", callback_data=f"admin_user_view_{user_id}"),
+            InlineKeyboardButton("⛔ Kalıcı Banla", callback_data=f"admin_ban_hard_quick_{user_id}")
+        ]
+    ])
+    for aid in ADMIN_IDS:
+        try:
+            await GLOBAL_BOT.send_message(chat_id=aid, text=alert_card, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            pass
+
+def format_module_stats_card() -> tuple:
+    total = sum(MODULE_STATS.values())
+    lines = [
+        "🏆 <b>NUN PROJECT // MODÜL KULLANIM İSTATİSTİKLERİ</b>\n",
+        f"Toplam Gerçekleştirilen İşlem: <code>{total}</code>\n"
+    ]
+    labels = {
+        "prayer": ("🕌", "Namaz & İbadet"),
+        "video": ("🎬", "Video & MP3 İndirme"),
+        "exam_todo": ("🎓", "Sınav & To-Do"),
+        "weather": ("🌤️", "Hava Durumu"),
+        "pdf_hub": ("📄", "PDF & OCR Araçları"),
+        "pomodoro": ("⏱️", "Pomodoro & Hatırlatıcı"),
+        "adhkar": ("📿", "Zikirler & Salavat"),
+        "translit": ("🔤", "Kiril ⇄ Latin Çeviri"),
+        "hadith": ("📖", "Günün Hadisi")
+    }
+    sorted_items = sorted(MODULE_STATS.items(), key=lambda x: x[1], reverse=True)
+    for idx, (mod, count) in enumerate(sorted_items, start=1):
+        icon, name = labels.get(mod, ("▫️", mod.title()))
+        pct = (count / total * 100) if total > 0 else 0
+        lines.append(f"<b>{idx}.</b> {icon} <b>{name}:</b> <code>{count}</code> kez (<code>%{pct:.1f}</code>)")
+
+    lines.append("\n💡 <i>Veriler gerçek zamanlı kaydedilmektedir.</i>")
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kullanıcı Merkezine Dön", callback_data="admin_hub_users")]])
+    return "\n".join(lines), kb
 
 def get_ram_usage_mb() -> float:
     try:
@@ -338,6 +475,11 @@ def check_flood_shield(user_id: int) -> bool:
     if len(dq) >= 15 and (now - dq[0] < 10.0):
         FLOOD_JAIL[user_id] = now + 600.0
         add_system_log(f"FLOODSHIELD: {user_id} 10 saniyede {len(dq)} istek atti -> 10 dk kisitlandi!", level="SECURITY")
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(notify_security_flood_alert(user_id, len(dq)))
+        except RuntimeError:
+            pass
         return True
     return False
 
@@ -434,6 +576,12 @@ CITY_FILE = "user_cities.json"
 COORDS_FILE = "user_coords.json"
 PRAYER_NOTIFS_FILE = "user_prayer_notifs.json"
 FRIDAY_NOTIFS_FILE = "user_friday_notifs.json"
+MODULE_STATS_FILE = "module_stats.json"
+MODULE_STATS = {
+    "prayer": 0, "video": 0, "exam_todo": 0, "weather": 0,
+    "pdf_hub": 0, "pomodoro": 0, "adhkar": 0, "translit": 0, "hadith": 0
+}
+GLOBAL_BOT = None
 TODOS_FILE = "user_todos.json"
 RECENT_CITIES_FILE = "user_recent_cities.json"
 BANNED_USERS_FILE = "user_banned.json"
@@ -478,7 +626,8 @@ def load_databases():
         (USER_PROFILES_FILE, USER_PROFILES),
         (BANNED_USERS_FILE, BANNED_USERS),
         (NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK),
-        (QAZA_FILE, USER_QAZA)
+        (QAZA_FILE, USER_QAZA),
+        (MODULE_STATS_FILE, MODULE_STATS)
     ]:
         if os.path.exists(fname):
             try:
@@ -1250,7 +1399,8 @@ def check_and_repair_databases() -> tuple:
         (BANNED_USERS_FILE, BANNED_USERS),
         (NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK),
         (MAINTENANCE_FILE, None),
-        (QAZA_FILE, USER_QAZA)
+        (QAZA_FILE, USER_QAZA),
+        (MODULE_STATS_FILE, MODULE_STATS)
     ]
     checked_count = 0
     repaired_count = 0
@@ -4135,12 +4285,15 @@ def format_admin_stats_panel() -> tuple:
     disk_info = get_disk_usage_info()
     maint_lbl = "AÇIK 🔴" if is_maintenance_active() else "KAPALI 🟢"
 
+    dau, wau, passive = calculate_activity_metrics()
     report = (
         f"👑 *NUN PROJECT // YÖNETİCİ KONTROL MERKEZİ*\n\n"
-        f"📊 *SİSTEM ÖZETİ:*\n"
-        f"  ▫️ Toplam Kullanıcı: `{user_count}` | Banlı: `{banned_count}`\n"
+        f"📊 *KULLANICI VE AKTİFLİK ANALİZİ:*\n"
+        f"  ▫️ Toplam Kayıtlı: `{user_count}` | Banlı: `{banned_count}`\n"
+        f"  ▫️ Canlı Aktiflik: Bugün `{dau}` (DAU) | Bu Hafta `{wau}` (WAU)\n"
+        f"  ▫️ Pasif Kullanıcılar: `{passive}` kişi\n"
         f"  ▫️ Vakit Bildirimi: `{prayer_notif_count}` | Cuma: `{friday_notif_count}`\n"
-        f"  ▫️ Sınavlar: `{exam_count}` | Görevler: `{todo_count}`\n\n"
+        f"  ▫️ Sınavlar: `{exam_count}` | Görevler (To-Do): `{todo_count}`\n\n"
         f"⚡ *SUNUCU SAĞLIĞI:*\n"
         f"  ▫️ Çalışma Süresi: `{uptime_str}`\n"
         f"  ▫️ Bellek (RAM): `{ram_mb:.1f} MB` | Disk: `{disk_info}`\n"
@@ -4176,7 +4329,10 @@ def format_admin_users_hub() -> tuple:
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"👥 Kayıtlı Kullanıcılar Dizini ({len(all_users)})", callback_data="stats_users_page_0")],
         [InlineKeyboardButton("🔍 Kullanıcı Ara (ID / İsim)", callback_data="admin_search_prompt")],
-        [InlineKeyboardButton("📊 Excel Listesi İndir (.xlsx)", callback_data="admin_export_excel")],
+        [
+            InlineKeyboardButton("📊 Excel İndir (.xlsx)", callback_data="admin_export_excel"),
+            InlineKeyboardButton("🏆 Modül İstatistikleri", callback_data="admin_module_stats")
+        ],
         [InlineKeyboardButton(f"⛔ Engellenen (Banlı) Üyeler ({banned_cnt})", callback_data="admin_banned_list")],
         [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
     ])
@@ -4259,6 +4415,7 @@ def format_user_detail_card(target_uid: int) -> tuple:
         f"▫️ <b>Şehir:</b> <code>{city_str}</code> | <b>Dil:</b> <code>{lang_str}</code> | <b>Saat:</b> <code>{tz_str}</code>",
         f"▫️ <b>Ezan Bildirimi:</b> {p_status}",
         f"▫️ <b>Son Aktiflik:</b> <code>{la[:19]}</code>",
+        f"▫️ <b>Son Yapılan İşlem:</b> {last_act_str}",
         f"▫️ <b>Durum:</b> {status_str}",
     ]
     if is_banned and ban_info:
@@ -4491,7 +4648,7 @@ async def run_segmented_broadcast(bot, admin_id: int, text: str, target_segment:
     )
     for u in recipients:
         uid = u['id']
-        if is_user_banned(uid):
+        if is_user_banned(uid) or u.get('bot_blocked'):
             continue
         if BROADCAST_ABORT_FLAG:
             break
@@ -4507,8 +4664,10 @@ async def run_segmented_broadcast(bot, admin_id: int, text: str, target_segment:
                 success_count += 1
             except Exception:
                 fail_count += 1
-        except Exception:
+        except Exception as e_send:
             fail_count += 1
+            if "blocked by the user" in str(e_send).lower() or "user is deactivated" in str(e_send).lower():
+                mark_user_blocked(uid)
 
     aborted_note = "\n🛑 *YÖNETİCİ TARAFINDAN ACİL DURDURULDU!*\n" if BROADCAST_ABORT_FLAG else ""
     result_card = (
@@ -4903,6 +5062,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = TEXTS.get(user_lang, TEXTS['uz'])
 
     # DÜZELTME 1: Admin Mobil Kategori Merkezleri
+    if data == "admin_module_stats":
+        if user_id in ADMIN_IDS:
+            await safe_answer()
+            text_ms, kb_ms = format_module_stats_card()
+            await safe_edit_text_markup(query.message, text_ms, reply_markup=kb_ms, parse_mode="HTML")
+        return
+
     if data == "admin_hub_users":
         if user_id in ADMIN_IDS:
             await safe_answer()
@@ -5487,6 +5653,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
         return
 
+    log_module_action('hadith', user_id)
     if data.startswith("open_hadith_"):
         offset = int(data.replace("open_hadith_", "", 1))
         now = get_user_now(user_id, context)
@@ -6166,8 +6333,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if raw_text in allowed_texts:
             cleanup_user_temp_files(context, user_id)
             if mode_val == 'video':
+                log_module_action('video', user_id)
                 await update.message.reply_text(get_text(user_id, 'prompt_video', context))
             elif mode_val == 'prayer':
+                log_module_action('prayer', user_id)
                 saved_city = get_user_city(user_id)
                 if saved_city:
                     status = await update.message.reply_text(get_text(user_id, 'prayer_loading', context))
@@ -6187,6 +6356,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['mode'] = 'prayer'
                 await update.message.reply_text(get_text(user_id, 'prompt_prayer', context), parse_mode="Markdown")
             elif mode_val == 'weather':
+                log_module_action('weather', user_id)
                 saved_city = get_user_city(user_id)
                 if saved_city:
                     status = await update.message.reply_text(get_text(user_id, 'weather_loading', context))
@@ -6208,8 +6378,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['mode'] = 'weather'
                 await update.message.reply_text(get_text(user_id, 'prompt_weather', context), parse_mode="Markdown")
             elif mode_val == 'pdf_hub':
+                log_module_action('pdf_hub', user_id)
                 await update.message.reply_text(get_text(user_id, 'prompt_pdf_hub', context), parse_mode="Markdown", reply_markup=get_pdf_hub_keyboard(user_lang))
             elif mode_val == 'exam':
+                log_module_action('exam_todo', user_id)
                 exams = get_user_exams(user_id)
                 now = get_user_now(user_id, context)
                 if exams:
@@ -6232,8 +6404,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['mode'] = 'schedule_img_input'
                 await update.message.reply_text(get_text(user_id, 'prompt_schedule_img', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
             elif mode_val == 'pomodoro':
+                log_module_action('pomodoro', user_id)
                 await update.message.reply_text(get_text(user_id, 'prompt_pomodoro', context), parse_mode="Markdown", reply_markup=get_pomodoro_keyboard(user_id, user_lang))
             elif mode_val == 'adhkar':
+                log_module_action('adhkar', user_id)
                 await update.message.reply_text(get_text(user_id, 'prompt_adhkar', context), reply_markup=get_adhkar_selection_keyboard(user_lang))
             elif mode_val == 'feedback':
                 context.user_data['mode'] = 'feedback_input'
@@ -6243,6 +6417,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
                 )
             elif mode_val == 'translit':
+                log_module_action('translit', user_id)
                 context.user_data['mode'] = 'translit'
                 await update.message.reply_text(
                     get_text(user_id, 'prompt_translit', context),
@@ -6622,6 +6797,8 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
             pass
 
 async def post_init_setup(application):
+    global GLOBAL_BOT
+    GLOBAL_BOT = application.bot
     asyncio.create_task(reminders_worker(application))
     asyncio.create_task(prayer_and_friday_worker(application))
     asyncio.create_task(nightly_maintenance_worker(application))

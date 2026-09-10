@@ -806,6 +806,114 @@ async def execute_soft_ban(bot, target_uid: int, reason: str = ""):
     except Exception:
         pass
 
+def toggle_maintenance_mode() -> bool:
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = not MAINTENANCE_MODE
+    save_json(MAINTENANCE_FILE, {"active": MAINTENANCE_MODE})
+    return MAINTENANCE_MODE
+
+def is_maintenance_active() -> bool:
+    return MAINTENANCE_MODE
+
+def get_disk_usage_info() -> str:
+    try:
+        total, used, free = shutil.disk_usage("/")
+        used_gb = used / (1024**3)
+        total_gb = total / (1024**3)
+        pct = (used / total) * 100
+        return f"{used_gb:.1f} GB / {total_gb:.1f} GB (%{pct:.1f})"
+    except Exception:
+        return "Bilinmiyor"
+
+def cleanup_orphaned_temp_files(max_age_seconds: int = 1800) -> float:
+    freed_bytes = 0
+    now = time.time()
+    target_dirs = [tempfile.gettempdir(), "/tmp", os.getcwd()]
+    for d in target_dirs:
+        if os.path.exists(d):
+            try:
+                for f in os.listdir(d):
+                    fp = os.path.join(d, f)
+                    if os.path.isfile(fp):
+                        ext = os.path.splitext(f)[1].lower()
+                        if ext in ('.mp4', '.jpg', '.jpeg', '.png', '.pdf', '.part', '.ytdl', '.tmp'):
+                            try:
+                                if now - os.path.getmtime(fp) >= max_age_seconds:
+                                    sz = os.path.getsize(fp)
+                                    os.remove(fp)
+                                    freed_bytes += sz
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+    return freed_bytes / (1024 * 1024)
+
+def create_database_backup_zip() -> str:
+    timestamp_str = datetime.now().strftime("%Y_%m_%d_%H%M%S")
+    zip_filename = os.path.join(tempfile.gettempdir(), f"nun_bot_backup_{timestamp_str}.zip")
+    db_files = [
+        LANG_FILE, TZ_FILE, TZ_LOCK_FILE, EXAMS_FILE, REMINDERS_FILE, CITY_FILE,
+        COORDS_FILE, PRAYER_NOTIFS_FILE, FRIDAY_NOTIFS_FILE, TODOS_FILE,
+        RECENT_CITIES_FILE, USER_PROFILES_FILE, ADMINS_FILE, BANNED_USERS_FILE,
+        MAINTENANCE_FILE
+    ]
+    with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in db_files:
+            if os.path.exists(f):
+                zf.write(f)
+    return zip_filename
+
+async def send_backup_to_admins(bot, trigger_type: str = "Manuel"):
+    zip_path = create_database_backup_zip()
+    if not os.path.exists(zip_path):
+        return False
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+    file_sz_kb = os.path.getsize(zip_path) / 1024.0
+    caption = (
+        f"💾 *NUN PROJECT // VERİTABANI YEDEK DOSYASI*\n\n"
+        f"📌 Tür: `{trigger_type}`\n"
+        f"📅 Tarih: `{now_str}`\n"
+        f"📦 Boyut: `{file_sz_kb:.1f} KB`\n\n"
+        f"_Tüm kullanıcılar, sınavlar, ezan bildirimleri ve to-do kayıtları güvenle paketlendi._"
+    )
+    success = False
+    for aid in ADMIN_IDS:
+        try:
+            with open(zip_path, "rb") as doc_f:
+                await bot.send_document(
+                    chat_id=aid,
+                    document=doc_f,
+                    filename=os.path.basename(zip_path),
+                    caption=caption,
+                    parse_mode="Markdown"
+                )
+            success = True
+        except Exception:
+            pass
+    try:
+        os.remove(zip_path)
+    except Exception:
+        pass
+    return success
+
+async def nightly_maintenance_worker(app):
+    while True:
+        await asyncio.sleep(60)
+        now = datetime.now()
+        now_date_str = now.strftime("%Y-%m-%d")
+
+        # 1. Gece 03:00 - 03:15 arası otomatik veritabanı yedeği al ve yöneticilere gönder
+        if now.hour == 3 and (0 <= now.minute <= 15):
+            last_b = NIGHTLY_BACKUP_TRACK.get("last_nightly_backup", "")
+            if last_b != now_date_str:
+                NIGHTLY_BACKUP_TRACK["last_nightly_backup"] = now_date_str
+                save_json(NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK)
+                await send_backup_to_admins(app.bot, trigger_type="Otomatik Gece Yedeği (03:00)")
+
+        # 2. Her saat başı geçici çöp dosyaları otomatik temizle
+        if now.minute == 0:
+            cleanup_orphaned_temp_files(max_age_seconds=1800)
+
 # =====================================================================
 # DENETİM GÜNLÜĞÜ, GERİ YÜKLEME, ARAMA VE YENİDEN BAŞLATMA SİSTEMİ
 # =====================================================================

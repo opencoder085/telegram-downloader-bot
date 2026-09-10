@@ -317,6 +317,33 @@ def get_uptime_string() -> str:
     return ", ".join(parts)
 
 # =====================================================================
+# FLOODSHIELD (AKILLI ANTİ-SPAM VE SALDIRI KORUMASI)
+# =====================================================================
+FLOOD_JAIL = {} # {user_id: release_time}
+FLOOD_TRACKER = {} # {user_id: deque([request_times])}
+
+def check_flood_shield(user_id: int) -> bool:
+    if not user_id or user_id in ADMIN_IDS:
+        return False
+    now = time.time()
+    jail_until = FLOOD_JAIL.get(user_id, 0.0)
+    if now < jail_until:
+        return True
+    elif user_id in FLOOD_JAIL:
+        FLOOD_JAIL.pop(user_id, None)
+
+    if user_id not in FLOOD_TRACKER:
+        FLOOD_TRACKER[user_id] = collections.deque(maxlen=20)
+    dq = FLOOD_TRACKER[user_id]
+    dq.append(now)
+
+    if len(dq) >= 15 and (now - dq[0] < 10.0):
+        FLOOD_JAIL[user_id] = now + 600.0
+        add_system_log(f"FLOODSHIELD: {user_id} 10 saniyede {len(dq)} istek atti -> 10 dk kisitlandi!", level="SECURITY")
+        return True
+    return False
+
+# =====================================================================
 # GELİŞMİŞ SAAT DİLİMİ VE KONUM MOTORU
 # =====================================================================
 CITY_TIMEZONE_MAP = {
@@ -439,7 +466,9 @@ USER_PRAYER_NOTIFS = {}
 USER_FRIDAY_NOTIFS = {}
 USER_TODOS = {}
 USER_RECENT_CITIES = {}
+USER_QAZA = {}
 DAILY_PRAYER_CACHE = {}
+QAZA_FILE = "user_qaza.json"
 
 def load_databases():
     global USER_LANGS, USER_TIMEZONES, USER_TZ_LOCKED, USER_EXAMS, USER_REMINDERS, USER_CITIES
@@ -458,7 +487,8 @@ def load_databases():
         (RECENT_CITIES_FILE, USER_RECENT_CITIES),
         (USER_PROFILES_FILE, USER_PROFILES),
         (BANNED_USERS_FILE, BANNED_USERS),
-        (NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK)
+        (NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK),
+        (QAZA_FILE, USER_QAZA)
     ]:
         if os.path.exists(fname):
             try:
@@ -738,6 +768,28 @@ def cleanup_user_temp_files(context, user_id):
     context.user_data.pop('pending_broadcast_text', None)
     context.user_data.pop('broadcast_target_segment', None)
     context.user_data['mode'] = 'auto'
+
+# =====================================================================
+# KAZA NAMAZI TAKİPÇİSİ MOTORU
+# =====================================================================
+def get_user_qaza(user_id: int) -> dict:
+    uid_str = str(user_id)
+    if uid_str not in USER_QAZA:
+        USER_QAZA[uid_str] = {"fajr": 0, "dhuhr": 0, "asr": 0, "maghrib": 0, "isha": 0, "witr": 0}
+    return USER_QAZA[uid_str]
+
+def update_user_qaza(user_id: int, prayer_name: str, delta: int = 1) -> dict:
+    q = get_user_qaza(user_id)
+    if prayer_name in q:
+        q[prayer_name] = max(0, q[prayer_name] + delta)
+        save_json(QAZA_FILE, USER_QAZA)
+    return q
+
+def reset_user_qaza(user_id: int) -> dict:
+    uid_str = str(user_id)
+    USER_QAZA[uid_str] = {"fajr": 0, "dhuhr": 0, "asr": 0, "maghrib": 0, "isha": 0, "witr": 0}
+    save_json(QAZA_FILE, USER_QAZA)
+    return USER_QAZA[uid_str]
 
 # =====================================================================
 # BAN, BAKIM, DİSK TEMİZLEME VE YEDEKLEME MOTORU
@@ -1245,7 +1297,8 @@ def check_and_repair_databases() -> tuple:
         (USER_PROFILES_FILE, USER_PROFILES),
         (BANNED_USERS_FILE, BANNED_USERS),
         (NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK),
-        (MAINTENANCE_FILE, None)
+        (MAINTENANCE_FILE, None),
+        (QAZA_FILE, USER_QAZA)
     ]
     checked_count = 0
     repaired_count = 0
@@ -1299,6 +1352,94 @@ def check_and_repair_databases() -> tuple:
     )
     add_system_log(f"DB Sağlık taraması tamamlandı: {checked_count} dosya kontrol edildi, {repaired_count} onarıldı.")
     return True, status_msg
+
+# =====================================================================
+# GÜNLÜK YÖNETİCİ BÜLTENİ VE EXCEL AKTARIM MOTORU
+# =====================================================================
+async def daily_telemetry_worker(app):
+    while True:
+        await asyncio.sleep(45)
+        now = datetime.now()
+        now_date_str = now.strftime("%Y-%m-%d")
+        # Gece 00:00 - 00:10 arasi calisir
+        if now.hour == 0 and (0 <= now.minute <= 10):
+            last_t = NIGHTLY_BACKUP_TRACK.get("last_daily_telemetry", "")
+            if last_t != now_date_str:
+                NIGHTLY_BACKUP_TRACK["last_daily_telemetry"] = now_date_str
+                save_json(NIGHTLY_BACKUP_TRACK_FILE, NIGHTLY_BACKUP_TRACK)
+                all_u = get_all_registered_users()
+                total_u = len(all_u)
+                p_count = sum(1 for c_item in USER_PRAYER_NOTIFS.values() if c_item.get("enabled"))
+                b_count = len(BANNED_USERS)
+                ram_mb = get_ram_usage_mb()
+                uptime_s = get_uptime_string()
+
+                bulten = (
+                    f"📊 *NUN PROJECT // GÜNLÜK YÖNETİCİ BÜLTENİ*\n"
+                    f"📅 Tarih: `{now.strftime('%d.%m.%Y')}`\n\n"
+                    f"▫️ Toplam Kayıtlı Kullanıcı: `{total_u}`\n"
+                    f"▫️ Vakit Bildirimi Alanlar: `{p_count}`\n"
+                    f"▫️ Engellenen Kullanıcılar: `{b_count}`\n"
+                    f"▫️ Kesintisiz Çalışma (Uptime): `{uptime_s}`\n"
+                    f"▫️ Bellek Kullanımı: `{ram_mb:.1f} MB`\n\n"
+                    f"🟢 _Sistem kesintisiz ve sağlıklı çalışmaya devam ediyor._"
+                )
+                for aid in ADMIN_IDS:
+                    try:
+                        await app.bot.send_message(chat_id=aid, text=bulten, parse_mode="Markdown")
+                    except Exception:
+                        pass
+
+def export_users_to_excel(output_path: str) -> bool:
+    try:
+        all_u = get_all_registered_users()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Kullanıcılar"
+
+        headers = ["ID", "İsim", "Kullanıcı Adı", "Şehir", "Dil", "Saat Dilimi", "Ezan Bildirimi", "Durum", "Son Aktiflik"]
+        ws.append(headers)
+
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            cell.fill = openpyxl.styles.PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+            cell.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center")
+
+        for u in all_u:
+            uid = u['id']
+            is_adm = uid in ADMIN_IDS
+            is_ban = is_user_banned(uid)
+            if is_adm:
+                st = "Yönetici"
+            elif is_ban:
+                st = "Engelli"
+            else:
+                st = "Aktif"
+
+            row = [
+                str(uid),
+                u.get('name') or "",
+                f"@{u['username']}" if u.get('username') else "",
+                u.get('city') or "",
+                (u.get('lang') or 'uz').upper(),
+                f"UTC{'+' if (u.get('tz') or 0) >= 0 else ''}{u.get('tz') or 0}",
+                "Açık" if u.get('prayer_active') else "Kapalı",
+                st,
+                u.get('last_active') or ""
+            ]
+            ws.append(row)
+
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or "")) for cell in col)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+        wb.save(output_path)
+        return True
+    except Exception as e:
+        add_system_log(f"Excel aktarma hatasi: {e}", level="ERROR")
+        return False
 
 # =====================================================================
 # POMODORO & ARKA PLAN GÖREVLERİ (HATA DÜZELTMELERİ YAPILDI)
@@ -2431,6 +2572,10 @@ def get_prayer_hub_keyboard(user_id: int, lang: str = 'uz'):
     t = TEXTS.get(lang, TEXTS['uz'])
     rows = [
         [
+            InlineKeyboardButton(t.get('btn_qaza_tracker', "📿 Qazo Daftari"), callback_data="open_qaza_tracker"),
+            InlineKeyboardButton(t.get('btn_ramadan_countdown', "🌙 Saharlik & Iftor"), callback_data="open_ramadan_countdown")
+        ],
+        [
             InlineKeyboardButton(t['btn_adhkar_hub'], callback_data="open_adhkar_hub"),
             InlineKeyboardButton(t['btn_daily_hadith'], callback_data="open_hadith_0")
         ],
@@ -2447,6 +2592,142 @@ def get_prayer_hub_keyboard(user_id: int, lang: str = 'uz'):
         ]
     ]
     return InlineKeyboardMarkup(rows)
+
+# =====================================================================
+# KAZA VE RAMAZAN SAHUR/İFTAR GERİ SAYIM ŞABLONLARI
+# =====================================================================
+def format_qaza_card(user_id: int, lang: str = 'uz') -> str:
+    q = get_user_qaza(user_id)
+    t = TEXTS.get(lang, TEXTS['uz'])
+    total = sum(q.values())
+
+    labels = {
+        'uz': {'fajr': "Bomdod", 'dhuhr': "Peshin", 'asr': "Asr", 'maghrib': "Shom", 'isha': "Xufton", 'witr': "Vitr (Vojib)"},
+        'tr': {'fajr': "Sabah", 'dhuhr': "Öğle", 'asr': "İkindi", 'maghrib': "Akşam", 'isha': "Yatsı", 'witr': "Vitir (Vacip)"},
+        'ru': {'fajr': "Фаджр", 'dhuhr': "Зухр", 'asr': "Аср", 'maghrib': "Магриб", 'isha': "Иша", 'witr': "Витр"},
+        'en': {'fajr': "Fajr", 'dhuhr': "Dhuhr", 'asr': "Asr", 'maghrib': "Maghrib", 'isha': "Isha", 'witr': "Witr"},
+    }.get(lang, labels['uz'])
+
+    header = t.get('qaza_title', "*NUN PROJECT // QAZO NAMOZLARI DEFTERI*")
+    total_lbl = t.get('qaza_total', "Jami qazo namozlari borchi:")
+
+    lines = [
+        header,
+        "",
+        f"▫️ *{labels['fajr']}:*    `{q['fajr']}` ta",
+        f"▫️ *{labels['dhuhr']}:*    `{q['dhuhr']}` ta",
+        f"▫️ *{labels['asr']}:*     `{q['asr']}` ta",
+        f"▫️ *{labels['maghrib']}:*    `{q['maghrib']}` ta",
+        f"▫️ *{labels['isha']}:*    `{q['isha']}` ta",
+        f"▫️ *{labels['witr']}:*    `{q['witr']}` ta",
+        "",
+        f"📊 *{total_lbl}* `{total}` ta",
+        "",
+        "💡 _Quyidagi tugmalar orqali qazo namozlaringizni oshiring yoki kamaytiring:_"
+    ]
+    return "\n".join(lines)
+
+def build_qaza_keyboard(user_id: int, lang: str = 'uz') -> InlineKeyboardMarkup:
+    labels = {
+        'uz': {'fajr': "Bomdod", 'dhuhr': "Peshin", 'asr': "Asr", 'maghrib': "Shom", 'isha': "Xufton", 'witr': "Vitr"},
+        'tr': {'fajr': "Sabah", 'dhuhr': "Öğle", 'asr': "İkindi", 'maghrib': "Akşam", 'isha': "Yatsı", 'witr': "Vitir"},
+        'ru': {'fajr': "Фаджр", 'dhuhr': "Зухр", 'asr': "Аср", 'maghrib': "Магриб", 'isha': "Иша", 'witr': "Витр"},
+        'en': {'fajr': "Fajr", 'dhuhr': "Dhuhr", 'asr': "Asr", 'maghrib': "Maghrib", 'isha': "Isha", 'witr': "Witr"},
+    }.get(lang, labels['uz'])
+
+    btns = [
+        [
+            InlineKeyboardButton(f"➕ {labels['fajr']}", callback_data="qaza_add_fajr"),
+            InlineKeyboardButton("➖ 1", callback_data="qaza_sub_fajr"),
+            InlineKeyboardButton(f"➕ {labels['dhuhr']}", callback_data="qaza_add_dhuhr"),
+            InlineKeyboardButton("➖ 1", callback_data="qaza_sub_dhuhr")
+        ],
+        [
+            InlineKeyboardButton(f"➕ {labels['asr']}", callback_data="qaza_add_asr"),
+            InlineKeyboardButton("➖ 1", callback_data="qaza_sub_asr"),
+            InlineKeyboardButton(f"➕ {labels['maghrib']}", callback_data="qaza_add_maghrib"),
+            InlineKeyboardButton("➖ 1", callback_data="qaza_sub_maghrib")
+        ],
+        [
+            InlineKeyboardButton(f"➕ {labels['isha']}", callback_data="qaza_add_isha"),
+            InlineKeyboardButton("➖ 1", callback_data="qaza_sub_isha"),
+            InlineKeyboardButton(f"➕ {labels['witr']}", callback_data="qaza_add_witr"),
+            InlineKeyboardButton("➖ 1", callback_data="qaza_sub_witr")
+        ],
+        [
+            InlineKeyboardButton("🔄 Barchasini Qayta Oʻrnatish (Sıfırla)", callback_data="qaza_reset_prompt")
+        ],
+        [
+            InlineKeyboardButton("🔙 Namoz Markaziga Qaytish", callback_data="qaza_back_prayer")
+        ]
+    ]
+    return InlineKeyboardMarkup(btns)
+
+def format_ramadan_countdown_card(user_id: int, lang: str = 'uz', user_now: datetime = None) -> str:
+    if not user_now:
+        user_now = get_user_now(user_id)
+    today_date = user_now.date()
+    today_str = today_date.strftime("%Y-%m-%d")
+
+    u_coords = get_user_coords(user_id)
+    saved_city = get_user_city(user_id) or "Shahar"
+    tz_off = get_user_tz_offset(user_id)
+
+    timings = None
+    if u_coords:
+        c_key = f"{user_id}_{today_str}"
+        if c_key in DAILY_PRAYER_CACHE:
+            timings = DAILY_PRAYER_CACHE[c_key]
+        else:
+            calc = AstroPrayerTimes(u_coords['lat'], u_coords['lon'], elevation=u_coords.get('elevation', 0.0), tz_offset=float(tz_off), country_code=u_coords.get('country', ''))
+            timings = calc.calculate_times(user_now)
+            DAILY_PRAYER_CACHE[c_key] = timings
+
+    if not timings:
+        timings = {"Fajr": "05:00", "Sunrise": "06:30", "Dhuhr": "12:30", "Asr": "16:15", "Maghrib": "18:45", "Isha": "20:00"}
+
+    def parse_p_dt(hm_str, add_days=0):
+        parts = hm_str.split(":")
+        d = today_date + timedelta(days=add_days)
+        return datetime(d.year, d.month, d.day, int(parts[0]), int(parts[1][:2]))
+
+    fajr_dt = parse_p_dt(timings['Fajr'])
+    if fajr_dt < user_now:
+        fajr_dt = parse_p_dt(timings['Fajr'], add_days=1)
+
+    maghrib_dt = parse_p_dt(timings['Maghrib'])
+    if maghrib_dt < user_now:
+        maghrib_dt = parse_p_dt(timings['Maghrib'], add_days=1)
+
+    diff_fajr = fajr_dt - user_now
+    diff_maghrib = maghrib_dt - user_now
+
+    def fmt_diff(td):
+        s = int(td.total_seconds())
+        return s // 3600, (s % 3600) // 60
+
+    fh, fm = fmt_diff(diff_fajr)
+    mh, mm = fmt_diff(diff_maghrib)
+
+    titles = {
+        'uz': ("*NUN PROJECT // SAHARLIK VA IFTORLIK SAYOGʻI*", "Saharlik tugashiga (Bomdod)", "Iftorlikka (Shom)", "soat", "daq qoldi"),
+        'tr': ("*NUN PROJECT // SAHUR VE İFTAR CANLI SAYACI*", "Sahur bitimine (İmsak)", "İftara (Akşam Ezanı)", "saat", "dk kaldı"),
+        'ru': ("*NUN PROJECT // СЧЕТЧИК СУХУРА И ИФТАРА*", "До окончания сухура (Фаджр)", "До ифтара (Магриб)", "ч.", "мин. осталось"),
+        'en': ("*NUN PROJECT // SUHOOR & IFTAR COUNTDOWN*", "Until Suhoor ends (Fajr)", "Until Iftar (Maghrib)", "hrs", "mins left"),
+    }
+    h_title, lbl_suhoor, lbl_iftar, u_h, u_m = titles.get(lang, titles['uz'])
+
+    return (
+        f"{h_title}\n"
+        f"📍 *[ {saved_city.upper()} ]* | 📅 `{user_now.strftime('%d.%m.%Y')}`\n\n"
+        f"┌──────────────────────────────┐\n"
+        f"  🍲 *{lbl_suhoor}:*\n"
+        f"     ⏰ `{timings['Fajr']}` ➔ ⏳ `{fh} {u_h} {fm} {u_m}`\n\n"
+        f"  ✨ *{lbl_iftar}:*\n"
+        f"     ⏰ `{timings['Maghrib']}` ➔ ⏳ `{mh} {u_h} {mm} {u_m}`\n"
+        f"└──────────────────────────────┘\n\n"
+        f"🤲 _«Oʻz vaqtida ochilgan iftor va niyat bilan qilingan ibodat maqbuldir.»_"
+    )
 
 # =====================================================================
 # HAVA DURUMU MOTORU (OPEN-METEO GLOBAL SERVICE)
@@ -2766,6 +3047,14 @@ def get_timezone_keyboard(lang: str = 'uz'):
 # =====================================================================
 TEXTS = {
     'uz': {
+        'btn_qaza_tracker': '📿 Qazo Daftari',
+        'qaza_title': '*NUN PROJECT // QAZO NAMOZLARI DEFTERI*',
+        'qaza_total': 'Jami qazo namozlari borchi:',
+        'btn_ramadan_countdown': '🌙 Saharlik & Iftorlik Sayogʻi',
+        'flood_jail_alert': '⚠️ Siz juda koʻp qisqa vaqt ichida soʻrov yubordingiz. Tizim xavfsizligi uchun 10 daqiqa kuting.',
+        'btn_download_audio': '🎵 Faqat audio (MP3) yuklash',
+        'audio_downloading': '🎵 Audio chiqarilmoqda, kuting...',
+        'audio_ready': 'Audio muvaffaqiyatli tayyorlandi!',
         'btn_feedback': "💡 Fikr & Taklif",
         'prompt_feedback': "💡 *FIKR VA TAKLIFLAR*\n\nNun Bot haqidagi taklif, mulohaza yoki xatolik haqida yozib yuboring. Xabaringiz toʻgʻridan-toʻgʻri maʼmuriyatga yetkaziladi:\n\n_(Bekor qilish uchun /cancel)_",
         'feedback_sent': "✅ Fikr-mulohazangiz maʼmuriyatga yetkazildi. Rahmat!",
@@ -2928,6 +3217,14 @@ TEXTS = {
         )
     },
     'tr': {
+        'btn_qaza_tracker': '📿 Kaza Namazı Defteri',
+        'qaza_title': '*NUN PROJECT // KAZA NAMAZI DEFTERİ*',
+        'qaza_total': 'Toplam kaza namazı borcu:',
+        'btn_ramadan_countdown': '🌙 Sahur & İftar Canlı Sayacı',
+        'flood_jail_alert': '⚠️ Çok kısa sürede aşırı sayıda istek gönderdiniz. Güvenlik için lütfen 10 dakika bekleyiniz.',
+        'btn_download_audio': '🎵 Sadece Ses (MP3) İndir',
+        'audio_downloading': '🎵 Ses dosyası (MP3) hazırlanıyor...',
+        'audio_ready': 'Ses dosyası başarıyla hazırlandı!',
         'btn_feedback': "💡 Öneri & Destek",
         'prompt_feedback': "💡 *ÖNERİ & DESTEK BİLDİRİMİ*\n\nNun Bot ile ilgili öneri, dilek veya karşılaştığınız sorunu buraya yazıp gönderin. Mesajınız doğrudan yöneticilerimize iletilecektir:\n\n_(İptal etmek için /cancel)_",
         'feedback_sent': "✅ Bildiriminiz yöneticilere başarıyla iletildi. Teşekkür ederiz!",
@@ -3082,6 +3379,14 @@ TEXTS = {
         )
     },
     'ru': {
+        'btn_qaza_tracker': '📿 Учет пропущенных намазов',
+        'qaza_title': '*NUN PROJECT // УЧЕТ ПРОПУЩЕННЫХ НАМАЗОВ*',
+        'qaza_total': 'Всего пропущенных намазов:',
+        'btn_ramadan_countdown': '🌙 Счетчик Сухура и Ифтара',
+        'flood_jail_alert': '⚠️ Вы отправили слишком много запросов за короткое время. Подождите 10 минут.',
+        'btn_download_audio': '🎵 Скачать только аудио (MP3)',
+        'audio_downloading': '🎵 Извлечение аудио (MP3)...',
+        'audio_ready': 'Аудиофайл готов!',
         'btn_feedback': "💡 Отзыв и Поддержка",
         'prompt_feedback': "💡 *ОТЗЫВЫ И ПОДДЕРЖКА*\n\nНапишите ваш отзыв, пожелание или найденную ошибку. Ваше сообщение будет напрямую передано администрации бота:\n\n_(Для отмены напишите /cancel)_",
         'feedback_sent': "✅ Ваше сообщение успешно передано администрации. Спасибо!",
@@ -3222,6 +3527,14 @@ TEXTS = {
         )
     },
     'en': {
+        'btn_qaza_tracker': '📿 Missed Prayers Tracker',
+        'qaza_title': '*NUN PROJECT // MISSED PRAYERS TRACKER*',
+        'qaza_total': 'Total missed prayers:',
+        'btn_ramadan_countdown': '🌙 Suhoor & Iftar Countdown',
+        'flood_jail_alert': '⚠️ Too many requests sent in a short time. For security, please wait 10 minutes.',
+        'btn_download_audio': '🎵 Download Audio (MP3) Only',
+        'audio_downloading': '🎵 Extracting audio (MP3)...',
+        'audio_ready': 'Audio successfully extracted!',
         'btn_feedback': "💡 Feedback & Support",
         'prompt_feedback': "💡 *FEEDBACK & SUPPORT*\n\nPlease write your suggestions, questions, or report an issue. Your message will be sent directly to the bot administrators:\n\n_(Type /cancel to cancel)_",
         'feedback_sent': "✅ Your feedback has been sent to the admins. Thank you!",
@@ -3544,7 +3857,7 @@ def fallback_twitter_download(tweet_id: str, download_dir: str) -> dict:
         pass
     return None
 
-def _yt_dlp_download(url: str, download_dir: str) -> dict:
+def _yt_dlp_download(url: str, download_dir: str, audio_only: bool = False) -> dict:
     out_tmpl = os.path.join(download_dir, 'media_%(id)s.%(ext)s')
     ydl_opts = {
         'outtmpl': out_tmpl,
@@ -3554,7 +3867,8 @@ def _yt_dlp_download(url: str, download_dir: str) -> dict:
         'noplaylist': True,
         'socket_timeout': 20,
         'retries': 3,
-        'format': 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
+                'format': 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
+        'extract_audio': audio_only,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -3641,6 +3955,17 @@ def download_media_sync(url: str, download_dir: str) -> dict:
                 print(f"[DOWNLOAD_SUCCESS] X/Twitter yedek motoru ile basariyla indirildi: {m_x.group(1)}")
                 return fallback_x
 
+        raise e
+
+def download_audio_sync(url: str, download_dir: str) -> dict:
+    clean_url = url.strip()
+    insta_code = extract_instagram_code(clean_url)
+    if insta_code:
+        clean_url = f"https://www.instagram.com/reel/{insta_code}/"
+    try:
+        return _yt_dlp_download(clean_url, download_dir, audio_only=True)
+    except Exception as e:
+        add_system_log(f"Audio indirme hatasi: {e}", level="WARN")
         raise e
 # =====================================================================
 # DİNAMİK BOT KOMUTLARI
@@ -3888,9 +4213,10 @@ def format_admin_stats_panel() -> tuple:
 
     maint_btn_lbl = "🚧 Bakım: Kapat 🟢" if is_maintenance_active() else "🚧 Bakım: Aç 🔴"
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"👥 Kayıtlı Kullanıcılar ({user_count})", callback_data="stats_users_page_0"), InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt")],
-        [InlineKeyboardButton("📢 Segmentli Duyuru Gönder", callback_data="admin_broadcast_prompt"), InlineKeyboardButton("💾 Yedek Al", callback_data="admin_backup_download")],
-        [InlineKeyboardButton("📥 Yedekten Geri Yükle", callback_data="admin_restore_prompt"), InlineKeyboardButton("👑 Yöneticileri Yönet", callback_data="admin_manage_panel")],
+        [InlineKeyboardButton(f"👥 Kayıtlı Kullanıcılar ({user_count})", callback_data="stats_users_page_0")],
+        [InlineKeyboardButton("📢 Segmentli Duyuru Gönder", callback_data="admin_broadcast_prompt"), InlineKeyboardButton("📊 Excel İndir (.xlsx)", callback_data="admin_export_excel")],
+        [InlineKeyboardButton("💾 Yedek Al (ZIP)", callback_data="admin_backup_download"), InlineKeyboardButton("📥 Yedekten Geri Yükle", callback_data="admin_restore_prompt")],
+        [InlineKeyboardButton("👑 Yöneticileri Yönet", callback_data="admin_manage_panel"), InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt")],
         [InlineKeyboardButton(f"⛔ Banlı Üyeler ({banned_count})", callback_data="admin_banned_list"), InlineKeyboardButton("🧹 Çöpü Temizle", callback_data="admin_clean_disk")],
         [InlineKeyboardButton("📋 Sistem Logları", callback_data="admin_view_logs"), InlineKeyboardButton("🩺 DB Sağlık & Onarım", callback_data="admin_db_health")],
         [InlineKeyboardButton(maint_btn_lbl, callback_data="admin_toggle_maintenance"), InlineKeyboardButton("🔄 Botu Yeniden Başlat", callback_data="admin_restart_prompt")],
@@ -4901,6 +5227,119 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_answer("Önizlenecek duyuru metni bulunamadı.", show_alert=True)
         return
 
+    
+    # EXCEL AKTARIM
+    if data == "admin_export_excel":
+        if user_id in ADMIN_IDS:
+            await safe_answer("📊 Excel tablosu hazırlanıyor...", show_alert=False)
+            status_ex = await query.message.reply_text("⏳ Tüm kayıtlı kullanıcılar Excel tablosuna aktarılıyor...")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                excel_path = os.path.join(tmp_dir, "nun_bot_kullanicilar.xlsx")
+                ok = export_users_to_excel(excel_path)
+                if ok and os.path.exists(excel_path):
+                    with open(excel_path, "rb") as f_ex:
+                        await context.bot.send_document(
+                            chat_id=user_id,
+                            document=f_ex,
+                            filename="nun_bot_kullanicilar.xlsx",
+                            caption=f"📊 *NUN PROJECT // KAYITLI KULLANICI LİSTESİ (EXCEL)*\n\n📅 Tarih: `{datetime.now().strftime('%d.%m.%Y %H:%M')}`\n👥 Toplam Kullanıcı: `{len(get_all_registered_users())}`",
+                            parse_mode="Markdown"
+                        )
+                else:
+                    await query.message.reply_text("❌ Excel dosyası oluşturulamadı.")
+            try:
+                await status_ex.delete()
+            except Exception:
+                pass
+        return
+
+    # KAZA NAMAZI TAKİPÇİSİ
+    if data == "open_qaza_tracker":
+        await safe_answer()
+        card_text = format_qaza_card(user_id, user_lang)
+        kb = build_qaza_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data.startswith("qaza_add_"):
+        prayer_name = data.replace("qaza_add_", "", 1)
+        update_user_qaza(user_id, prayer_name, +1)
+        await safe_answer("➕ 1 eklendi", show_alert=False)
+        card_text = format_qaza_card(user_id, user_lang)
+        kb = build_qaza_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data.startswith("qaza_sub_"):
+        prayer_name = data.replace("qaza_sub_", "", 1)
+        update_user_qaza(user_id, prayer_name, -1)
+        await safe_answer("➖ 1 tamamlandı", show_alert=False)
+        card_text = format_qaza_card(user_id, user_lang)
+        kb = build_qaza_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "qaza_reset_prompt":
+        reset_user_qaza(user_id)
+        await safe_answer("🔄 Kaza namazları sıfırlandı!", show_alert=True)
+        card_text = format_qaza_card(user_id, user_lang)
+        kb = build_qaza_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "qaza_back_prayer":
+        await safe_answer()
+        saved_city = get_user_city(user_id) or "Shahar"
+        u_coords = get_user_coords(user_id)
+        if u_coords:
+            timings, d_name, dt_s, h_s, src = await fetch_prayer_times_by_coord(
+                u_coords['lat'], u_coords['lon'], u_coords.get('elevation', 0.0), saved_city, "", u_coords.get('country', ''), user_id=user_id
+            )
+            if timings:
+                p_card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang, user_now=get_user_now(user_id, context), user_id=user_id)
+                p_kb = get_prayer_hub_keyboard(user_id, user_lang)
+                await safe_edit_text_markup(query.message, p_card, reply_markup=p_kb, parse_mode="Markdown")
+                return
+        await query.message.reply_text(get_text(user_id, 'prompt_prayer', context), parse_mode="Markdown")
+        return
+
+    # RAMAZAN SAHUR & İFTAR CANLI SAYACI
+    if data == "open_ramadan_countdown":
+        await safe_answer()
+        card_rc = format_ramadan_countdown_card(user_id, user_lang, user_now=get_user_now(user_id, context))
+        kb_rc = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Namoz Markaziga Qaytish", callback_data="qaza_back_prayer")]])
+        await safe_edit_text_markup(query.message, card_rc, reply_markup=kb_rc, parse_mode="Markdown")
+        return
+
+    # VİDEODAN SES (MP3) ÇIKARMA
+    if data == "dl_audio_extract":
+        await safe_answer("🎵 MP3 hazırlanıyor, lütfen bekleyiniz...")
+        target_url = context.user_data.get('last_video_url')
+        if target_url:
+            status_aud = await query.message.reply_text(get_text(user_id, 'audio_downloading', context))
+            try:
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    aud_res = await asyncio.to_thread(download_audio_sync, target_url, tmp_dir)
+                    aud_path = aud_res['path']
+                    with open(aud_path, 'rb') as f_aud:
+                        await context.bot.send_audio(
+                            chat_id=user_id,
+                            audio=f_aud,
+                            title=aud_res.get('title', 'Audio')[:60],
+                            caption=f"🎵 {aud_res.get('title', 'Audio')[:60]}"
+                        )
+            except Exception as e:
+                add_system_log(f"Audio indirme hatasi: {e}", level="WARN")
+                await query.message.reply_text(get_text(user_id, 'video_error', context))
+            finally:
+                try:
+                    await status_aud.delete()
+                except Exception:
+                    pass
+        else:
+            await query.message.reply_text("⚠️ İndirilecek medya bağlantısı bulunamadı.")
+        return
+
     if data == "admin_clean_disk":
         if user_id in ADMIN_IDS:
             freed_mb = cleanup_orphaned_temp_files(max_age_seconds=0)
@@ -5823,6 +6262,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_rate_limited(user_id, 0.5):
         return
 
+    # FloodShield Kontrolu
+    if check_flood_shield(user_id):
+        try:
+            await update.message.reply_text(get_text(user_id, 'flood_jail_alert', context))
+        except Exception:
+            pass
+        return
+
     chat_id = update.message.chat_id
     raw_text = update.message.text.strip()
     user_lang = get_user_lang(user_id, context)
@@ -6187,6 +6634,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             )
                     else:
                         with open(f_path, 'rb') as f:
+                            context.user_data['last_video_url'] = clean_url
+                            kb_audio = InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_download_audio', context), callback_data="dl_audio_extract")]])
                             await context.bot.send_video(
                                 chat_id=chat_id,
                                 video=f,
@@ -6194,7 +6643,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 duration=media_res.get('duration'),
                                 width=media_res.get('width'),
                                 height=media_res.get('height'),
-                                supports_streaming=True
+                                supports_streaming=True,
+                                reply_markup=kb_audio
                             )
             except FileTooLargeError:
                 try:
@@ -6379,6 +6829,22 @@ async def post_init_setup(application):
     asyncio.create_task(reminders_worker(application))
     asyncio.create_task(prayer_and_friday_worker(application))
     asyncio.create_task(nightly_maintenance_worker(application))
+    asyncio.create_task(daily_telemetry_worker(application))
+
+    # Yöneticilere açılış teyit bildirimi gönder
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    boot_msg = (
+        f"🚀 *NUN PROJECT // SİSTEM BAŞLATILDI*\n\n"
+        f"✅ *Durum:* `Tüm servisler ve veritabanı aktif`\n"
+        f"⏰ *Zaman:* `{now_str}`\n"
+        f"📊 *Veritabanları:* 16 dosya devrede.\n\n"
+        f"_Nun Bot 7/24 kesintisiz modda hazırdır._"
+    )
+    for aid in ADMIN_IDS:
+        try:
+            await application.bot.send_message(chat_id=aid, text=boot_msg, parse_mode="Markdown")
+        except Exception:
+            pass
     
     # Genel kullanıcılar için varsayılan komut listesi (/stats ASLA yer almaz)
     default_cmds = [

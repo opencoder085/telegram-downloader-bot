@@ -95,7 +95,6 @@ def safe_md(text: str) -> str:
         return ""
     return str(text).replace("*", "\\*").replace("_", "\\_").replace("`", "\\`").replace("[", "\\[")
 
-
 # =====================================================================
 # GLOBAL VE KALICI SENKRON HTTP İSTEMCİSİ (KEEP-ALIVE POOL)
 # =====================================================================
@@ -213,7 +212,6 @@ def save_admin_ids():
 
 LAST_PROFILE_SAVE_TS = 0.0
 
-
 def add_admin_id(uid: int) -> bool:
     global ADMIN_IDS
     ADMIN_IDS.add(uid)
@@ -231,7 +229,6 @@ def remove_admin_id(uid: int) -> tuple:
         invalidate_users_cache()
         return True, "Yönetici başarıyla çıkarıldı."
     return False, "Bu ID yönetici listesinde bulunamadı."
-
 
 async def global_user_tracker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -271,7 +268,6 @@ def track_user_activity(user):
 
 def get_ram_usage_mb() -> float:
     try:
-        # ru_maxrss is in kilobytes on Linux
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
     except Exception:
         try:
@@ -506,6 +502,7 @@ def add_recent_city(user_id: int, city_name: str):
     c_clean = city_name.strip().title()
     if c_clean in USER_RECENT_CITIES[uid]:
         USER_RECENT_CITIES[uid].remove(c_clean)
+    USER_RECENT_CITIES[uid].insert(0, c_clean)
     USER_RECENT_CITIES[uid] = USER_RECENT_CITIES[uid][:3]
     save_json(RECENT_CITIES_FILE, USER_RECENT_CITIES)
 
@@ -705,7 +702,6 @@ def cleanup_user_temp_files(context, user_id):
     context.user_data.pop('exam_draft_dt', None)
     context.user_data['mode'] = 'auto'
 
-
 # =====================================================================
 # BAN, BAKIM, DİSK TEMİZLEME VE YEDEKLEME MOTORU
 # =====================================================================
@@ -842,7 +838,6 @@ async def nightly_maintenance_worker(app):
         # 2. Her saat başı geçici çöp dosyaları otomatik temizle
         if now.minute == 0:
             cleanup_orphaned_temp_files(max_age_seconds=1800)
-
 
 # =====================================================================
 # DENETİM GÜNLÜĞÜ, GERİ YÜKLEME, ARAMA VE YENİDEN BAŞLATMA SİSTEMİ
@@ -1299,14 +1294,14 @@ MAP_CYR_TO_LAT = {
     'Б': 'B', 'б': 'b',
     'В': 'V', 'в': 'v',
     'Г': 'G', 'г': 'g',
-    'Д': 'D', 'd': 'd',
-    'Ж': 'J', 'ж': 'j',
+    'Д': 'D', 'д': 'd',
+    'Ж': 'J', 'j': 'j',
     'З': 'Z', 'з': 'z',
     'И': 'I', 'i': 'i',
     'Й': 'Y', 'й': 'y',
     'К': 'K', 'к': 'k',
     'Қ': 'Q', 'қ': 'q',
-    'Л': 'L', 'л': 'l',
+    'Л': 'L', 'l': 'l',
     'М': 'M', 'm': 'm',
     'Н': 'N', 'n': 'n',
     'О': 'O', 'o': 'o',
@@ -1445,7 +1440,7 @@ def latin_to_cyrillic(text: str) -> str:
             continue
             
         if c in ('c', 'C') and nxt in ('h', 'H'):
-            res.append("Ч" if (c.isupper() and nxt.isupper()) else ("Ч" if c.isupper() else "ч"))
+            res.append("Ч" if (c.isupper() and nxt.isupper()) else ("Ch" if c.isupper() else "ch"))
             i += 2
             continue
             
@@ -1625,13 +1620,8 @@ def calculate_kerahat_and_israq(timings: dict, now_dt: datetime) -> dict:
     dhuhr_dt = to_dt(timings.get("Dhuhr", "12:30"))
     maghrib_dt = to_dt(timings.get("Maghrib", "18:30"))
 
-    # 1. Tulû' Kerahati: Güneş doğduktan sonra 45 dakika sürer. Bitişi İşrak / Kuşluk vaktidir.
     israq_dt = sunrise_dt + timedelta(minutes=45)
-    
-    # 2. İstivâ Kerahati: Öğle vaktinden (zevalden) önceki 40 dakika.
     istiva_start_dt = dhuhr_dt - timedelta(minutes=40)
-    
-    # 3. İsfirâr Kerahati: Akşam ezanından (güneş batışından) önceki 45 dakika.
     isfirar_start_dt = maghrib_dt - timedelta(minutes=45)
 
     is_kerahat = False
@@ -1749,7 +1739,6 @@ async def fetch_prayer_times(city_input: str, user_id: int = None, user_lang: st
     except Exception as e:
         print(f"[GEO_PRAYER_ERROR] {e}")
 
-    # Fallback to local CITY_TIMEZONE_MAP if geocoding failed
     if not candidates:
         c_low = norm_q.lower()
         if c_low in CITY_TIMEZONE_MAP or resolve_tz_from_city(c_low) is not None:
@@ -1838,7 +1827,6 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
     if not user_now:
         user_now = datetime.now()
 
-    # Fıkhi Kerahat & İşrak Hesabı
     k_data = calculate_kerahat_and_israq(timings, user_now)
 
     if lang == 'tr':
@@ -2626,6 +2614,2533 @@ def get_timezone_keyboard(lang: str = 'uz'):
         [InlineKeyboardButton(t['btn_auto_loc'], callback_data="tz_req_location")],
         [InlineKeyboardButton(t['btn_cancel'], callback_data="cancel_action")]
     ])
+
+# =====================================================================
+# 4 DİLLİ TAM VE EKSİKSİZ SÖZLÜK (KUSURSUZ MEALLER & İMLA)
+# =====================================================================
+TEXTS = {
+    'uz': {
+        'btn_feedback': "💡 Fikr & Taklif",
+        'prompt_feedback': "💡 *FIKR VA TAKLIFLAR*\n\nNun Bot haqidagi taklif, mulohaza yoki xatolik haqida yozib yuboring. Xabaringiz toʻgʻridan-toʻgʻri maʼmuriyatga yetkaziladi:\n\n_(Bekor qilish uchun /cancel)_",
+        'feedback_sent': "✅ Fikr-mulohazangiz maʼmuriyatga yetkazildi. Rahmat!",
+        'maintenance_msg': "🚧 *TEXNIK XIZMAT KOʻRSATILMOQDA*\n\nBotda yangilanish va optimallashtirish ishlari olib borilmoqda. Iltimos, birozdan soʻng qayta urinib koʻring.",
+        'banned_msg': "⛔ Sizning ushbu botdan foydalanishingiz maʼmuriyat tomonidan cheklangan.",
+        'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\nQuyidagi menyudan kerakli boʻlimni tanlang:",
+        'menu_title': "📋 Asosiy menyu:",
+        'btn_video': "🎬 Video yuklash",
+        'btn_prayer': "🕌 Namoz & Ibodat",
+        'btn_adhkar_hub': "📿 Zikrlar & Salovatlar",
+        'btn_daily_hadith': "📖 Kunning hadisi",
+        'btn_exam_todo': "📝 Kunlik vazifalar (To-Do)",
+        'prompt_todo_add': "✍️ Bajarmoqchi boʻlgan yangi dars maqsadingizni yozib yuboring:\n_(Masalan: Matematika 20 ta masala, Fizika laboratoriya tayyorlash)_ ",
+        'btn_imsakiye_pdf': "📄 30 kunlik Taqvim (PDF)",
+        'btn_kerahat_info': "⚠️ Karohiyat & Ishroq",
+        'btn_hijri_cal': "🌙 Diniy kunlar taqvimi",
+        'btn_weather': "🌤️ Ob-havo",
+        'btn_pdf_hub': "📄 PDF & Hujjatlar",
+        'btn_exam': "🎓 Imtihon & Taymer",
+        'btn_schedule_img': "🗓️ Dars jadvali",
+        'btn_pomodoro': "⏱️ Pomodoro & Eslatma",
+        'btn_translit': "🔤 Kirill ⇄ Lotin",
+        'btn_adhkar': "📿 Zikrlar & Salovatlar",
+        'btn_timezone_hub': "🕒 Vaqt & Joylashuv",
+        'btn_lang': "🌐 Tilni tanlash",
+        'btn_timezone': "🕒 Vaqt mintaqasi",
+        'btn_city_label': "Shahar",
+        'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
+        'btn_change_prayer_city': "🔄 Shaharni oʻzgartirish",
+        'btn_change_weather_city': "🔄 Boshqa shahar ob-havosi",
+        'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) yoki YouTube havolasini yuboring:",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMOZ VAQTLARI*\n\nNamoz vaqtlarini bilmoqchi boʻlgan shahar nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Toshkent*, *Samarqand*, *Istanbul*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // OB-HAVO XIZMATI*\n\nOb-havo maʼlumotini bilmoqchi boʻlgan shahar, tuman yoki qishloq nomini yozib yuboring:\n_(Masalan: *Qoʻqon*, *Rishton*, *Toshkent*, *Istanbul*, *Moskva*...)_",
+        'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & HUJJATLAR MARKAZI*\n\nAmalni tanlang:",
+        'prompt_schedule_img': "🗓️ *DARS JADVALI RASMI*\n\nDars jadvalingizni kunlar boʻyicha yozib yuboring (Masalan: Dushanba: 09:00 Matematika...):\nBot uni 1080x1920 qulflangan ekran formatiga aylantiradi.",
+        'prompt_pomodoro': "⏱️ *POMODORO & ESLATMA MARKAZI*",
+        'prompt_adhkar': "📿 Zikr yoki Salovat turini tanlang:",
+        'prompt_translit': "✍️ Matningizni yuboring, avtomatik Kirill ⇄ Lotin oʻgirib beraman:",
+        'prompt_convert_to_pdf': "📸 *PDF GA OʻGIRISH REJIMI FAOL*\n\nPDF formatiga oʻtkazmoqchi boʻlgan faylni yuboring:\n_(Rasm, Word .docx, Excel .xlsx yoki TXT)_",
+        'prompt_ocr': "🔍 *RASMDAN MATN CHIQARISH (OCR) FAOL*\n\nMatnini oʻqib olmoqchi boʻlgan kitob yoki taxta rasmini yuboring:\n_(Arabcha, Xitoycha, Ruscha, Oʻzbekcha va barcha tillar qoʻllab-quvvatlanadi)_",
+        'prompt_exam_title': "🎓 *IMTIHON QOʻSHISH*\n\n✍️ Imtihon yoki fanning nomini yozib yuboring:\n_(Masalan: *Oliy Matematika*, *Fizika Final*)_",
+        'prompt_remind': "⏰ Eslatmani quyidagi formatda yuboring:\n`Kitob o'qish - 18:30` yoki `Dars - 30 daqiqa`",
+        'prompt_timezone': "🕒 *VAQT MINTAQASI VA JOYLASHUV*",
+        'prompt_send_location': "📍 *JOY LASHUV / SHAHARNI YUBORING*\n\nIltimos, Telegram orqali joylashuvingizni (Location) yuboring yoki shahar nomini yozing (Masalan: *Toshkent*, *Istanbul*, *Moskva*, *London*...):",
+        'prompt_city_sync_title': "SHAHAR YOKI JOYLASHUVNI BELGILANG",
+        'prompt_city_sync_desc': "Namoz vaqtlari, taymer va eslatmalar toʻliq sizning mahalliy vaqtingizga koʻra ishlashi uchun hozir qaysi shahardasiz?\n_(Shahar nomini yozing, masalan: *Toshkent*, *Samarqand*, *Istanbul* yoki Location yuboring)_",
+        'tz_hub_instruction': "Quyidagi tugmalardan shahar/mintaqani tanlang yoki yangi shahar nomini yozib yuboring:",
+        'tz_prayer_synced_lbl': "namoz vaqtlari bilan sinxronlandi!",
+        'tz_loc_detected': "JOYLASHUV VA VAQT ANIQLANDI",
+        'tz_synced_hint': "Barcha taymerlar, eslatmalar va namoz vaqtlari sizning mahalliy vaqtingizga toʻliq moslashtirildi.",
+        'current_time_lbl': "Joriy vaqtingiz",
+        'pomo_started': "POMODORO BOSHLANDI",
+        'pomo_work_label': "Dars",
+        'pomo_break_label': "Dam olish",
+        'pomo_mins_unit': "daq",
+        'pomo_mode_lbl': "Rejim",
+        'pomo_dur_lbl': "Davomiyligi",
+        'pomo_end_lbl': "Tugash vaqti",
+        'pomo_break_over': "TANAFFUS TUGADI!",
+        'pomo_work_over': "POMODORO TUGADI!",
+        'pomo_btn_work25': "🍅 25 daq dars",
+        'pomo_btn_break5': "☕ 5 daq tanaffus",
+        'pomo_btn_work50': "🍅 50 daq dars",
+        'pomo_btn_break10': "☕ 10 daq tanaffus",
+        'pomo_btn_add_remind': "⏰ Yangi Eslatma Qoʻshish",
+        'pomo_btn_my_reminds': "📋 Eslatmalarim",
+        'exam_empty': "Sizda hali saqlangan imtihon yoʻq.",
+        'exam_btn_add': "➕ Imtihon qoʻshish",
+        'exam_saved': "Imtihon muvaffaqiyatli saqlandi!",
+        'exam_deleted': "Imtihon muvaffaqiyatli oʻchirildi.",
+        'exam_default_title': "Imtihon",
+        'exam_hub_title': "🎓 *NUN PROJECT // IMTIHONLAR TAYMERI*",
+        'remind_saved': "Eslatma oʻrnatildi!",
+        'remind_empty': "Sizda faol eslatmalar yoʻq.",
+        'remind_due': "NUN PROJECT // ESLATMA",
+        'remind_deleted': "Eslatma muvaffaqiyatli oʻchirildi.",
+        'remind_task_lbl': "Vazifa",
+        'remind_note': "Belgilangan vaqt yetib keldi!",
+        'pdf_ready': "PDF hujjati muvaffaqiyatli tayyorlandi!",
+        'pdf_fail': "Faylni PDF ga oʻgirishda xatolik yuz berdi.",
+        'pdf_hub_to_pdf_btn': "📸 Rasm / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Rasmdan Matn Olish (OCR)",
+        'ocr_title': "RASMDAN OʻQIB OLINGAN MATN:",
+        'ocr_fail': "Rasmdan tushunarli matn topilmadi.",
+        'direct_img_prompt': "Rasm qabul qilindi. Qaysi amalni bajarmoqchisiz?",
+        'btn_direct_pdf': "PDF ga aylantirish",
+        'btn_direct_ocr': "Matnni oʻqish (OCR)",
+        'btn_cancel': "Bekor qilish",
+        'cancel_success': "Amal bekor qilindi.",
+        'lang_changed': "Til muvaffaqiyatli oʻzgartirildi!",
+        'tz_changed': "Vaqt mintaqasi muvaffaqiyatli saqlandi!",
+        'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
+        'weather_loading': "🌤️ Ob-havo maʼlumoti olinmoqda...",
+        'weather_city_not_found': "Aholi punkti topilmadi. Iltimos, shahar yoki tuman nomini toʻgʻri kiriting.",
+        'loc_prompt_multimatch': "📍 *BIR NECHTA HUDUD TOPILDI*\n\nIltimos, sizga kerakli boʻlgan hududni tanlang:",
+        'btn_prayer_notif': "🔔 Ezon & Vaqt bildirishnomasi",
+        'notif_menu_title': "🔔 *NAMOZ VAQTI BILDIRISHNOMALARI*",
+        'notif_menu_desc': "Namoz vaqtlari kirganida bot sizga avtomatik eslatma yuborsinmi?\nKerakli rejimni tanlang:",
+        'notif_btn_on_time': "✅ Aynan vaqtida (Ezon)",
+        'notif_btn_15m': "⏱️ 15 daqiqa oldin",
+        'notif_btn_off': "🔕 Oʻchirish",
+        'notif_saved': "Bildirishnoma sozlamasi saqlandi!",
+        'notif_alert_title': "NAMOZ VAQTI BILDIRISHNOMASI",
+        'notif_entered': "vaqti kirdi!",
+        'notif_verse': "«Albatta, namoz moʻminlarga vaqtida tayinlangan farzdir.» (Niso, 103)",
+        'friday_title': "JUMA AYYOMINGIZ MUBORAK BOʻLSIN!",
+        'friday_text': "Bugun muborak Juma kuni! Paygʻambarimizga (s.a.v.) koʻproq salovat aytish va Kahf surasini oʻqish sunnatdir. 🤲",
+        'downloading': "Media yuklab olinmoqda, iltimos kuting...",
+        'uploading': "Telegramga yuklanmoqda...",
+        'error_size': "⚠️ Fayl hajmi Telegram Bot cheklovidan (50 MB) katta. Iltimos, qisqaroq video yuboring.",
+        'error_general': "Xatolik yuz berdi. Qaytadan urinib koʻring.",
+        'schedule_processing': "Qulflangan ekran fon rasmi tayyorlanmoqda...",
+        'schedule_ready_caption': "Dars jadvali (Qulflangan ekran)",
+        'doc_processing': "Fayl qabul qilindi, ishlov berilmoqda...",
+        'video_error': "Videoni yuklab olishda xatolik yuz berdi. Havola yopiq (private) boʻlishi mumkin.",
+        'rate_limit_alert': "⚠️ Iltimos, tugmalarni juda tez bosmang.",
+        'adhkar_morning_btn': "🌅 Tonggi zikrlar",
+        'adhkar_evening_btn': "🌇 Kechki zikrlar",
+        'adhkar_salawat_btn': "🤲 Salovatlar",
+        'adhkar_morning_text': (
+            "🌅 *TONGGI ZIKRLAR (ARABCHA MATN VA MAʼNOSI)*\n\n"
+            "1️⃣ *Oyatal Kursiy (Baqara surasi, 255-oyat)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "🇺🇿 *Maʼnosi:* «Alloh – Undan oʻzga iloh yoʻqdir. U doim tirik va barchani idora qilib turuvchi (Qayyum)dir. Uni na mudroq bosar va na uyqu. Osmonlar va yerdagi barcha narsa Unikidir. Uning huzurida Oʻz iznisiz kim ham shafoat qila olardi?! U ularning oldilaridagi va orqalaridagi narsalarni biladi. Ular esa Uning ilmidan faqat Oʻzi xohlaganicha narsanigina qamrab oladilar. Uning Kursiysi osmonlar va yerni qamrab olgandir. Ularni asrab-turish Unga ogʻirlik qilmas. U eng yuksak va buyuk zotdir.»\n\n"
+            "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُنْ لَهُ كُفُوًا أَحَدٌ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِنْ شَرِّ مَا خَلَقَ ۝ وَمِنْ شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِنْ شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِنْ شَرِّ حَاسِدٍ إِذَا حَسَدَ\n\n"
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n"
+            "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِنْ شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ\n\n"
+            "🇺🇿 *Fazilati:* «Tongda va kechda 3 martadan oʻqilsa, bandani har bir yomonlikdan asrashga kifoya qiladi.» _(Abu Dovud va Termiziy rivoyati)_\n\n"
+            "3️⃣ *Sayyidul Istigʻfor (Eng ulugʻ tavba duosi)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Tonggi hamd va tavhid zikri*\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ\n\n"
+            "5️⃣ *Zararlardan himoyalanish zikri (3 marta)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *KECHKI ZIKRLAR (ARABCHA MATN VA MAʼNOSI)*\n\n"
+            "1️⃣ *Oyatal Kursiy (Baqara surasi, 255-oyat)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "2️⃣ *Ixlos, Falaq va Nos suralari (3 martadan)*\n"
+            "3️⃣ *Sayyidul Istigʻfor*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Kechki hamd zikri*\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ\n\n"
+            "5️⃣ *Zararlardan himoyalanish zikri (3 marta)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ"
+        ),
+        'adhkar_salawat_text': (
+            "🤲 *ENG MUTEBAR SALOVATLAR VA ULARNING MAʼNOLARI*\n\n"
+            "1️⃣ *Salovati Ibrohimiyya (Namozdagi salovat)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِfāyihā, وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
+        )
+    },
+    'tr': {
+        'btn_feedback': "💡 Öneri & Destek",
+        'prompt_feedback': "💡 *ÖNERİ & DESTEK BİLDİRİMİ*\n\nNun Bot ile ilgili öneri, dilek veya karşılaştığınız sorunu buraya yazıp gönderin. Mesajınız doğrudan yöneticilerimize iletilecektir:\n\n_(İptal etmek için /cancel)_",
+        'feedback_sent': "✅ Bildiriminiz yöneticilere başarıyla iletildi. Teşekkür ederiz!",
+        'maintenance_msg': "🚧 *BAKIM VE GÜNCELLEME ÇALIŞMASI*\n\nBotumuzda altyapı iyileştirmesi ve güncelleme yapılmaktadır. Lütfen kısa bir süre sonra tekrar deneyiniz.",
+        'banned_msg': "⛔ Botu kullanımınız yönetici tarafından kısıtlanmıştır.",
+        'welcome': "Merhaba! Nun Bot'a hoş geldiniz.\nAşağıdaki menüden işlem seçiniz:",
+        'menu_title': "📋 Ana Menü:",
+        'btn_video': "🎬 Video İndir",
+        'btn_prayer': "🕌 Namaz & İbadet",
+        'btn_adhkar_hub': "📿 Zikirler & Salavat",
+        'btn_daily_hadith': "📖 Günün Hadis-i Şerifi",
+        'btn_exam_todo': "📝 Günlük Ders Hedefleri (To-Do)",
+        'prompt_todo_add': "✍️ Eklemek istediğiniz ders hedefini yazıp gönderin:\n_(Örneğin: Matematik 20 soru çözümü, Fizik raporunu hazırla)_ ",
+        'btn_imsakiye_pdf': "📄 30 Günlük İmsakiye (PDF)",
+        'btn_kerahat_info': "⚠️ Kerahat & İşrak",
+        'btn_hijri_cal': "🌙 Dini Günler Takvimi",
+        'btn_weather': "🌤️ Hava Durumu",
+        'btn_pdf_hub': "📄 PDF & Belgeler",
+        'btn_exam': "🎓 Sınav & Geri Sayım",
+        'btn_schedule_img': "🗓️ Ders Programı",
+        'btn_pomodoro': "⏱️ Pomodoro & Sayaç",
+        'btn_translit': "🔤 Kiril ⇄ Latin",
+        'btn_adhkar': "📿 Zikirler & Salavat",
+        'btn_timezone_hub': "🕒 Saat & Konum Ayarı",
+        'btn_lang': "🌐 Dil Seçimi",
+        'btn_timezone': "🕒 Saat Dilimi",
+        'btn_city_label': "Şehir",
+        'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
+        'btn_change_prayer_city': "🔄 Şehri Değiştir",
+        'btn_change_weather_city': "🔄 Başka Şehir Hava Durumu",
+        'prompt_video': "🔗 Instagram, TikTok, Facebook, X (Twitter) veya YouTube linki gönderin:",
+        'prompt_prayer': "🕌 *NUN PROJECT // NAMAZ VAKİTLERİ*\n\nNamaz vakitlerini öğrenmek istediğiniz şehrin adını yazıp gönderin:\n_(Örneğin: *Kokand*, *İstanbul*, *Ankara*, *Taşkent*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // HAVA DURUMU HİZMETİ*\n\nHava durumunu öğrenmek istediğiniz il, ilçe veya kasaba adını yazıp gönderin:\n_(Örneğin: *İstanbul*, *Kadıköy*, *Ankara*, *Taşkent*, *Kokand*...)_",
+        'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & BELGE ARAÇLARI*\n\nİşlem seçiniz:",
+        'prompt_schedule_img': "🗓️ *HAFTALIK DERS PROGRAMI GÖRSELİ*\n\nDers programınızı gün gün yazıp gönderin (Örn: Pazartesi: 09:00 Matematik...):\nBot 1080x1920 telefon kilit ekranı formatına dönüştürecektir.",
+        'prompt_pomodoro': "⏱️ *POMODORO & HATIRLATICI MERKEZİ*",
+        'prompt_adhkar': "📿 Zikir veya Salavat kategorisini seçiniz:",
+        'prompt_translit': "✍️ Metninizi gönderin, otomatik Kiril ⇄ Latin alfabesine dönüştüreyim:",
+        'prompt_convert_to_pdf': "📸 *PDF DÖNÜŞTÜRÜCÜ AKTİF*\n\nPDF formatına dönüştürmek istediğiniz dosyayı gönderin:\n_(Fotoğraf, Word .docx, Excel .xlsx veya TXT)_",
+        'prompt_ocr': "🔍 *GÖRSELDEN METİN ÇIKARMA (OCR) AKTİF*\n\nMetnini okutmak istediğiniz kitap veya tahta fotoğrafını gönderin:\n_(Arapça, Çince, Rusça, Türkçe, Özbekçe ve tüm diller desteklenir)_",
+        'prompt_exam_title': "🎓 *SINAV EKLE*\n\n✍️ Sınav veya dersin adını yazıp gönderin:\n_(Örneğin: *Yüksek Matematik*, *Fizik Final*)_",
+        'prompt_remind': "⏰ Hatırlatıcıyı şu formatta gönderin:\n`Kitap oku - 18:30` veya `Ders - 30 dakika`",
+        'prompt_timezone': "🕒 *SAAT DİLİMİ VE KONUM AYARI*",
+        'prompt_send_location': "📍 *KONUM / ŞEHİR BİLGİSİ*\n\nLütfen Telegram üzerinden konumunuzu (Location) gönderin veya şehrinizi yazın (Örn: *İstanbul*, *Taşkent*, *Ankara*, *Moskova*...):",
+        'prompt_city_sync_title': "ŞEHİR VEYA KONUMUNUZU BELİRTİN",
+        'prompt_city_sync_desc': "Namaz vakitleri, sınav geri sayımları ve hatırlatıcıların tam yerel saatinize göre çalışabilmesi için şu anda hangi şehirdesiniz?\n_(Şehir adı yazabilir, örneğin: *İstanbul*, *Ankara*, *Taşkent* veya konum gönderebilirsiniz)_",
+        'tz_hub_instruction': "Aşağıdaki butonlardan şehrinizi/saat diliminizi seçebilir veya doğrudan yeni bir şehir adı yazabilirsiniz:",
+        'tz_prayer_synced_lbl': "namaz vakitleriyle senkronize edildi!",
+        'tz_loc_detected': "KONUM VE SAAT DİLİMİ ALGILANDI",
+        'tz_synced_hint': "Tüm zamanlayıcılar, hatırlatıcılar ve namaz vakitleri yerel saatinize göre tam senkronize edildi.",
+        'current_time_lbl': "Güncel Saatiniz",
+        'pomo_started': "POMODORO BAŞLADI",
+        'pomo_work_label': "Çalışma",
+        'pomo_break_label': "Mola",
+        'pomo_mins_unit': "dk",
+        'pomo_mode_lbl': "Mod",
+        'pomo_dur_lbl': "Süre",
+        'pomo_end_lbl': "Bitiş Saati",
+        'pomo_break_over': "MOLA BİTTİ!",
+        'pomo_work_over': "POMODORO TAMAMLANDI!",
+        'pomo_btn_work25': "🍅 25 Dk Çalış",
+        'pomo_btn_break5': "☕ 5 Dk Mola",
+        'pomo_btn_work50': "🍅 50 Dk Çalış",
+        'pomo_btn_break10': "☕ 10 Dk Mola",
+        'pomo_btn_add_remind': "⏰ Yeni Hatırlatıcı Ekle",
+        'pomo_btn_my_reminds': "📋 Hatırlatıcılarım",
+        'exam_empty': "Henüz kayıtlı bir sınavınız bulunmuyor.",
+        'exam_btn_add': "➕ Sınav Ekle",
+        'exam_saved': "Sınav başarıyla kaydedildi!",
+        'exam_deleted': "Sınav başarıyla silindi.",
+        'exam_default_title': "Sınav",
+        'exam_hub_title': "🎓 *NUN PROJECT // SINAV GERİ SAYIMI*",
+        'remind_saved': "Hatırlatıcı kuruldu!",
+        'remind_empty': "Aktif hatırlatıcınız bulunmuyor.",
+        'remind_due': "NUN PROJECT // HATIRLATICI",
+        'remind_deleted': "Hatırlatıcı başarıyla silindi.",
+        'remind_task_lbl': "Görev",
+        'remind_note': "Belirlenen vakit geldi!",
+        'pdf_ready': "PDF belgesi başarıyla hazırlandı!",
+        'pdf_fail': "Dosyayı PDF'e dönüştürürken bir hata oluştu.",
+        'pdf_hub_to_pdf_btn': "📸 Fotoğraf / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Görselden Metin Çıkarma (OCR)",
+        'ocr_title': "GÖRSELDEN OKUNAN METİN:",
+        'ocr_fail': "Görselden okunabilir bir metin bulunamadı.",
+        'direct_img_prompt': "Fotoğraf alındı. Hangi işlemi yapmak istersiniz?",
+        'btn_direct_pdf': "PDF'e Dönüştür",
+        'btn_direct_ocr': "Metni Oku (OCR)",
+        'btn_cancel': "İptal",
+        'cancel_success': "İşlem iptal edildi.",
+        'lang_changed': "Dil başarıyla değiştirildi!",
+        'tz_changed': "Saat dilimi başarıyla güncellendi!",
+        'city_not_found': "Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
+        'weather_loading': "🌤️ Hava durumu bilgisi alınıyor...",
+        'weather_city_not_found': "Konum bulunamadı. Lütfen il veya ilçe adını kontrol edip tekrar yazın.",
+        'loc_prompt_multimatch': "📍 *BİRDEN FAZLA KONUM BULUNDU*\n\nLütfen aradığınız doğru bölgeyi seçiniz:",
+        'btn_prayer_notif': "🔔 Ezan & Vakit Bildirimi",
+        'notif_menu_title': "🔔 *NAMAZ VAKTİ BİLDİRİMLERİ*",
+        'notif_menu_desc': "Namaz vakitleri girdiğinde botun size otomatik bildirim göndermesini ister misiniz?\nİstediğiniz modu seçiniz:",
+        'notif_btn_on_time': "✅ Tam Vaktinde (Ezan)",
+        'notif_btn_15m': "⏱️ 15 Dakika Önce",
+        'notif_btn_off': "🔕 Kapat",
+        'notif_saved': "Bildirim ayarınız kaydedildi!",
+        'notif_alert_title': "NAMAZ VAKTİ BİLDİRİMİ",
+        'notif_entered': "vakti girdi!",
+        'notif_verse': "«Şüphesiz namaz, mü'minler üzerine vakitleri belirlenmiş bir farzdır.» (Nisâ, 103)",
+        'friday_title': "HAYIRLI CUMALAR!",
+        'friday_text': "Bugün mübarek Cuma günü! Peygamber Efendimiz'e (s.a.v.) bolca salavat getirmeyi ve Kehf suresini okumayı unutmayınız. 🤲",
+        'downloading': "Medya indiriliyor, lütfen bekleyin...",
+        'uploading': "Telegram'a yükleniyor...",
+        'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından büyük olduğu için gönderilemiyor.",
+        'error_general': "Bir hata oluştu. Lütfen tekrar deneyin.",
+        'schedule_processing': "Kilit ekranı duvar kağıdı hazırlanıyor...",
+        'schedule_ready_caption': "Ders Programı (Kilit Ekranı)",
+        'doc_processing': "Dosya alındı, işleniyor...",
+        'video_error': "Video indirilirken bir hata oluştu. Bağlantı gizli hesapta olabilir.",
+        'rate_limit_alert': "⚠️ Lütfen butonlara çok hızlı tıklamayınız.",
+        'adhkar_morning_btn': "🌅 Sabah Zikirleri",
+        'adhkar_evening_btn': "🌇 Akşam Zikirleri",
+        'adhkar_salawat_btn': "🤲 Salavatlar",
+        'adhkar_morning_text': (
+            "🌅 *SABAH ZİKİRLERİ (ARAPÇA METİN VE MEAL)*\n\n"
+            "1️⃣ *Ayet-el Kürsi (Bakara Suresi, 255. Ayet)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "🇹🇷 *Meali:* «Allah, O'ndan başka ilah yoktur; diridir, her şeyin varlığı O'na bağlı ve dayalıdır. O'nu ne uyuklama tutar ne de uyku. Göklerde ve yerde ne varsa hepsi O'nundur. İzni olmadan O'nun huzurunda kim şefaat edebilir? O, kullarının önlerindekini de arkalarındakini de (yaptıklarını ve yapacaklarını) bilir. Kullar O'nun ilminden, kendisinin dilediğinden başka hiçbir şeyi kavrayamazlar. O'nun kürsüsü gökleri ve yeri kaplamıştır. Onları koruyup gözetmek O'na asla ağır gelmez. O, yücedir, büyüktür.»\n\n"
+            "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n"
+            "3️⃣ *Seyyidü'l-İstiğfar (En Faziletli Tövbe Duası)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Sabah Hamd ve Tevhid Zikri*\n"
+            "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ\n\n"
+            "5️⃣ *Zararlardan Korunma Duası (3 defa)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *AKŞAM ZİKİRLERİ (ARAPÇA METİN VE MEAL)*\n\n"
+            "1️⃣ *Ayet-el Kürsi (Bakara Suresi, 255. Ayet)*\n"
+            "2️⃣ *İhlas, Felak ve Nas Sureleri (3 defa)*\n"
+            "3️⃣ *Seyyidü'l-İstiğfar*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ\n\n"
+            "4️⃣ *Akşam Hamd Zikri*\n"
+            "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ\n\n"
+            "5️⃣ *Zararlardan Korunma Duası (3 defa)*\n"
+            "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ وَهُوَ السَّمِيعُ الْعَلِيمُ"
+        ),
+        'adhkar_salawat_text': (
+            "🤲 *EN MUTEBER SALAVATLAR VE MEALLERİ*\n\n"
+            "1️⃣ *Salavat-ı İbrahimiye (Namazdaki Salli-Barik)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
+        )
+    },
+    'ru': {
+        'btn_feedback': "💡 Отзыв и Поддержка",
+        'prompt_feedback': "💡 *ОТЗЫВЫ И ПОДДЕРЖКА*\n\nНапишите ваш отзыв, пожелание или найденную ошибку. Ваше сообщение будет напрямую передано администрации бота:\n\n_(Для отмены напишите /cancel)_",
+        'feedback_sent': "✅ Ваше сообщение успешно передано администрации. Спасибо!",
+        'maintenance_msg': "🚧 *ТЕХНИЧЕСКИЕ РАБОТЫ*\n\nВедутся работы по оптимизации и обновлению бота. Пожалуйста, попробуйте позже.",
+        'banned_msg': "⛔ Ваш доступ к боту заблокирован администратором.",
+        'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\nВыберите действие в меню:",
+        'menu_title': "📋 Главное меню:",
+        'btn_video': "🎬 Скачать видео",
+        'btn_prayer': "🕌 Намаз и Ибадат",
+        'btn_adhkar_hub': "📿 Зикры и Салаваты",
+        'btn_daily_hadith': "📖 Хадис дня",
+        'btn_exam_todo': "📝 Задачи на день (To-Do)",
+        'prompt_todo_add': "✍️ Напишите учебную задачу на сегодня:\n_(Например: Решить 20 задач по математике, повторить конспект)_ ",
+        'btn_imsakiye_pdf': "📄 Расписание на 30 дней",
+        'btn_kerahat_info': "⚠️ Карахат и Ишрак",
+        'btn_hijri_cal': "🌙 Мусульманский календарь",
+        'btn_weather': "🌤️ Прогноз погоды",
+        'btn_pdf_hub': "📄 PDF и Документы",
+        'btn_exam': "🎓 Экзамены & Таймер",
+        'btn_schedule_img': "🗓️ Расписание уроков",
+        'btn_pomodoro': "⏱️ Помодоро & Таймер",
+        'btn_translit': "🔤 Кирилл ⇄ Латиница",
+        'btn_adhkar': "📿 Зикры и Салаваты",
+        'btn_timezone_hub': "🕒 Время и Геолокация",
+        'btn_lang': "🌐 Сменить язык",
+        'btn_timezone': "🕒 Часовой пояс",
+        'btn_city_label': "Город",
+        'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
+        'btn_change_prayer_city': "🔄 Сменить город",
+        'btn_change_weather_city': "🔄 Сменить город для погоды",
+        'prompt_video': "🔗 Отправьте ссылку из Instagram, TikTok, Facebook, X (Twitter) или YouTube:",
+        'prompt_prayer': "🕌 *NUN PROJECT // ВРЕМЯ НАМАЗА*\n\nНапишите название города:\n_(Например: *Коканд*, *Ташкент*, *Москва*, *Стамбул*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // ПРОГНОЗ ПОГОДЫ*\n\nНапишите название города, района или населенного пункта:\n_(Например: *Москва*, *Ташкент*, *Коканд*, *Стамбул*...)_",
+        'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & ДОКУМЕНТЫ*\n\nВыберите действие:",
+        'prompt_schedule_img': "🗓️ *РАСПИСАНИЕ ЗАНЯТИЙ (ОБОИ)*\n\nОтправьте расписание по дням (Напр: Понедельник: 09:00 Математика...):\nБот создаст стильные обои 1080x1920 для экрана блокировки.",
+        'prompt_pomodoro': "⏱️ *ПОМОДОРО И НАПОМИНАНИЯ*",
+        'prompt_adhkar': "📿 Выберите категорию зикров или салаватов:",
+        'prompt_translit': "✍️ Отправьте текст, автоматически переведу Кириллица ⇄ Латиница:",
+        'prompt_convert_to_pdf': "📸 *КОНВЕРТЕР В PDF АКТИВЕН*\n\nОтправьте файл для конвертации в PDF:\n_(Фото, Word .docx, Excel .xlsx или TXT)_",
+        'prompt_ocr': "🔍 *ИЗВЛЕЧЕНИЕ ТЕКСТА (OCR) АКТИВНО*\n\nОтправьте фото книги, конспекта или доски:\n_(Поддерживаются арабский, китайский, русский, узбекский, английский и все языки)_",
+        'prompt_exam_title': "🎓 *ДОБАВЛЕНИЕ ЭКЗАМЕНА*\n\n✍️ Напишите название предмета или экзамена:\n_(Например: *Высшая Математика*, *Физика*)_",
+        'prompt_remind': "⏰ Отправьте напоминание в формате:\n`Читать книгу - 18:30` или `Учеба - 30 минут`",
+        'prompt_timezone': "🕒 *ЧАСОВОЙ ПОЯС И ГЕОЛОКАЦИЯ*",
+        'prompt_send_location': "📍 *ОТПРАВЬТЕ ГЕОЛОКАЦИЮ ИЛИ ГОРОД*\n\nОтправьте геолокацию (Location) в Telegram или напишите город (Напр: *Москва*, *Ташкент*, *Стамбул*, *Лондон*...):",
+        'prompt_city_sync_title': "УКАЖИТЕ ВАШ ГОРОД ИЛИ ГЕОЛОКАЦИЮ",
+        'prompt_city_sync_desc': "Чтобы время намаза, таймеры и напоминания работали строго по вашему местному времени, напишите название вашего города или отправьте геолокацию (Location):\n_(Например: *Москва*, *Ташкент*, *Стамбул*, *Самарканд*...)_",
+        'tz_hub_instruction': "Выберите часовой пояс из кнопок ниже или отправьте название города:",
+        'tz_prayer_synced_lbl': "время намаза синхронизировано!",
+        'tz_loc_detected': "ЛОКАЦИЯ И ЧАСОВОЙ ПОЯС ОПРЕДЕЛЕНЫ",
+        'tz_synced_hint': "Все таймеры, напоминания и расписание намаза полностью синхронизированы с вашим местным временем.",
+        'current_time_lbl': "Ваше местное время",
+        'pomo_started': "ПОМОДОРО ЗАПУЩЕН",
+        'pomo_work_label': "Работа",
+        'pomo_break_label': "Перерыв",
+        'pomo_mins_unit': "мин",
+        'pomo_mode_lbl': "Режим",
+        'pomo_dur_lbl': "Длительность",
+        'pomo_end_lbl': "Окончание",
+        'pomo_break_over': "ПЕРЕРЫВ ОКОНЧЕН!",
+        'pomo_work_over': "ПОМОДОРО ЗАВЕРШЕН!",
+        'pomo_btn_work25': "🍅 25 Мин Работа",
+        'pomo_btn_break5': "☕ 5 Мин Перерыв",
+        'pomo_btn_work50': "🍅 50 Мин Работа",
+        'pomo_btn_break10': "☕ 10 Мин Перерыв",
+        'pomo_btn_add_remind': "⏰ Новое напоминание",
+        'pomo_btn_my_reminds': "📋 Мои напоминания",
+        'exam_empty': "У вас пока нет сохраненных экзаменов.",
+        'exam_btn_add': "➕ Добавить экзамен",
+        'exam_saved': "Экзамен успешно сохранен!",
+        'exam_deleted': "Экзамен успешно удален.",
+        'exam_default_title': "Экзамен",
+        'exam_hub_title': "🎓 *NUN PROJECT // ТАЙМЕР ЭКЗАМЕНОВ*",
+        'remind_saved': "Напоминание установлено!",
+        'remind_empty': "У вас нет активных напоминаний.",
+        'remind_due': "NUN PROJECT // НАПОМИНАНИЕ",
+        'remind_deleted': "Напоминание успешно удалено.",
+        'remind_task_lbl': "Задача",
+        'remind_note': "Время пришло!",
+        'pdf_ready': "PDF документ успешно сформирован!",
+        'pdf_fail': "Ошибка при конвертации в PDF.",
+        'pdf_hub_to_pdf_btn': "📸 Фото / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Извлечение текста (OCR)",
+        'ocr_title': "ТЕКСТ, РАСПОЗНАННЫЙ С ИЗОБРАЖЕНИЯ:",
+        'ocr_fail': "Разборчивый текст на изображении не найден.",
+        'direct_img_prompt': "Изображение получено. Что вы хотите сделать?",
+        'btn_direct_pdf': "Конвертировать в PDF",
+        'btn_direct_ocr': "Распознать текст (OCR)",
+        'btn_cancel': "Отмена",
+        'cancel_success': "Действие отменено.",
+        'lang_changed': "Язык успешно изменен!",
+        'tz_changed': "Часовой пояс успешно обновлен!",
+        'city_not_found': "Город не найден. Напишите правильное название.",
+        'weather_loading': "🌤️ Получение прогноза погоды...",
+        'weather_city_not_found': "Населенный пункт не найден. Проверьте правильность написания.",
+        'loc_prompt_multimatch': "📍 *НАЙДЕНО НЕСКОЛЬКО МЕСТ*\n\nПожалуйста, выберите нужный населенный пункт:",
+        'btn_prayer_notif': "🔔 Уведомления о намазе",
+        'notif_menu_title': "🔔 *УВЕДОМЛЕНИЯ О ВРЕМЕНИ НАМАЗА*",
+        'notif_menu_desc': "Хотите получать автоматические напоминания при наступлении времени намаза?\nВыберите режим:",
+        'notif_btn_on_time': "✅ Точно вовремя",
+        'notif_btn_15m': "⏱️ За 15 минут до",
+        'notif_btn_off': "🔕 Отключить",
+        'notif_saved': "Настройки уведомлений сохранены!",
+        'notif_alert_title': "УВЕДОМЛЕНИЕ О НАМАЗЕ",
+        'notif_entered': "время наступило!",
+        'notif_verse': "«Воистину, намаз предписан верующим в определенное время.» (Ан-Ниса, 103)",
+        'friday_title': "БЛАГОСЛОВЕННОЙ ПЯТНИЦЫ!",
+        'friday_text': "Сегодня благословенная пятница! Не забудьте произносить больше салаватов Пророку (мир ему) и читать суру Аль-Кахф. 🤲",
+        'downloading': "Скачивается, пожалуйста подождите...",
+        'uploading': "Отправка в Telegram...",
+        'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
+        'error_general': "Произошла ошибка. Попробуйте снова.",
+        'schedule_processing': "Создаются обои для экрана блокировки...",
+        'schedule_ready_caption': "Расписание занятий (Экран блокировки)",
+        'doc_processing': "Файл получен, обрабатывается...",
+        'video_error': "Произошла ошибка при загрузке видео.",
+        'rate_limit_alert': "⚠️ Пожалуйста, не нажимайте кнопки слишком часто.",
+        'adhkar_morning_btn': "🌅 Утренние зикры",
+        'adhkar_evening_btn': "🌇 Вечерние зикры",
+        'adhkar_salawat_btn': "🤲 Салаваты",
+        'adhkar_morning_text': (
+            "🌅 *УТРЕННИЕ ЗИКРЫ (АРАБСКИЙ ТЕКСТ И ПЕРЕВОД)*\n\n"
+            "1️⃣ *Аят аль-Курси (Сура аль-Бакара, 255 аят)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "2️⃣ *Суры аль-Ихляс, аль-Фаляк, ан-Нас (по 3 раза)*\n"
+            "3️⃣ *Саййид аль-Истигфар (Господин покаяния)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *ВЕЧЕРНИЕ ЗИКРЫ (АРАБСКИЙ ТЕКСТ И ПЕРЕВОД)*\n\n"
+            "1️⃣ *Аят аль-Курси*\n"
+            "2️⃣ *Суры аль-Ихляс, аль-Фаляк, ан-Нас (по 3 раза)*\n"
+            "3️⃣ *Саййид аль-Истигфар*"
+        ),
+        'adhkar_salawat_text': (
+            "🤲 *ДОСТОВЕРНЫЕ САЛАВАТЫ И ИХ ЗНАЧЕНИЯ*\n\n"
+            "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
+        )
+    },
+    'en': {
+        'btn_feedback': "💡 Feedback & Support",
+        'prompt_feedback': "💡 *FEEDBACK & SUPPORT*\n\nPlease write your suggestions, questions, or report an issue. Your message will be sent directly to the bot administrators:\n\n_(Type /cancel to cancel)_",
+        'feedback_sent': "✅ Your feedback has been sent to the admins. Thank you!",
+        'maintenance_msg': "🚧 *MAINTENANCE IN PROGRESS*\n\nSystem optimization and updates are currently underway. Please check back in a few minutes.",
+        'banned_msg': "⛔ Your access to this bot has been suspended by an administrator.",
+        'welcome': "Hello! Welcome to Nun Bot.\nChoose an option from the menu:",
+        'menu_title': "📋 Main Menu:",
+        'btn_video': "🎬 Download Video",
+        'btn_prayer': "🕌 Prayer & Worship",
+        'btn_adhkar_hub': "📿 Adhkar & Salawat",
+        'btn_daily_hadith': "📖 Daily Hadith",
+        'btn_exam_todo': "📝 Daily Study Goals (To-Do)",
+        'prompt_todo_add': "✍️ Type your study goal or task for today:\n_(e.g. Solve 20 Math problems, read Biology chapter 3)_ ",
+        'btn_imsakiye_pdf': "📄 30-Day Timetable (PDF)",
+        'btn_kerahat_info': "⚠️ Makruh & Ishraq",
+        'btn_hijri_cal': "🌙 Islamic Calendar & Events",
+        'btn_weather': "🌤️ Weather Forecast",
+        'btn_pdf_hub': "📄 PDF & Documents",
+        'btn_exam': "🎓 Exams & Countdown",
+        'btn_schedule_img': "🗓️ Class Schedule",
+        'btn_pomodoro': "⏱️ Pomodoro & Timer",
+        'btn_translit': "🔤 Cyrillic ⇄ Latin",
+        'btn_adhkar': "📿 Adhkar & Salawat",
+        'btn_timezone_hub': "🕒 Time & Location",
+        'btn_lang': "🌐 Change Language",
+        'btn_timezone': "🕒 Timezone",
+        'btn_city_label': "City",
+        'btn_auto_loc': "📍 Auto-Detect (Location / City)",
+        'btn_change_prayer_city': "🔄 Change City",
+        'btn_change_weather_city': "🔄 Change Weather City",
+        'prompt_video': "🔗 Send a link from Instagram, TikTok, Facebook, X (Twitter), or YouTube:",
+        'prompt_prayer': "🕌 *NUN PROJECT // PRAYER TIMES*\n\nType the city name:\n_(e.g. *Kokand*, *Tashkent*, *Istanbul*, *London*...)_",
+        'prompt_weather': "🌤️ *NUN PROJECT // WEATHER SERVICE*\n\nType the name of any city, district, or town:\n_(e.g. *London*, *Istanbul*, *Tashkent*, *Kokand*, *New York*...)_",
+        'prompt_pdf_hub': "📄 *NUN PROJECT // PDF & DOCUMENTS HUB*\n\nChoose an action:",
+        'prompt_schedule_img': "🗓️ *WEEKLY SCHEDULE WALLPAPER*\n\nSend your schedule line by line (e.g. Monday: 09:00 Math...):\nThe bot will generate an aesthetic 1080x1920 lock-screen wallpaper.",
+        'prompt_pomodoro': "⏱️ *POMODORO & REMINDERS HUB*",
+        'prompt_adhkar': "📿 Choose adhkar or salawat category:",
+        'prompt_translit': "✍️ Send your text to convert Cyrillic ⇄ Latin:",
+        'prompt_convert_to_pdf': "📸 *CONVERT TO PDF ACTIVE*\n\nSend the file you want to convert to PDF:\n_(Image, Word .docx, Excel .xlsx, or TXT)_",
+        'prompt_ocr': "🔍 *TEXT EXTRACTION (OCR) ACTIVE*\n\nSend a photo of a whiteboard, book, or notes:\n_(Arabic, Chinese, Russian, Turkish, Uzbek, English and all languages supported)_",
+        'prompt_exam_title': "🎓 *ADD EXAM*\n\n✍️ Type the subject or exam title:\n_(e.g. *Calculus Final*, *Physics*)_",
+        'prompt_remind': "⏰ Send reminder in format:\n`Read book - 18:30` or `Study - 30 minutes`",
+        'prompt_timezone': "🕒 *TIMEZONE & LOCATION SETTINGS*",
+        'prompt_send_location': "📍 *SHARE LOCATION OR CITY*\n\nPlease share your Location via Telegram or type your city name (e.g. *London*, *Istanbul*, *Tashkent*, *New York*...):",
+        'prompt_city_sync_title': "SET YOUR CITY OR LOCATION",
+        'prompt_city_sync_desc': "To accurately sync prayer times, timers, and countdowns to your exact local time, what city are you currently in?\n_(Type your city name e.g. *London*, *Istanbul*, *Tashkent* or send Location)_",
+        'tz_hub_instruction': "Select your city/timezone below or simply type a new city name:",
+        'tz_prayer_synced_lbl': "prayer times synced!",
+        'tz_loc_detected': "LOCATION & TIMEZONE DETECTED",
+        'tz_synced_hint': "All timers, reminders, and prayer times are now accurately aligned with your local time.",
+        'current_time_lbl': "Your Local Time",
+        'pomo_started': "POMODORO STARTED",
+        'pomo_work_label': "Work",
+        'pomo_break_label': "Break",
+        'pomo_mins_unit': "min",
+        'pomo_mode_lbl': "Mode",
+        'pomo_dur_lbl': "Duration",
+        'pomo_end_lbl': "Ends at",
+        'pomo_break_over': "BREAK OVER!",
+        'pomo_work_over': "POMODORO FINISHED!",
+        'pomo_btn_work25': "🍅 25 Min Work",
+        'pomo_btn_break5': "☕ 5 Min Break",
+        'pomo_btn_work50': "🍅 50 Min Work",
+        'pomo_btn_break10': "☕ 10 Min Break",
+        'pomo_btn_add_remind': "⏰ Add New Reminder",
+        'pomo_btn_my_reminds': "📋 My Reminders",
+        'exam_empty': "You don't have any saved exams yet.",
+        'exam_btn_add': "➕ Add Exam",
+        'exam_saved': "Exam successfully saved!",
+        'exam_deleted': "Exam successfully deleted.",
+        'exam_default_title': "Exam",
+        'exam_hub_title': "🎓 *NUN PROJECT // EXAM COUNTDOWN*",
+        'remind_saved': "Reminder set!",
+        'remind_empty': "You have no active reminders.",
+        'remind_due': "NUN PROJECT // REMINDER",
+        'remind_deleted': "Reminder successfully deleted.",
+        'remind_task_lbl': "Task",
+        'remind_note': "Time is up!",
+        'pdf_ready': "PDF document successfully generated!",
+        'pdf_fail': "Failed to convert file to PDF.",
+        'pdf_hub_to_pdf_btn': "📸 Photo / Word / Excel / TXT ➔ PDF",
+        'pdf_hub_ocr_btn': "🔍 Extract Text (OCR)",
+        'ocr_title': "TEXT RECOGNIZED FROM IMAGE:",
+        'ocr_fail': "No readable text found on the image.",
+        'direct_img_prompt': "Image received. What would you like to do?",
+        'btn_direct_pdf': "Convert to PDF",
+        'btn_direct_ocr': "Extract Text (OCR)",
+        'btn_cancel': "Cancel",
+        'cancel_success': "Action cancelled.",
+        'lang_changed': "Language updated successfully!",
+        'tz_changed': "Timezone updated successfully!",
+        'city_not_found': "City not found. Please enter a valid city name.",
+        'weather_loading': "🌤️ Fetching weather data...",
+        'weather_city_not_found': "Location not found. Please check spelling and try again.",
+        'loc_prompt_multimatch': "📍 *MULTIPLE LOCATIONS FOUND*\n\nPlease select your exact location:",
+        'btn_prayer_notif': "🔔 Prayer Time Notifications",
+        'notif_menu_title': "🔔 *PRAYER TIME NOTIFICATIONS*",
+        'notif_menu_desc': "Would you like to receive automated notifications when prayer time arrives?\nSelect your preference:",
+        'notif_btn_on_time': "✅ Exactly on Time",
+        'notif_btn_15m': "⏱️ 15 Minutes Before",
+        'notif_btn_off': "🔕 Turn Off",
+        'notif_saved': "Notification settings saved!",
+        'notif_alert_title': "PRAYER TIME NOTIFICATION",
+        'notif_entered': "time has arrived!",
+        'notif_verse': "«Indeed, prayer has been decreed upon the believers a decree of specified times.» (An-Nisa, 103)",
+        'friday_title': "BLESSED FRIDAY!",
+        'friday_text': "Blessed Friday! Sending peace and blessings upon the Prophet (pbuh) and reciting Surah Al-Kahf is highly virtuous today. 🤲",
+        'downloading': "Downloading media, please wait...",
+        'uploading': "Uploading to Telegram...",
+        'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
+        'error_general': "An error occurred. Please try again.",
+        'schedule_processing': "Generating lock-screen wallpaper...",
+        'schedule_ready_caption': "Class Schedule (Lock Screen)",
+        'doc_processing': "File received, processing...",
+        'video_error': "An error occurred during video download.",
+        'rate_limit_alert': "⚠️ Please do not click buttons too fast.",
+        'adhkar_morning_btn': "🌅 Morning Adhkar",
+        'adhkar_evening_btn': "🌇 Evening Adhkar",
+        'adhkar_salawat_btn': "🤲 Salawat",
+        'adhkar_morning_text': (
+            "🌅 *MORNING ADHKAR (ARABIC TEXT & MEANING)*\n\n"
+            "1️⃣ *Ayat al-Kursi (Surah Al-Baqarah, Ayah 255)*\n"
+            "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\n\n"
+            "2️⃣ *Surahs Al-Ikhlas, Al-Falaq, An-Nas (3 times each)*\n"
+            "3️⃣ *Sayyid al-Istighfar (The Master Supplication for Forgiveness)*\n"
+            "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَٰهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَىٰ عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ لَكَ بِذَنْبِي فَاغْفِرْ لِي، فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ"
+        ),
+        'adhkar_evening_text': (
+            "🌇 *EVENING ADHKAR (ARABIC TEXT & MEANING)*\n\n"
+            "1️⃣ *Ayat al-Kursi*\n"
+            "2️⃣ *Surahs Al-Ikhlas, Al-Falaq, An-Nas (3 times)*\n"
+            "3️⃣ *Sayyid al-Istighfar*"
+        ),
+        'adhkar_salawat_text': (
+            "🤲 *AUTHENTIC SALAWAT & TRANSLATIONS*\n\n"
+            "1️⃣ *Salawat Ibrahimiyyah (Prayer Salawat)*\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
+        )
+    }
+}
+
+def get_text(user_id, key, context=None) -> str:
+    lang = get_user_lang(user_id, context)
+    return TEXTS.get(lang, TEXTS['uz']).get(key, TEXTS['uz'].get(key, ''))
+
+def get_reply_menu(user_id, context=None):
+    lang = get_user_lang(user_id, context)
+    t = TEXTS.get(lang, TEXTS['uz'])
+    rows = [
+        [KeyboardButton(t['btn_video']), KeyboardButton(t['btn_prayer'])],
+        [KeyboardButton(t['btn_weather']), KeyboardButton(t['btn_pdf_hub'])],
+        [KeyboardButton(t['btn_exam']), KeyboardButton(t['btn_schedule_img'])],
+        [KeyboardButton(t['btn_pomodoro']), KeyboardButton(t['btn_translit'])],
+        [KeyboardButton(t['btn_timezone_hub']), KeyboardButton(t['btn_lang'])],
+        [KeyboardButton(t['btn_feedback'])],
+    ]
+    if user_id in ADMIN_IDS:
+        admin_btn_lbl = {
+            'tr': "👑 Yönetici Paneli",
+            'uz': "👑 Boshqaruv Paneli",
+            'ru': "👑 Панель Управления",
+            'en': "👑 Admin Panel"
+        }.get(lang, "👑 Yönetici Paneli")
+        rows.append([KeyboardButton(admin_btn_lbl)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+# =====================================================================
+# VİDEO & MEDYA İNDİRME MOTORU
+# =====================================================================
+SUPPORTED_PLATFORMS = [
+    r'(?:instagram\.com|instagr\.am|threads\.net)',
+    r'(?:tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)',
+    r'(?:facebook\.com|fb\.watch|fb\.gg|fb\.me|m\.facebook\.com)',
+    r'(?:twitter\.com|x\.com)',
+    r'(?:youtube\.com|youtu\.be)'
+]
+
+def is_supported_url(url: str) -> bool:
+    return any(p.search(url) for p in RE_SUPPORTED_PLATFORMS)
+
+class FileTooLargeError(Exception):
+    def __init__(self, size_mb: float):
+        self.size_mb = size_mb
+        super().__init__(f"File size ({size_mb:.1f} MB) exceeds Telegram 50 MB limit.")
+
+def extract_instagram_code(url: str) -> str:
+    m = RE_INSTA_CODE.search(url)
+    return m.group(1) if m else None
+
+def parse_media_url_from_html(html_text: str):
+    m = re.search(r'"video_url"\s*:\s*"([^"]+)"', html_text)
+    if m:
+        return html_lib.unescape(m.group(1).replace(r'\/', '/').replace(r'\u0026', '&')), True
+
+    m = re.search(r'<meta[^>]+(?:property|name)=["\']og:video(?::secure_url)?["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), True
+
+    m = re.search(r'<meta[^>]+(?:property|name)=["\']twitter:player:stream["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), True
+
+    m = re.search(r'<video[^>]+src=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), True
+
+    m = re.search(r'"display_url"\s*:\s*"([^"]+)"', html_text)
+    if m:
+        return html_lib.unescape(m.group(1).replace(r'\/', '/').replace(r'\u0026', '&')), False
+
+    m = re.search(r'<meta[^>]+(?:property|name)=["\']og:image(?::secure_url)?["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+    if m:
+        return html_lib.unescape(m.group(1)), False
+
+    return None, False
+
+def download_direct_url(direct_url: str, output_path: str, max_bytes: int = 50 * 1024 * 1024):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Referer": "https://www.instagram.com/",
+    }
+    client = get_sync_http_client()
+    with client.stream("GET", direct_url, headers=headers) as response:
+            if response.status_code != 200:
+                raise RuntimeError(f"HTTP stream basarisiz: {response.status_code}")
+            content_length = response.headers.get("content-length")
+            if content_length and int(content_length) > max_bytes:
+                raise FileTooLargeError(int(content_length) / (1024 * 1024))
+            downloaded = 0
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_bytes(chunk_size=65536):
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes:
+                        raise FileTooLargeError(downloaded / (1024 * 1024))
+                    f.write(chunk)
+
+def fallback_instagram_download(code: str, download_dir: str) -> dict:
+    headers_embed = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "X-IG-App-ID": "936619743392459",
+    }
+    headers_bot = {
+        "User-Agent": "TelegramBot (like TwitterBot)",
+        "Accept": "*/*",
+    }
+
+    candidate_endpoints = [
+        (f"https://www.instagram.com/p/{code}/embed/captioned/", headers_embed),
+        (f"https://instagramez.com/reel/{code}/", headers_bot),
+        (f"https://www.ddinstagram.com/reel/{code}/", headers_bot),
+        (f"https://instagramez.com/p/{code}/", headers_bot),
+        (f"https://www.ddinstagram.com/p/{code}/", headers_bot),
+    ]
+
+    client = get_sync_http_client()
+    for target_url, hdrs in candidate_endpoints:
+            try:
+                resp = client.get(target_url, headers=hdrs)
+                if resp.status_code == 200 and resp.text:
+                    media_url, is_video = parse_media_url_from_html(resp.text)
+                    if media_url:
+                        ext = ".mp4" if is_video else ".jpg"
+                        out_file = os.path.join(download_dir, f"insta_{code}{ext}")
+                        download_direct_url(media_url, out_file)
+
+                        size_mb = os.path.getsize(out_file) / (1024 * 1024)
+                        if size_mb > 49.5:
+                            raise FileTooLargeError(size_mb)
+
+                        return {
+                            'path': out_file,
+                            'title': f"Instagram @{code}",
+                            'duration': 0,
+                            'width': None,
+                            'height': None,
+                            'size_mb': size_mb,
+                            'is_video': is_video,
+                            'is_photo': not is_video
+                        }
+            except FileTooLargeError:
+                raise
+            except Exception:
+                continue
+
+    return None
+
+def fallback_twitter_download(tweet_id: str, download_dir: str) -> dict:
+    api_url = f"https://api.fxtwitter.com/status/{tweet_id}"
+    try:
+        client = get_sync_http_client()
+        resp = client.get(api_url)
+        if resp.status_code == 200:
+            data = resp.json()
+            tweet = data.get("tweet", {})
+            media = tweet.get("media", {})
+            videos = media.get("videos", [])
+            if videos:
+                v_url = videos[0].get("url")
+                if v_url:
+                    out_file = os.path.join(download_dir, f"x_{tweet_id}.mp4")
+                    download_direct_url(v_url, out_file)
+                    size_mb = os.path.getsize(out_file) / (1024 * 1024)
+                    if size_mb > 49.5:
+                        raise FileTooLargeError(size_mb)
+                    return {
+                        'path': out_file,
+                        'title': tweet.get("text", "X Video")[:50],
+                        'duration': int(videos[0].get("duration", 0)),
+                        'width': videos[0].get("width"),
+                        'height': videos[0].get("height"),
+                        'size_mb': size_mb,
+                        'is_video': True,
+                        'is_photo': False
+                    }
+    except FileTooLargeError:
+        raise
+    except Exception:
+        pass
+    return None
+
+def _yt_dlp_download(url: str, download_dir: str) -> dict:
+    out_tmpl = os.path.join(download_dir, 'media_%(id)s.%(ext)s')
+    ydl_opts = {
+        'outtmpl': out_tmpl,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'noplaylist': True,
+        'socket_timeout': 20,
+        'retries': 3,
+        'format': 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Mode': 'navigate',
+            'X-IG-App-ID': '936619743392459',
+        },
+        'extractor_args': {
+            'instagram': {
+                'app_id': ['936619743392459'],
+            }
+        }
+    }
+
+    if shutil.which('ffmpeg'):
+        ydl_opts['merge_output_format'] = 'mp4'
+
+    cookie_path = os.environ.get("COOKIE_FILE", "cookies.txt")
+    if os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = (info.get('title') or 'Video').strip() if info else 'Video'
+        duration = info.get('duration', 0) if info else 0
+        width = info.get('width') if info else None
+        height = info.get('height') if info else None
+
+        valid_files = []
+        for f in os.listdir(download_dir):
+            full_p = os.path.join(download_dir, f)
+            if os.path.isfile(full_p):
+                ext = os.path.splitext(f)[1].lower()
+                if ext not in ('.part', '.ytdl', '.temp') and os.path.getsize(full_p) > 1024:
+                    valid_files.append(full_p)
+
+        if not valid_files:
+            raise RuntimeError("Dosya indirilemedi veya platform icerigi kisitladi.")
+
+        valid_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
+        chosen_file = valid_files[0]
+        size_mb = os.path.getsize(chosen_file) / (1024 * 1024)
+
+        if size_mb > 49.5:
+            raise FileTooLargeError(size_mb)
+
+        ext = os.path.splitext(chosen_file)[1].lower()
+        is_video = ext in ('.mp4', '.mov', '.mkv', '.webm', '.avi')
+        is_photo = ext in ('.jpg', '.jpeg', '.png', '.webp')
+
+        return {
+            'path': chosen_file,
+            'title': title,
+            'duration': duration,
+            'width': width,
+            'height': height,
+            'size_mb': size_mb,
+            'is_video': is_video,
+            'is_photo': is_photo
+        }
+
+def download_media_sync(url: str, download_dir: str) -> dict:
+    clean_url = url.strip()
+    insta_code = extract_instagram_code(clean_url)
+    if insta_code:
+        clean_url = f"https://www.instagram.com/reel/{insta_code}/"
+
+    try:
+        return _yt_dlp_download(clean_url, download_dir)
+    except FileTooLargeError:
+        raise
+    except Exception as e:
+        print(f"[DOWNLOAD_WARNING] yt-dlp ile indirilemedi ({e}). Akilli yedek indirme motoru devreye giriyor...")
+
+        if insta_code:
+            fallback_res = fallback_instagram_download(insta_code, download_dir)
+            if fallback_res:
+                print(f"[DOWNLOAD_SUCCESS] Instagram yedek motoru ile basariyla indirildi: {insta_code}")
+                return fallback_res
+
+        m_x = re.search(r'(?:twitter\.com|x\.com)/(?:[^/]+/)?status/(\d+)', clean_url)
+        if m_x:
+            fallback_x = fallback_twitter_download(m_x.group(1), download_dir)
+            if fallback_x:
+                print(f"[DOWNLOAD_SUCCESS] X/Twitter yedek motoru ile basariyla indirildi: {m_x.group(1)}")
+                return fallback_x
+
+        raise e
+
+# =====================================================================
+# DİNAMİK BOT KOMUTLARI
+# =====================================================================
+USER_COMMANDS_CACHE = {}
+
+async def update_user_bot_commands(context: ContextTypes.DEFAULT_TYPE, user_id: int, lang: str):
+    is_admin = user_id in ADMIN_IDS
+    cache_key = (lang, is_admin)
+    if USER_COMMANDS_CACHE.get(user_id) == cache_key:
+        return
+    commands_map = {
+        'uz': [
+            BotCommand("start", "Botni ishga tushirish"),
+            BotCommand("menu", "Asosiy menyu"),
+            BotCommand("namoz", "Namoz vaqtlari"),
+            BotCommand("obhavo", "Ob-havo maʼlumoti"),
+            BotCommand("pdf", "PDF & Hujjatlar"),
+            BotCommand("imtihon", "Imtihonlar taymeri"),
+            BotCommand("vaqt", "Vaqt & Joylashuv"),
+            BotCommand("cancel", "Bekor qilish"),
+        ],
+        'tr': [
+            BotCommand("start", "Botu başlat"),
+            BotCommand("menu", "Ana menü"),
+            BotCommand("namaz", "Namaz vakitleri"),
+            BotCommand("hava", "Hava durumu"),
+            BotCommand("pdf", "PDF & Belge araçları"),
+            BotCommand("sinav", "Sınav & Geri sayım"),
+            BotCommand("saat", "Saat & Konum"),
+            BotCommand("cancel", "İptal et"),
+        ],
+        'ru': [
+            BotCommand("start", "Запустить бота"),
+            BotCommand("menu", "Главное меню"),
+            BotCommand("namaz", "Время намаза"),
+            BotCommand("weather", "Прогноз погоды"),
+            BotCommand("pdf", "PDF и Документы"),
+            BotCommand("exam", "Таймер экзаменов"),
+            BotCommand("time", "Время и Геолокация"),
+            BotCommand("cancel", "Отмена"),
+        ],
+        'en': [
+            BotCommand("start", "Start the bot"),
+            BotCommand("menu", "Main menu"),
+            BotCommand("prayer", "Prayer times"),
+            BotCommand("weather", "Weather forecast"),
+            BotCommand("pdf", "PDF & Documents"),
+            BotCommand("exam", "Exam countdown"),
+            BotCommand("time", "Time & Location"),
+            BotCommand("cancel", "Cancel action"),
+        ],
+    }
+    try:
+        cmds = list(commands_map.get(lang, commands_map['uz']))
+        if user_id in ADMIN_IDS:
+            stats_desc = {
+                'tr': "👑 Sahip & İstatistik Paneli",
+                'uz': "👑 Admin & Statistika paneli",
+                'ru': "👑 Панель статистики владельца",
+                'en': "👑 Owner & Stats Panel"
+            }.get(lang, "👑 Stats Panel")
+            cmds.append(BotCommand("admin", "👑 Yönetici Kontrol Paneli"))
+            cmds.append(BotCommand("stats", stats_desc))
+            cmds.append(BotCommand("users", "👥 Kayıtlı Kullanıcılar Dizini"))
+            cmds.append(BotCommand("find", "🔍 Kullanıcı Ara (ID / İsim)"))
+            cmds.append(BotCommand("broadcast", "📢 Segmentli Toplu Duyuru"))
+            cmds.append(BotCommand("backup", "💾 Veritabanı Yedeği Al"))
+            cmds.append(BotCommand("restore", "📥 Yedekten Geri Yükle"))
+            cmds.append(BotCommand("admins", "👑 Yönetici Kadrosu & Yetkiler"))
+            cmds.append(BotCommand("restart", "🔄 Botu Yeniden Başlat"))
+        bot = getattr(context, 'bot', context)
+        await bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id=user_id))
+        USER_COMMANDS_CACHE[user_id] = cache_key
+    except Exception:
+        pass
+
+# =====================================================================
+# TELEGRAM KOMUT HANDLER'LARI
+# =====================================================================
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    cleanup_user_temp_files(context, user_id)
+    if str(user_id) not in USER_LANGS:
+        tele_lang = user.language_code or 'uz'
+        init_lang = 'tr' if tele_lang.startswith('tr') else ('ru' if tele_lang.startswith('ru') else ('en' if tele_lang.startswith('en') else 'uz'))
+        save_user_lang(user_id, init_lang)
+    u_lang = get_user_lang(user_id, context)
+    await update_user_bot_commands(context, user_id, u_lang)
+    await update.message.reply_text(get_text(user_id, 'welcome', context), reply_markup=get_reply_menu(user_id, context))
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    cleanup_user_temp_files(context, user_id)
+    await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    cleanup_user_temp_files(context, user_id)
+    await update.message.reply_text(get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
+
+# =====================================================================
+# GELİŞMİŞ SAHİP & GELİŞTİRİCİ KONTROL SİSTEMİ (TELEMETRİ, DİZİN, ÇİFT YÖNLÜ DM)
+# =====================================================================
+
+USERS_CACHE_DATA = None
+USERS_CACHE_TS = 0.0
+
+def invalidate_users_cache():
+    global USERS_CACHE_DATA, USERS_CACHE_TS
+    USERS_CACHE_DATA = None
+    USERS_CACHE_TS = 0.0
+
+def get_all_registered_users() -> list:
+    global USERS_CACHE_DATA, USERS_CACHE_TS
+    now_t = time.time()
+    if USERS_CACHE_DATA is not None and (now_t - USERS_CACHE_TS < 30.0):
+        return USERS_CACHE_DATA
+
+    all_uids = set()
+    for d in (USER_LANGS, USER_TIMEZONES, USER_CITIES, USER_COORDS, USER_EXAMS, USER_REMINDERS, USER_TODOS, USER_PRAYER_NOTIFS, USER_FRIDAY_NOTIFS, USER_PROFILES):
+        all_uids.update(str(k) for k in d.keys())
+    
+    for aid in ADMIN_IDS:
+        all_uids.add(str(aid))
+
+    users_list = []
+    for uid_str in all_uids:
+        try:
+            uid = int(uid_str)
+        except Exception:
+            continue
+        p = USER_PROFILES.get(uid_str, {})
+        name = p.get('name') or f"Kullanıcı {uid}"
+        username = p.get('username') or ""
+        last_active = p.get('last_active') or "Kayıtlı (Pasif)"
+        lang = USER_LANGS.get(uid_str, "uz")
+        city = USER_CITIES.get(uid_str, "")
+        tz = USER_TIMEZONES.get(uid_str)
+        prayer_active = USER_PRAYER_NOTIFS.get(uid_str, {}).get("enabled", False)
+
+        users_list.append({
+            'id': uid,
+            'name': name,
+            'username': username,
+            'last_active': last_active,
+            'lang': lang,
+            'city': city,
+            'tz': tz,
+            'prayer_active': prayer_active
+        })
+
+    def sort_key(u):
+        la = u.get('last_active', '')
+        if "Kayıtlı" in la or not la:
+            return "0000-00-00 00:00:00"
+        return la
+
+    users_list.sort(key=sort_key, reverse=True)
+    USERS_CACHE_DATA = users_list
+    USERS_CACHE_TS = now_t
+    return users_list
+
+def format_admin_stats_panel() -> tuple:
+    all_users = get_all_registered_users()
+    user_count = len(all_users)
+    prayer_notif_count = sum(1 for cfg in USER_PRAYER_NOTIFS.values() if cfg.get("enabled"))
+    friday_notif_count = len(USER_FRIDAY_NOTIFS)
+    exam_count = sum(len(v) for v in USER_EXAMS.values())
+    remind_count = sum(len(v) for v in USER_REMINDERS.values())
+    todo_count = sum(len(v) for v in USER_TODOS.values())
+    banned_count = len(BANNED_USERS)
+    uptime_str = get_uptime_string()
+    ram_mb = get_ram_usage_mb()
+    disk_info = get_disk_usage_info()
+    maint_lbl = "🔴 AÇIK (Yalnızca Yöneticiler)" if is_maintenance_active() else "🟢 KAPALI (Normal Çalışma)"
+
+    preview_lines = []
+    for idx, u in enumerate(all_users[:5], start=1):
+        uid = u['id']
+        name_clean = safe_md(u['name'])
+        uname_part = f"(@{u['username']})" if u['username'] else "_(Username yok)_"
+        la = u['last_active'][:16] if u['last_active'] else "Pasif"
+        b_tag = " [⛔ Banlı]" if is_user_banned(uid) else ""
+        preview_lines.append(
+            f"*{idx}.* \u200e{name_clean}\u200e {uname_part}{b_tag}\n"
+            f"   🆔 ID: `{uid}` | Son: `{la}` | DM: `/msg_{uid}`"
+        )
+
+    users_preview = "\n".join(preview_lines) if preview_lines else "_Henüz kayıtlı kullanıcı bulunmuyor._"
+
+    report = (
+        f"👑 *NUN PROJECT // YÖNETİCİ KONTROL MERKEZİ*\n\n"
+        f"📊 *KULLANICI VE İBADET İSTATİSTİKLERİ:*\n"
+        f"  ▫️ Toplam Kayıtlı Kullanıcı: `{user_count}`\n"
+        f"  ▫️ Vakit Bildirimi Aktif: `{prayer_notif_count}`\n"
+        f"  ▫️ Cuma Hatırlatıcı Aktif: `{friday_notif_count}`\n"
+        f"  ▫️ Aktif Sınav Kayıtları: `{exam_count}`\n"
+        f"  ▫️ Aktif Hatırlatıcılar: `{remind_count}`\n"
+        f"  ▫️ Toplam To-Do Hedefi: `{todo_count}`\n"
+        f"  ▫️ Engellenen (Banlı) Sayısı: `{banned_count}`\n\n"
+        f"⚡ *SİSTEM, SUNUCU VE DİSK SAĞLIĞI:*\n"
+        f"  ▫️ Kesintisiz Çalışma (Uptime): `{uptime_str}`\n"
+        f"  ▫️ Bellek Tüketimi (RAM): `{ram_mb:.1f} MB`\n"
+        f"  ▫️ Disk Durumu: `{disk_info}`\n"
+        f"  ▫️ Bakım Modu: `{maint_lbl}`\n\n"
+        f"👥 *SON KULLANICILAR (Kısa Önizleme):*\n"
+        f"{users_preview}\n\n"
+        f"💡 _İpucu: Kullanıcıları listelemek, duyuru göndermek veya sistemi yönetmek için aşağıdaki butonları kullanabilirsiniz._"
+    )
+
+    maint_btn_lbl = "🚧 Bakım: Kapat 🟢" if is_maintenance_active() else "🚧 Bakım: Aç 🔴"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"👥 Kayıtlı Kullanıcılar ({user_count})", callback_data="stats_users_page_0"), InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt")],
+        [InlineKeyboardButton("📢 Segmentli Duyuru Gönder", callback_data="admin_broadcast_prompt"), InlineKeyboardButton("💾 Yedek Al", callback_data="admin_backup_download")],
+        [InlineKeyboardButton("📥 Yedekten Geri Yükle", callback_data="admin_restore_prompt"), InlineKeyboardButton("👑 Yöneticileri Yönet", callback_data="admin_manage_panel")],
+        [InlineKeyboardButton(f"⛔ Banlı Üyeler ({banned_count})", callback_data="admin_banned_list"), InlineKeyboardButton("🧹 Çöpü Temizle", callback_data="admin_clean_disk")],
+        [InlineKeyboardButton(maint_btn_lbl, callback_data="admin_toggle_maintenance"), InlineKeyboardButton("🔄 Botu Yeniden Başlat", callback_data="admin_restart_prompt")],
+        [InlineKeyboardButton("🔄 Paneli Yenile", callback_data="stats_refresh"), InlineKeyboardButton("❌ Kapat", callback_data="admin_panel_close")]
+    ])
+    return report, kb
+
+def format_users_directory_page(page: int = 0, page_size: int = 4) -> tuple:
+    all_users = get_all_registered_users()
+    total_users = len(all_users)
+    total_pages = max(1, (total_users + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, total_users)
+    page_users = all_users[start_idx:end_idx]
+
+    lines = [
+        f"👥 *NUN PROJECT // KAYITLI KULLANICILAR DİZİNİ*",
+        f"Toplam: `{total_users}` kullanıcı | Sayfa: `{page + 1}/{total_pages}`\n"
+    ]
+
+    action_buttons = []
+    for idx, u in enumerate(page_users, start=start_idx + 1):
+        uid = u['id']
+        name_clean = safe_md(u['name'])
+        uname_str = f"@{u['username']}" if u['username'] else "_(Username yok)_"
+        la = u['last_active'][:16] if u['last_active'] else "Pasif"
+        city_str = u['city'] or "Belirtilmedi"
+        lang_str = (u['lang'] or "uz").upper()
+        p_status = "🔔 Açık" if u['prayer_active'] else "🔕 Kapalı"
+
+        lines.append(
+            f"*{idx}.* \u200e{name_clean}\u200e — {uname_str}\n"
+            f"   🆔 ID: `{uid}`\n"
+            f"   📍 Şehir: `{city_str}` | Dil: `{lang_str}` | Ezan: `{p_status}`\n"
+            f"   🕒 Son Aktif: `{la}`\n"
+            f"   💬 Hızlı DM: `/msg_{uid}`\n"
+        )
+        
+        u_short_name = (u['name'] or str(uid))[:12]
+        row_btns = [
+            InlineKeyboardButton(f"⚡ 1:1 Özel Sohbet Başlat", callback_data=f"admin_direct_invite_{uid}"),
+            InlineKeyboardButton(f"✉️ Bot İçi DM Gönder", callback_data=f"admin_dm_start_{uid}")
+        ]
+        action_buttons.append(row_btns)
+        user_admin_row = []
+        if uid not in ADMIN_IDS:
+            if is_user_banned(uid):
+                user_admin_row.append(InlineKeyboardButton(f"✅ Engeli Kaldır ({uid})", callback_data=f"admin_unban_{uid}"))
+            else:
+                user_admin_row.append(InlineKeyboardButton(f"⛔ Engelle ({uid})", callback_data=f"admin_ban_prompt_{uid}"))
+            user_admin_row.append(InlineKeyboardButton(f"👑 Yönetici Yap", callback_data=f"admin_promote_{uid}"))
+            action_buttons.append(user_admin_row)
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("◀️ Önceki", callback_data=f"stats_users_page_{page - 1}"))
+    nav_row.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="cal_ignore"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("Sonraki ▶️", callback_data=f"stats_users_page_{page + 1}"))
+
+    action_buttons.append(nav_row)
+    action_buttons.append([
+        InlineKeyboardButton("🔍 Kullanıcı Ara", callback_data="admin_search_prompt"),
+        InlineKeyboardButton("🔄 Eşitle & Güncelle", callback_data="admin_sync_users_prompt"),
+        InlineKeyboardButton("🔄 Yenile", callback_data=f"stats_users_page_{page}")
+    ])
+    action_buttons.append([InlineKeyboardButton("🔙 Ana Yönetici Paneline Dön", callback_data="stats_back_main")])
+
+    return "\n".join(lines), InlineKeyboardMarkup(action_buttons)
+
+async def send_admin_dm_to_user(bot, admin_id: int, target_uid: int, text: str, reply_to_message=None):
+    clean_text = text.strip()
+    if not clean_text:
+        return False, "Mesaj metni boş olamaz."
+
+    target_card = (
+        f"📩 *NUN PROJECT // YÖNETİCİ MESAJI*\n\n"
+        f"{clean_text}\n\n"
+        f"──────────────────────────────\n"
+        f"💬 _Bu mesaja doğrudan yanıt (reply) vererek yöneticiye yazabilirsiniz._"
+    )
+    try:
+        await bot.send_message(chat_id=target_uid, text=target_card, parse_mode="Markdown")
+        p = USER_PROFILES.get(str(target_uid), {})
+        nm = safe_md(p.get('name') or f"User {target_uid}")
+        success_msg = f"✅ *Mesaj başarıyla iletildi!*\n👤 Alıcı: \u200e{nm}\u200e (`{target_uid}`)\n\n📝 *İletilen Mesaj:*\n_{safe_md(clean_text)}_"
+        if reply_to_message:
+            await reply_to_message.reply_text(success_msg, parse_mode="Markdown")
+        else:
+            await bot.send_message(chat_id=admin_id, text=success_msg, parse_mode="Markdown")
+        return True, "İletildi"
+    except Exception as e:
+        err_msg = f"❌ *Mesaj iletilemedi!* (ID: `{target_uid}`)\nNedeni: `{e}`\n_(Kullanıcı botu engellemiş veya hiç /start göndermemiş olabilir)_"
+        if reply_to_message:
+            await reply_to_message.reply_text(err_msg, parse_mode="Markdown")
+        else:
+            await bot.send_message(chat_id=admin_id, text=err_msg, parse_mode="Markdown")
+        return False, str(e)
+
+def format_broadcast_audience_menu() -> tuple:
+    all_users = get_all_registered_users()
+    total = len(all_users)
+    tr_cnt = sum(1 for u in all_users if (u.get('lang') or 'uz') == 'tr')
+    uz_cnt = sum(1 for u in all_users if (u.get('lang') or 'uz') == 'uz')
+    ru_cnt = sum(1 for u in all_users if (u.get('lang') or 'uz') == 'ru')
+    en_cnt = sum(1 for u in all_users if (u.get('lang') or 'uz') == 'en')
+    prayer_cnt = sum(1 for u in all_users if u.get('prayer_active'))
+
+    msg = (
+        f"📢 *SEGMENTLİ DUYURU GÖNDERİMİ*\n\n"
+        f"Lütfen duyurunun iletileceği hedef kitleyi seçiniz:\n\n"
+        f"▫️ 🌍 Tüm Kullanıcılar: `{total}` kişi\n"
+        f"▫️ 🇹🇷 Yalnızca Türkçe: `{tr_cnt}` kişi\n"
+        f"▫️ 🇺🇿 Yalnızca Özbekçe: `{uz_cnt}` kişi\n"
+        f"▫️ 🇷🇺 Yalnızca Rusça: `{ru_cnt}` kişi\n"
+        f"▫️ 🇬🇧 Yalnızca İngilizce: `{en_cnt}` kişi\n"
+        f"▫️ 🕌 Ezan Bildirimi Açık Olanlar: `{prayer_cnt}` kişi"
+    )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🌍 Tüm Kullanıcılar ({total})", callback_data="admin_bc_target_all")],
+        [InlineKeyboardButton(f"🇹🇷 Türkçe ({tr_cnt})", callback_data="admin_bc_target_tr"), InlineKeyboardButton(f"🇺🇿 Özbekçe ({uz_cnt})", callback_data="admin_bc_target_uz")],
+        [InlineKeyboardButton(f"🇷🇺 Rusça ({ru_cnt})", callback_data="admin_bc_target_ru"), InlineKeyboardButton(f"🇬🇧 İngilizce ({en_cnt})", callback_data="admin_bc_target_en")],
+        [InlineKeyboardButton(f"🕌 Ezan Bildirimi Açık Olanlar ({prayer_cnt})", callback_data="admin_bc_target_prayer")],
+        [InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")]
+    ])
+    return msg, kb
+
+async def run_segmented_broadcast(bot, admin_id: int, text: str, target_segment: str = "all", reply_to_message=None):
+    all_users = get_all_registered_users()
+    if target_segment in ("tr", "uz", "ru", "en"):
+        recipients = [u for u in all_users if (u.get("lang") or "uz") == target_segment]
+        seg_name = {"tr": "Yalnızca Türkçe (TR)", "uz": "Yalnızca Özbekçe (UZ)", "ru": "Yalnızca Rusça (RU)", "en": "Yalnızca İngilizce (EN)"}.get(target_segment, target_segment)
+    elif target_segment == "prayer":
+        recipients = [u for u in all_users if u.get("prayer_active")]
+        seg_name = "Sadece Ezan Bildirimi Açık Olanlar"
+    else:
+        recipients = all_users
+        seg_name = "Tüm Kayıtlı Kullanıcılar (Genel)"
+
+    global BROADCAST_ABORT_FLAG
+    BROADCAST_ABORT_FLAG = False
+    total = len(recipients)
+    kb_abort = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Gönderimi Acil Durdur", callback_data="admin_abort_broadcast")]])
+    status_msg = await bot.send_message(
+        chat_id=admin_id,
+        text=f"⏳ *{seg_name}* segmentine duyuru iletiliyor...\nHedef: `{total}` kullanıcı.",
+        reply_markup=kb_abort,
+        parse_mode="Markdown"
+    )
+    success_count = 0
+    fail_count = 0
+    b_card = (
+        f"📢 *NUN PROJECT // RESMİ DUYURU*\n\n"
+        f"{text}\n\n"
+        f"──────────────────────────────\n"
+        f"_Nun Bot Yönetimi_"
+    )
+    for u in recipients:
+        uid = u['id']
+        if is_user_banned(uid):
+            continue
+        if BROADCAST_ABORT_FLAG:
+            break
+        try:
+            await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
+            success_count += 1
+            await asyncio.sleep(0.04)
+        except Exception:
+            fail_count += 1
+
+    aborted_note = "\n🛑 *YÖNETİCİ TARAFINDAN ACİL DURDURULDU!*\n" if BROADCAST_ABORT_FLAG else ""
+    result_card = (
+        f"📢 *DUYURU GÖNDERİM RAPORU*{aborted_note}\n"
+        f"🎯 Hedef Segment: *{seg_name}*\n"
+        f"👥 Toplam Hedef: `{total}`\n"
+        f"✅ Başarıyla İletilen: `{success_count}`\n"
+        f"❌ Ulaşılamayan / İptal: `{total - success_count}`\n\n"
+        f"📝 *İletilen Metin:*\n_{safe_md(text)}_"
+    )
+    try:
+        await status_msg.edit_text(result_card, parse_mode="Markdown")
+    except Exception:
+        await bot.send_message(chat_id=admin_id, text=result_card, parse_mode="Markdown")
+
+async def run_broadcast(bot, admin_id: int, text: str, reply_to_message=None):
+    all_users = get_all_registered_users()
+    total = len(all_users)
+    status_msg = await bot.send_message(chat_id=admin_id, text=f"⏳ Duyuru iletiliyor... Toplam hedef: `{total}` kullanıcı.")
+    success_count = 0
+    fail_count = 0
+    b_card = (
+        f"📢 *NUN PROJECT // GENEL DUYURU*\n\n"
+        f"{text}\n\n"
+        f"──────────────────────────────\n"
+        f"_Nun Bot Resmi Bildirimidir._"
+    )
+    for u in all_users:
+        uid = u['id']
+        try:
+            await bot.send_message(chat_id=uid, text=b_card, parse_mode="Markdown")
+            success_count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            fail_count += 1
+    
+    result_card = (
+        f"📢 *TOPLU DUYURU TAMAMLANDI*\n\n"
+        f"👥 Toplam Hedef: `{total}`\n"
+        f"✅ Başarıyla İletilen: `{success_count}`\n"
+        f"❌ Ulaşılamayan / Engelleyen: `{fail_count}`\n\n"
+        f"📝 *İletilen Metin:*\n_{safe_md(text)}_"
+    )
+    try:
+        await status_msg.edit_text(result_card, parse_mode="Markdown")
+    except Exception:
+        await bot.send_message(chat_id=admin_id, text=result_card, parse_mode="Markdown")
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+
+    if user_id not in ADMIN_IDS:
+        return
+
+    report, kb = format_admin_stats_panel()
+    await update.message.reply_text(report, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
+
+async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+
+    if user_id not in ADMIN_IDS:
+        return
+
+    text, kb = format_users_directory_page(0)
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
+
+async def admin_msg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "ℹ️ *Kullanım:* `/msg <Kullanıcı_ID> <Mesajınız>`\n\n_Örnek:_ `/msg 2146753102 Merhaba nasılsınız?`",
+            parse_mode="Markdown"
+        )
+        return
+    if not args[0].isdigit():
+        await update.message.reply_text("⚠️ Geçersiz Kullanıcı ID. Lütfen sayısal bir Telegram ID giriniz.")
+        return
+    target_uid = int(args[0])
+    if len(args) < 2:
+        context.user_data['admin_dm_target'] = target_uid
+        p = USER_PROFILES.get(str(target_uid), {})
+        nm = safe_md(p.get('name') or f"User {target_uid}")
+        await update.message.reply_text(
+            f"✍️ *\u200e{nm}\u200e* (`{target_uid}`) kullanıcısına göndermek istediğiniz mesajı yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
+            parse_mode="Markdown"
+        )
+        return
+    msg_text = " ".join(args[1:])
+    await send_admin_dm_to_user(context.bot, user_id, target_uid, msg_text, update.message)
+
+async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        context.user_data['admin_broadcast_mode'] = True
+        await update.message.reply_text(
+            "📢 *TOPLU DUYURU MODU*\n\nTüm kayıtlı kullanıcılara göndermek istediğiniz duyuru metnini yazıp gönderin:\n\n_(İptal etmek için /cancel yazabilirsiniz)_",
+            parse_mode="Markdown"
+        )
+        return
+    broadcast_text = " ".join(args)
+    await run_broadcast(context.bot, user_id, broadcast_text, update.message)
+
+def format_admins_panel() -> tuple:
+    lines = [
+        "👑 *NUN PROJECT // YÖNETİCİ KADROSU & YETKİLENDİRME*",
+        f"Toplam Yetkili Sayısı: `{len(ADMIN_IDS)}`\n"
+    ]
+    btns = []
+    for idx, aid in enumerate(sorted(ADMIN_IDS), start=1):
+        p = USER_PROFILES.get(str(aid), {})
+        nm = safe_md(p.get('name') or f"Admin {aid}")
+        un = f"(@{p.get('username')})" if p.get('username') else ""
+        lines.append(f"*{idx}.* \u200e{nm}\u200e {un}\n   🆔 ID: `{aid}`")
+        if len(ADMIN_IDS) > 1:
+            btns.append([InlineKeyboardButton(f"➖ Yetkisini Al: \u200e{nm[:12]}\u200e", callback_data=f"admin_demote_{aid}")])
+
+    btns.append([InlineKeyboardButton("➕ Yeni Yönetici Ekle (ID ile)", callback_data="admin_add_prompt")])
+    btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
+
+    return "\n".join(lines), InlineKeyboardMarkup(btns)
+
+async def admins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    text, kb = format_admins_panel()
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=kb)
+
+async def add_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        context.user_data['admin_add_mode'] = True
+        await update.message.reply_text(
+            "👑 *YENİ YÖNETİCİ EKLEME*\n\nLütfen yönetici yapmak istediğiniz kişinin sayısal Telegram ID'sini yazıp gönderin:\n\n_Örnek:_ `123456789`\n_(İptal için /cancel yazabilirsiniz)_",
+            parse_mode="Markdown"
+        )
+        return
+    new_aid = int(args[0])
+    add_admin_id(new_aid)
+    u_lang = USER_LANGS.get(str(new_aid), 'tr')
+    try:
+        await update_user_bot_commands(context, new_aid, u_lang)
+        await context.bot.send_message(
+            chat_id=new_aid,
+            text="🎉 *Tebrikler!* Nun Bot yöneticisi olarak yetkilendirildiniz.\n/stats veya /users komutlarıyla yönetim paneline erişebilirsiniz.",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+    p = USER_PROFILES.get(str(new_aid), {})
+    nm = safe_md(p.get('name') or f"Kullanıcı {new_aid}")
+    await update.message.reply_text(f"✅ *\u200e{nm}\u200e* (`{new_aid}`) başarıyla yönetici kadrosuna eklendi!", parse_mode="Markdown")
+
+async def del_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("ℹ️ *Kullanım:* `/deladmin <Kullanıcı_ID>`\n\n_Örnek:_ `/deladmin 123456789`", parse_mode="Markdown")
+        return
+    rem_aid = int(args[0])
+    ok, msg = remove_admin_id(rem_aid)
+    if ok:
+        u_lang = USER_LANGS.get(str(rem_aid), 'tr')
+        try:
+            await update_user_bot_commands(context, rem_aid, u_lang)
+        except Exception:
+            pass
+        await update.message.reply_text(f"✅ `{rem_aid}` ID'li yöneticinin yetkisi başarıyla kaldırıldı.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"⚠️ {msg}", parse_mode="Markdown")
+
+async def sync_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    status_msg = await update.message.reply_text("⏳ Telegram sunucularından tüm kullanıcı profilleri sorgulanıyor ve eşitleniyor...")
+    
+    all_users = get_all_registered_users()
+    updated_count = 0
+    
+    for u in all_users:
+        uid = u['id']
+        uid_str = str(uid)
+        try:
+            chat = await context.bot.get_chat(chat_id=uid)
+            c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {uid}"
+            c_uname = chat.username or ""
+            
+            p = USER_PROFILES.get(uid_str, {})
+            p['id'] = uid
+            p['name'] = c_name
+            p['username'] = c_uname
+            if 'last_active' not in p or p['last_active'] == 'Kayıtlı (Pasif)':
+                p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            USER_PROFILES[uid_str] = p
+            updated_count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            pass
+            
+    save_json(USER_PROFILES_FILE, USER_PROFILES)
+    invalidate_users_cache()
+    
+    final_users = get_all_registered_users()
+    await status_msg.edit_text(
+        f"✅ *KULLANICI VERİTABANI EŞİTLENDİ!*\n\n"
+        f"👥 Toplam Tespit Edilen Kullanıcı: `{len(final_users)}`\n"
+        f"🔄 Profili Güncellenen: `{updated_count}`\n\n"
+        f"Artık tüm kullanıcılar profilleriyle birlikte listede görünmektedir.",
+        parse_mode="Markdown"
+    )
+
+async def add_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("ℹ️ *Kullanım:* `/adduser <Kullanıcı_ID>`\n\n_Örnek:_ `/adduser 123456789`", parse_mode="Markdown")
+        return
+    new_uid = int(args[0])
+    uid_str = str(new_uid)
+    
+    try:
+        chat = await context.bot.get_chat(chat_id=new_uid)
+        c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"Kullanıcı {new_uid}"
+        c_uname = chat.username or ""
+    except Exception:
+        c_name = f"Kullanıcı {new_uid}"
+        c_uname = ""
+        
+    p = USER_PROFILES.get(uid_str, {})
+    p['id'] = new_uid
+    p['name'] = c_name
+    p['username'] = c_uname
+    p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    USER_PROFILES[uid_str] = p
+    
+    if uid_str not in USER_LANGS:
+        USER_LANGS[uid_str] = "tr"
+        save_json(LANG_FILE, USER_LANGS)
+        
+    save_json(USER_PROFILES_FILE, USER_PROFILES)
+    invalidate_users_cache()
+    
+    await update.message.reply_text(
+        f"✅ *Kullanıcı Başarıyla Eklendi!*\n\n"
+        f"👤 İsim: \u200e{safe_md(c_name)}\u200e\n"
+        f"🆔 ID: `{new_uid}`\n"
+        f"🔗 Kullanıcı Adı: @{c_uname if c_uname else 'Yok'}",
+        parse_mode="Markdown"
+    )
+
+async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        context.user_data['admin_search_mode'] = True
+        await update.message.reply_text(
+            "🔍 *KULLANICI ARAMA MOTORU*\n\nLütfen aramak istediğiniz kullanıcının Telegram ID'sini, ismini veya @kullaniciadını yazıp gönderin:\n\n_Örnek:_ `/find 2146753102` veya `/find Muhammed`",
+            parse_mode="Markdown"
+        )
+        return
+    q_str = " ".join(args)
+    matches = search_registered_users(q_str)
+    card_text, kb_search = format_search_results_card(matches, q_str)
+    await update.message.reply_text(card_text, parse_mode="Markdown", reply_markup=kb_search, disable_web_page_preview=True)
+
+async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    rep_msg = update.message.reply_to_message
+    if rep_msg and rep_msg.document and rep_msg.document.file_name and rep_msg.document.file_name.endswith(".zip"):
+        status_dl = await update.message.reply_text("⏳ Yedek dosyası indiriliyor ve açılıyor...")
+        try:
+            file_obj = await rep_msg.document.get_file()
+            tmp_z = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+            tmp_z.close()
+            await file_obj.download_to_drive(tmp_z.name)
+            ok, res_msg = restore_database_from_zip(tmp_z.name)
+            os.remove(tmp_z.name)
+            await status_dl.delete()
+            if ok:
+                await update.message.reply_text(f"✅ *Veritabanı Başarıyla Geri Yüklendi!*\n\n{res_msg}", parse_mode="Markdown")
+                await notify_admin_audit_log(context.bot, user_id, f"Veritabanını ZIP yedek dosyasından geri yükledi ({res_msg}).")
+            else:
+                await update.message.reply_text(f"❌ *Geri Yükleme Başarısız:* {res_msg}", parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Hata: {e}")
+        return
+
+    context.user_data['admin_restore_mode'] = True
+    await update.message.reply_text(
+        "📥 *VERİTABANI GERİ YÜKLEME (RESTORE)*\n\nLütfen geri yüklemek istediğiniz `nun_bot_backup_*.zip` dosyasını bu sohbete belge (document) olarak gönderiniz.\n\n_(İptal için /cancel yazabilirsiniz)_",
+        parse_mode="Markdown"
+    )
+
+async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    kb_reboot = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Evet, Botu Yeniden Başlat", callback_data="admin_confirm_restart")],
+        [InlineKeyboardButton("❌ İptal", callback_data="cancel_action")]
+    ])
+    await update.message.reply_text(
+        "⚠️ *BOTU YENİDEN BAŞLATMA ONAYI*\n\nBot tüm açık oturumları güvenle tamamlayıp temiz bir süreç olarak baştan başlayacaktır. Onaylıyor musunuz?",
+        parse_mode="Markdown",
+        reply_markup=kb_reboot
+    )
+
+async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    status_wait = await update.message.reply_text("⏳ Veritabanı yedeği alınıyor...")
+    ok = await send_backup_to_admins(context.bot, trigger_type="Komut Talebi (/backup)")
+    try:
+        await status_wait.delete()
+    except Exception:
+        pass
+    if ok:
+        await update.message.reply_text("✅ Veritabanı yedeği tüm yöneticilere gönderildi.")
+    else:
+        await update.message.reply_text("❌ Yedek dosyası oluşturulamadı.")
+
+async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("ℹ️ *Kullanım:* `/ban <Kullanıcı_ID> [Sebep]`\n\n_Örnek:_ `/ban 123456789 Spam gönderimi`", parse_mode="Markdown")
+        return
+    target_uid = int(args[0])
+    reason = " ".join(args[1:]) if len(args) > 1 else "Kural ihlali"
+    if ban_user(target_uid, reason):
+        await update.message.reply_text(f"⛔ `{target_uid}` ID'li kullanıcı engellendi.\nSebep: _{safe_md(reason)}_", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("⚠️ Yöneticiler engellenemez.")
+
+async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("ℹ️ *Kullanım:* `/unban <Kullanıcı_ID>`\n\n_Örnek:_ `/unban 123456789`", parse_mode="Markdown")
+        return
+    target_uid = int(args[0])
+    if unban_user(target_uid):
+        await update.message.reply_text(f"✅ `{target_uid}` ID'li kullanıcının engeli kaldırıldı.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("⚠️ Bu kullanıcı banlı listesinde bulunamadı.")
+
+async def banned_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    if not BANNED_USERS:
+        await update.message.reply_text("Sistemde engellenmiş (banlı) kullanıcı bulunmuyor.")
+        return
+    b_lines = ["⛔ *ENGELLENMİŞ KULLANICILAR:*\n"]
+    for b_uid, b_info in list(BANNED_USERS.items()):
+        p = USER_PROFILES.get(b_uid, {})
+        nm = safe_md(p.get('name') or f"User {b_uid}")
+        b_lines.append(f"▫️ \u200e{nm}\u200e (`{b_uid}`) — _{safe_md(b_info.get('reason'))}_")
+    await update.message.reply_text("\n".join(b_lines), parse_mode="Markdown")
+
+async def maintenance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+    new_st = toggle_maintenance_mode()
+    st_text = "AÇILDI 🔴 (Yalnızca yöneticiler kullanabilir)" if new_st else "KAPATILDI 🟢 (Herkes kullanabilir)"
+    await update.message.reply_text(f"🚧 *Bakım Modu:* {st_text}", parse_mode="Markdown")
+
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    cleanup_user_temp_files(context, user_id)
+    context.user_data['mode'] = 'feedback_input'
+    await update.message.reply_text(
+        get_text(user_id, 'prompt_feedback', context),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+    )
+
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    track_user_activity(user)
+    if is_rate_limited(user_id, 0.5):
+        return
+
+    loc = update.message.location
+    if not loc:
+        return
+    tz_offset = coords_to_tz_offset(loc.latitude, loc.longitude)
+    save_user_timezone(user_id, tz_offset, locked=True)
+    cleanup_user_temp_files(context, user_id)
+    
+    user_now = get_user_now(user_id, context)
+    now_str = user_now.strftime("%H:%M")
+    u_lang = get_user_lang(user_id, context)
+    t = TEXTS.get(u_lang, TEXTS['uz'])
+    tz_sign = "+" if tz_offset >= 0 else ""
+    
+    loc_lbl = "GPS Joylashuv" if u_lang=='uz' else ("GPS Konumu" if u_lang=='tr' else ("GPS Локация" if u_lang=='ru' else "GPS Location"))
+    timings, d_name, dt_s, h_s, src = await fetch_prayer_times_by_coord(
+        loc.latitude, loc.longitude, 0.0, loc_lbl, f"{loc.latitude:.3f}, {loc.longitude:.3f}", "", user_id=user_id
+    )
+    
+    card = (
+        f"📍 *{t['tz_loc_detected']}*\n\n"
+        f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{tz_offset}`\n"
+        f"⏰ {t['current_time_lbl']}: `{now_str}`\n\n"
+        f"_{t['tz_synced_hint']}_"
+    )
+    await update.message.reply_text(card, parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
+    
+    if timings:
+        p_card = format_prayer_card(f"{loc_lbl} ({loc.latitude:.3f}, {loc.longitude:.3f})", timings, dt_s, h_s, src, u_lang, user_now=user_now, user_id=user_id)
+        kb = get_prayer_hub_keyboard(user_id, u_lang)
+        await update.message.reply_text(p_card, parse_mode="Markdown", reply_markup=kb)
+
+# =====================================================================
+# CALLBACK QUERY İŞLEYİCİSİ (RATE LIMITING KORUMALI)
+# =====================================================================
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+    track_user_activity(user)
+
+    # Ban ve Bakım Modu Kontrolü
+    if is_user_banned(user_id):
+        try:
+            await query.answer("⛔ Erişiminiz kısıtlanmıştır.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    if is_maintenance_active() and user_id not in ADMIN_IDS:
+        try:
+            await query.answer(get_text(user_id, 'maintenance_msg', context), show_alert=True)
+        except Exception:
+            pass
+        return
+
+    if is_rate_limited(user_id, 0.5):
+        try:
+            await query.answer(text=get_text(user_id, 'rate_limit_alert', context), show_alert=False)
+        except Exception:
+            pass
+        return
+
+    await query.answer()
+    data = query.data
+    user_lang = get_user_lang(user_id, context)
+    t = TEXTS.get(user_lang, TEXTS['uz'])
+
+    if data == "admin_manage_panel":
+        if user_id in ADMIN_IDS:
+            text, kb = format_admins_panel()
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_add_prompt":
+        if user_id in ADMIN_IDS:
+            context.user_data['admin_add_mode'] = True
+            await query.message.reply_text(
+                "👑 *YENİ YÖNETİCİ EKLEME*\n\nLütfen yetki vermek istediğiniz kullanıcının sayısal Telegram ID'sini yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data.startswith("admin_promote_"):
+        if user_id in ADMIN_IDS:
+            target_aid = int(data.replace("admin_promote_", "", 1))
+            add_admin_id(target_aid)
+            u_lang = USER_LANGS.get(str(target_aid), 'tr')
+            try:
+                await update_user_bot_commands(context, target_aid, u_lang)
+                await context.bot.send_message(
+                    chat_id=target_aid,
+                    text="🎉 *Tebrikler!* Nun Bot yöneticisi olarak yetkilendirildiniz.\n/stats veya /users komutlarıyla yönetim paneline erişebilirsiniz.",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            p = USER_PROFILES.get(str(target_aid), {})
+            nm = safe_md(p.get('name') or f"User {target_aid}")
+            await query.message.reply_text(f"👑 *\u200e{nm}\u200e* (`{target_aid}`) başarıyla yönetici kadrosuna eklendi!", parse_mode="Markdown")
+        return
+
+    if data.startswith("admin_demote_"):
+        if user_id in ADMIN_IDS:
+            target_aid = int(data.replace("admin_demote_", "", 1))
+            ok, msg = remove_admin_id(target_aid)
+            if ok:
+                u_lang = USER_LANGS.get(str(target_aid), 'tr')
+                try:
+                    await update_user_bot_commands(context, target_aid, u_lang)
+                except Exception:
+                    pass
+                text, kb = format_admins_panel()
+                await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+            else:
+                await query.answer(msg, show_alert=True)
+        return
+
+    if data.startswith("admin_direct_invite_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_direct_invite_", "", 1))
+            admin_user = query.from_user
+            admin_name = safe_md(admin_user.first_name or "Yönetici")
+            admin_uname = admin_user.username
+
+            invite_url = f"https://t.me/{admin_uname}" if admin_uname else f"tg://user?id={user_id}"
+            btn_chat_label = f"💬 {admin_name} ile Özel Sohbeti Aç"
+            invite_card = (
+                f"👤 *NUN PROJECT // YÖNETİCİ GÖRÜŞME TALEBİ*\n\n"
+                f"Bot yöneticimiz *\u200e{admin_name}\u200e* sizinle doğrudan özel olarak görüşmek istiyor.\n\n"
+                f"Aşağıdaki butona dokunarak yöneticimizle 1:1 kişisel Telegram sohbetini hemen başlatabilirsiniz:"
+            )
+            kb_invite = InlineKeyboardMarkup([
+                [InlineKeyboardButton(btn_chat_label, url=invite_url)]
+            ])
+            try:
+                await context.bot.send_message(chat_id=target_uid, text=invite_card, parse_mode="Markdown", reply_markup=kb_invite)
+                p = USER_PROFILES.get(str(target_uid), {})
+                t_name = safe_md(p.get('name') or f"User {target_uid}")
+                await query.message.reply_text(
+                    f"⚡ *1:1 Özel Sohbet Daveti İletildi!*\n\n"
+                    f"Alıcı: *\u200e{t_name}\u200e* (`{target_uid}`)\n"
+                    f"Kullanıcıya özel mesaj butonunuz başarıyla ulaştırıldı. Dokunduğunda doğrudan özel mesaj kutunuz açılacaktır.",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                await query.message.reply_text(f"❌ Davet iletilemedi (ID: `{target_uid}`): {e}\n_(Kullanıcı botu engellemiş olabilir)_", parse_mode="Markdown")
+        return
+
+    if data == "admin_abort_broadcast":
+        if user_id in ADMIN_IDS:
+            global BROADCAST_ABORT_FLAG
+            BROADCAST_ABORT_FLAG = True
+            await query.answer("🛑 Duyuru gönderimi durduruluyor...", show_alert=True)
+            await notify_admin_audit_log(context.bot, user_id, "Devam eden toplu duyuru gönderimini acil olarak durdurdu.")
+        return
+
+    if data == "admin_sync_users_prompt":
+        if user_id in ADMIN_IDS:
+            await query.answer("⏳ Kullanıcılar taranıp eşitleniyor...", show_alert=False)
+            status_m = await query.message.reply_text("⏳ Telegram sunucularından tüm kullanıcılar taranıyor...")
+            all_u = get_all_registered_users()
+            up_cnt = 0
+            for u in all_u:
+                uid = u['id']
+                uid_str = str(uid)
+                try:
+                    chat = await context.bot.get_chat(chat_id=uid)
+                    c_name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or f"User {uid}"
+                    c_uname = chat.username or ""
+                    p = USER_PROFILES.get(uid_str, {})
+                    p['id'] = uid
+                    p['name'] = c_name
+                    p['username'] = c_uname
+                    if 'last_active' not in p or p['last_active'] == 'Kayıtlı (Pasif)':
+                        p['last_active'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                    USER_PROFILES[uid_str] = p
+                    up_cnt += 1
+                except Exception:
+                    pass
+            save_json(USER_PROFILES_FILE, USER_PROFILES)
+            invalidate_users_cache()
+            try:
+                await status_m.delete()
+            except Exception:
+                pass
+            text, kb = format_users_directory_page(0)
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_search_prompt":
+        if user_id in ADMIN_IDS:
+            context.user_data['admin_search_mode'] = True
+            await query.message.reply_text(
+                "🔍 *KULLANICI ARAMA MOTORU*\n\nLütfen aramak istediğiniz kullanıcının Telegram ID'sini, ismini veya @kullaniciadını yazıp gönderin:\n\n_Örnek:_ `2146753102` veya `Muhammed` veya `@trstudent8`\n_(İptal için /cancel yazabilirsiniz)_",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data == "admin_restore_prompt":
+        if user_id in ADMIN_IDS:
+            context.user_data['admin_restore_mode'] = True
+            await query.message.reply_text(
+                "📥 *VERİTABANI GERİ YÜKLEME (RESTORE)*\n\nLütfen geri yüklemek istediğiniz `nun_bot_backup_*.zip` yedek arşivini bu sohbete belge (document) olarak gönderiniz.\n\n⚠️ _Uyarı: Yüklenen dosyadaki veriler mevcut veritabanının üzerine yazılacaktır._\n_(İptal için /cancel yazabilirsiniz)_",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data == "admin_restart_prompt":
+        if user_id in ADMIN_IDS:
+            kb_reboot = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Evet, Botu Yeniden Başlat", callback_data="admin_confirm_restart")],
+                [InlineKeyboardButton("❌ İptal", callback_data="cancel_action")]
+            ])
+            await query.message.reply_text(
+                "⚠️ *BOTU YENİDEN BAŞLATMA ONAYI*\n\nBot tüm açık oturumları güvenle tamamlayıp temiz bir süreç olarak baştan başlayacaktır. Onaylıyor musunuz?",
+                parse_mode="Markdown",
+                reply_markup=kb_reboot
+            )
+        return
+
+    if data == "admin_confirm_restart":
+        if user_id in ADMIN_IDS:
+            await query.message.edit_text("🔄 *Bot yeniden başlatılıyor, lütfen bekleyiniz...*", parse_mode="Markdown")
+            await notify_admin_audit_log(context.bot, user_id, "Botu uzaktan yeniden başlattı (Restart).")
+            def _reboot():
+                time.sleep(1.5)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            threading.Thread(target=_reboot, daemon=True).start()
+        return
+
+    if data.startswith("admin_bc_target_"):
+        if user_id in ADMIN_IDS:
+            target_seg = data.replace("admin_bc_target_", "", 1)
+            context.user_data['broadcast_target_segment'] = target_seg
+            context.user_data['admin_broadcast_mode'] = True
+            seg_title = {"all": "Tüm Kullanıcılar", "tr": "Türkçe (TR)", "uz": "Özbekçe (UZ)", "ru": "Rusça (RU)", "en": "İngilizce (EN)", "prayer": "Ezan Bildirimi Açıklar"}.get(target_seg, target_seg)
+            await query.message.reply_text(
+                f"📢 *TOPLU DUYURU: [{seg_title.upper()}]*\n\nLütfen bu hedef kitleye göndermek istediğiniz duyuru metnini yazıp gönderin:\n\n_(İptal için /cancel yazabilirsiniz)_",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data == "admin_backup_download":
+        if user_id in ADMIN_IDS:
+            status_wait = await query.message.reply_text("⏳ Veritabanı arşivi hazırlanıyor...")
+            await send_backup_to_admins(context.bot, trigger_type="Panel İndirme Talebi")
+            try:
+                await status_wait.delete()
+            except Exception:
+                pass
+        return
+
+    if data == "admin_clean_disk":
+        if user_id in ADMIN_IDS:
+            freed_mb = cleanup_orphaned_temp_files(max_age_seconds=0)
+            disk_now = get_disk_usage_info()
+            await query.answer(f"🧹 {freed_mb:.1f} MB çöp dosya temizlendi! | Güncel Disk: {disk_now}", show_alert=True)
+            report, kb = format_admin_stats_panel()
+            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_toggle_maintenance":
+        if user_id in ADMIN_IDS:
+            new_st = toggle_maintenance_mode()
+            st_text = "AÇILDI (Yalnızca yöneticiler kullanabilir)" if new_st else "KAPATILDI (Herkes kullanabilir)"
+            await query.answer(f"🚧 Bakım Modu {st_text}", show_alert=True)
+            await notify_admin_audit_log(context.bot, user_id, f"Bakım modunu {st_text} yaptı.")
+            report, kb = format_admin_stats_panel()
+            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_banned_list":
+        if user_id in ADMIN_IDS:
+            if not BANNED_USERS:
+                await query.answer("Sistemde engellenmiş (banlı) kullanıcı bulunmuyor.", show_alert=True)
+                return
+            b_lines = ["⛔ *ENGELLENMİŞ KULLANICILAR LİSTESİ:*\n"]
+            b_btns = []
+            for b_uid, b_info in list(BANNED_USERS.items()):
+                p = USER_PROFILES.get(b_uid, {})
+                nm = safe_md(p.get('name') or f"Kullanıcı {b_uid}")
+                b_lines.append(f"▫️ \u200e{nm}\u200e (`{b_uid}`)\n   Sebep: _{safe_md(b_info.get('reason'))}_ | Tarih: `{b_info.get('timestamp')}`")
+                b_btns.append([InlineKeyboardButton(f"✅ Engeli Kaldır: \u200e{nm[:15]}\u200e", callback_data=f"admin_unban_{b_uid}")])
+            b_btns.append([InlineKeyboardButton("🔙 Ana Panele Dön", callback_data="stats_back_main")])
+            await safe_edit_text_markup(query.message, "\n".join(b_lines), reply_markup=InlineKeyboardMarkup(b_btns), parse_mode="Markdown")
+        return
+
+    if data.startswith("admin_ban_prompt_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_ban_prompt_", "", 1))
+            context.user_data['admin_ban_target'] = target_uid
+            p = USER_PROFILES.get(str(target_uid), {})
+            nm = safe_md(p.get('name') or f"User {target_uid}")
+            await query.message.reply_text(
+                f"⛔ *KULLANICI ENGELLEME*\n\nKullanıcı: *\u200e{nm}\u200e* (`{target_uid}`)\n\nEngelleme sebebini yazınız (Doğrudan 'ban' yazarak varsayılan sebeple de engelleyebilirsiniz):",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data.startswith("admin_unban_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_unban_", "", 1))
+            unban_user(target_uid)
+            await query.answer(f"✅ {target_uid} kullanıcısının engeli kaldırıldı.", show_alert=True)
+            await notify_admin_audit_log(context.bot, user_id, f"{target_uid} ID'li kullanıcının engelini (ban) kaldırdı.")
+            report, kb = format_admin_stats_panel()
+            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "stats_refresh":
+        if user_id in ADMIN_IDS:
+            report, kb = format_admin_stats_panel()
+            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "stats_back_main":
+        if user_id in ADMIN_IDS:
+            report, kb = format_admin_stats_panel()
+            await safe_edit_text_markup(query.message, report, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data.startswith("stats_users_page_"):
+        if user_id in ADMIN_IDS:
+            p_num = int(data.replace("stats_users_page_", "", 1))
+            text, kb = format_users_directory_page(p_num)
+            await safe_edit_text_markup(query.message, text, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data == "admin_panel_close":
+        if user_id in ADMIN_IDS:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        return
+
+    if data == "confirm_broadcast_send":
+        if user_id in ADMIN_IDS:
+            b_text = context.user_data.pop('pending_broadcast_text', None)
+            if b_text:
+                target_seg = context.user_data.pop('broadcast_target_segment', 'all')
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                await run_segmented_broadcast(context.bot, user_id, b_text, target_segment=target_seg)
+            else:
+                await query.answer("Gönderilecek duyuru metni bulunamadı.", show_alert=True)
+        return
+
+    if data == "admin_broadcast_prompt":
+        if user_id in ADMIN_IDS:
+            msg, kb = format_broadcast_audience_menu()
+            await safe_edit_text_markup(query.message, msg, reply_markup=kb, parse_mode="Markdown")
+        return
+
+    if data.startswith("admin_dm_start_"):
+        if user_id in ADMIN_IDS:
+            target_uid = int(data.replace("admin_dm_start_", "", 1))
+            context.user_data['admin_dm_target'] = target_uid
+            p = USER_PROFILES.get(str(target_uid), {})
+            nm = safe_md(p.get('name') or f"User {target_uid}")
+            prompt = (
+                f"✍️ *DOĞRUDAN MESAJ GÖNDERME*\n\n"
+                f"👤 Alıcı: \u200e{nm}\u200e (ID: `{target_uid}`)\n\n"
+                f"Lütfen bu kullanıcıya bot üzerinden iletmek istediğiniz mesajı yazıp gönderin.\n"
+                f"_(İptal etmek için /cancel yazabilirsiniz)_"
+            )
+            await query.message.reply_text(
+                prompt,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+            )
+        return
+
+    if data == "cancel_action":
+        cleanup_user_temp_files(context, user_id)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(chat_id=user_id, text=get_text(user_id, 'cancel_success', context), reply_markup=get_reply_menu(user_id, context))
+        return
+
+    if data.startswith("lang_"):
+        l_code = data.replace("lang_", "", 1).strip()
+        save_user_lang(user_id, l_code)
+        silent_background_tz_sync(user_id, user_lang_code=l_code)
+        if context and context.user_data is not None:
+            context.user_data['lang'] = l_code
+            context.user_data['mode'] = 'awaiting_city_after_lang'
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await update_user_bot_commands(context, user_id, l_code)
+        
+        t_new = TEXTS[l_code]
+        prompt_msg = (
+            f"✅ *{t_new['lang_changed']}*\n\n"
+            f"📍 *{t_new['prompt_city_sync_title']}*\n"
+            f"{t_new['prompt_city_sync_desc']}"
+        )
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=prompt_msg,
+            parse_mode="Markdown",
+            reply_markup=get_reply_menu(user_id, context)
+        )
+        return
+
+    if data == "open_tz_selector":
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_timezone', context),
+            parse_mode="Markdown",
+            reply_markup=get_timezone_keyboard(user_lang)
+        )
+        return
+
+    if data == "tz_req_location":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'awaiting_location_or_city'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_send_location', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    if data.startswith("settz_"):
+        city_tz_defaults = {
+            "settz_5": ("Toshkent", 5),
+            "settz_3": ("Istanbul", 3),
+            "settz_3_ru": ("Moskva", 3),
+            "settz_4": ("Dubay", 4),
+            "settz_0": ("London", 0),
+            "settz_1": ("Berlin", 1),
+            "settz_5_kz": ("Olmaota", 5),
+            "settz_-5": ("New York", -5),
+        }
+        city_name, val = city_tz_defaults.get(data, (None, None))
+        if val is None:
+            parts = data.split("_")
+            try:
+                val = int(parts[1])
+            except Exception:
+                val = 3
+        if city_name:
+            save_user_city(user_id, city_name)
+        save_user_timezone(user_id, val, locked=True)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        
+        user_now = get_user_now(user_id, context)
+        now_str = user_now.strftime("%H:%M")
+        tz_sign = "+" if val >= 0 else ""
+        c_label = f"\n📍 {t['btn_city_label']}: *{city_name}*" if city_name else ""
+        
+        msg = (
+            f"✅ *{t['tz_changed']}*{c_label}\n\n"
+            f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{val}`\n"
+            f"⏰ {t['current_time_lbl']}: `{now_str}`\n\n"
+            f"_{t['tz_synced_hint']}_"
+        )
+        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode="Markdown")
+        return
+
+    if data.startswith("open_hadith_"):
+        offset = int(data.replace("open_hadith_", "", 1))
+        now = get_user_now(user_id, context)
+        h_obj, cur_idx = get_daily_hadith(now, offset)
+        h_card = format_daily_hadith_card(h_obj, now, user_lang)
+        lbl_next = {'uz': "🔄 Boshqa hadis", 'tr': "🔄 Başka Hadis", 'ru': "🔄 Другой хадис", 'en': "🔄 Another Hadith"}.get(user_lang, "🔄 Next")
+        kb_h = InlineKeyboardMarkup([
+            [InlineKeyboardButton(lbl_next, callback_data=f"open_hadith_{offset+1}")],
+            [InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]
+        ])
+        await query.message.reply_text(h_card, parse_mode="Markdown", reply_markup=kb_h)
+        return
+
+    if data == "open_hijri_cal":
+        now = get_user_now(user_id, context)
+        card_cal = format_islamic_calendar_card(now, user_lang)
+        await query.message.reply_text(card_cal, parse_mode="Markdown")
+        return
+
+    if data == "show_kerahat_info":
+        guide_text = get_kerahat_detailed_guide(user_lang)
+        await query.message.reply_text(guide_text, parse_mode="Markdown")
+        return
+
+    if data == "gen_imsakiye_pdf":
+        u_coords = get_user_coords(user_id)
+        saved_c = get_user_city(user_id) or "Shahar"
+        if not u_coords:
+            await query.message.reply_text("📍 " + get_text(user_id, 'prompt_prayer', context))
+            return
+        status = await query.message.reply_text("⏳ " + get_text(user_id, 'doc_processing', context))
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, f"imsakiye_{user_id}.pdf")
+                tz_off = get_user_tz_offset(user_id, context)
+                generate_imsakiye_pdf(out_pdf, saved_c, u_coords['lat'], u_coords['lon'], u_coords.get('elevation', 0.0), float(tz_off), u_coords.get('country', ''), user_lang)
+                cap = f"📄 *{saved_c}* — " + {'uz': "30 kunlik namoz va imsokiya taqvimi", 'tr': "30 Günlük Namaz ve İmsakiye Çizelgesi", 'ru': "Расписание намаза на 30 дней", 'en': "30-Day Prayer and Ramadan Timetable"}.get(user_lang, "İmsakiye")
+                with open(out_pdf, "rb") as f_doc:
+                    await query.message.reply_document(document=f_doc, filename=f"imsakiye_{user_lang}.pdf", caption=cap, parse_mode="Markdown")
+        finally:
+            gc.collect()
+            try:
+                await status.delete()
+            except Exception:
+                pass
+        return
+
+    if data == "open_todo_hub":
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await query.message.reply_text(card_t, parse_mode="Markdown", reply_markup=kb_t)
+        return
+
+    if data.startswith("todo_tog_"):
+        idx_t = int(data.replace("todo_tog_", "", 1))
+        toggle_user_todo(user_id, idx_t)
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_t, reply_markup=kb_t, parse_mode="Markdown")
+        return
+
+    if data == "todo_clear":
+        clear_completed_todos(user_id)
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_t, reply_markup=kb_t, parse_mode="Markdown")
+        return
+
+    if data == "todo_add":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'todo_input'
+        await query.message.reply_text(get_text(user_id, 'prompt_todo_add', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
+        return
+
+    if data == "exam_back_hub":
+        exams = get_user_exams(user_id)
+        now = get_user_now(user_id, context)
+        cards = []
+        if exams:
+            for e in exams:
+                cd_str = format_exam_countdown(e.get('date', ''), now, user_lang)
+                cards.append(f"📌 *{e.get('title')}*\n📅 `{e.get('date')}`\n{cd_str}\n")
+        else:
+            cards = [get_text(user_id, 'exam_empty', context)]
+        hdr = get_text(user_id, 'exam_hub_title', context)
+        kb_ex = InlineKeyboardMarkup([
+            [InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add"),
+             InlineKeyboardButton(get_text(user_id, 'btn_exam_todo', context), callback_data="open_todo_hub")]
+        ])
+        await safe_edit_text_markup(query.message, f"{hdr}\n\n" + "\n".join(cards), reply_markup=kb_ex, parse_mode="Markdown")
+        return
+
+    if data == "open_adhkar_hub":
+        await query.message.reply_text(get_text(user_id, 'prompt_adhkar', context), reply_markup=get_adhkar_selection_keyboard(user_lang))
+        return
+
+    if data == "open_prayer_notif_menu":
+        cfg = get_user_prayer_notif(user_id)
+        cur_status = "✅ " + t['notif_btn_on_time'] if (cfg.get("enabled") and cfg.get("offset")==0) else ("⏱️ " + t['notif_btn_15m'] if (cfg.get("enabled") and cfg.get("offset")==15) else "🔕 " + t['notif_btn_off'])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t['notif_btn_on_time'], callback_data="set_pnotif_0")],
+            [InlineKeyboardButton(t['notif_btn_15m'], callback_data="set_pnotif_15")],
+            [InlineKeyboardButton(t['notif_btn_off'], callback_data="set_pnotif_off")],
+            [InlineKeyboardButton(t['btn_cancel'], callback_data="cancel_action")],
+        ])
+        msg = f"{t['notif_menu_title']}\n\n{t['notif_menu_desc']}\n\n📌 *{cur_status}*"
+        await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
+        return
+
+    if data.startswith("set_pnotif_"):
+        mode_val = data.replace("set_pnotif_", "", 1)
+        if mode_val == "off":
+            toggle_user_prayer_notif(user_id, "disable")
+        elif mode_val == "15":
+            toggle_user_prayer_notif(user_id, "15min")
+        else:
+            toggle_user_prayer_notif(user_id, "on_time")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(chat_id=user_id, text=f"✅ {t['notif_saved']}")
+        return
+
+    if data.startswith("sel_prayer_cand_"):
+        idx = int(data.replace("sel_prayer_cand_", "", 1))
+        cands = context.user_data.get('prayer_candidates', [])
+        if 0 <= idx < len(cands):
+            c = cands[idx]
+            context.user_data.pop('prayer_candidates', None)
+            cleanup_user_temp_files(context, user_id)
+            timings, d_name, dt_s, h_s, src = await fetch_prayer_times_by_coord(
+                c['lat'], c['lon'], c['elevation'], c['name'], c['admin1'], c['country'], c['timezone'], user_id=user_id
+            )
+            if timings:
+                card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang, user_now=get_user_now(user_id, context), user_id=user_id)
+                kb = get_prayer_hub_keyboard(user_id, user_lang)
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                await context.bot.send_message(chat_id=user_id, text=card, parse_mode="Markdown", reply_markup=kb)
+                return
+
+    if data == "change_prayer_city":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'prayer'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_prayer', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    if data == "change_weather_city":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'weather'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_weather', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    if data == "adhkar_morning":
+        await query.message.reply_text(TEXTS[user_lang]['adhkar_morning_text'], parse_mode="Markdown")
+        return
+
+    if data == "adhkar_evening":
+        await query.message.reply_text(TEXTS[user_lang]['adhkar_evening_text'], parse_mode="Markdown")
+        return
+
+    if data == "adhkar_salawat":
+        await query.message.reply_text(TEXTS[user_lang]['adhkar_salawat_text'], parse_mode="Markdown")
+        return
+
+    if data == "pdf_act_to_pdf":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'convert_to_pdf'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_convert_to_pdf', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    if data == "pdf_act_ocr":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'ocr'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_ocr', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    if data == "direct_img_pdf":
+        img_p = context.user_data.get('direct_file_path')
+        if img_p and os.path.exists(img_p):
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_p = os.path.join(tmp_dir, "converted.pdf")
+                with Image.open(img_p) as im:
+                    if im.mode in ("RGBA", "P"):
+                        im = im.convert("RGB")
+                    im.save(out_p, format="PDF")
+                with open(out_p, "rb") as f:
+                    await query.message.reply_document(document=f, filename="converted.pdf", caption=get_text(user_id, 'pdf_ready', context))
+        cleanup_user_temp_files(context, user_id)
+        return
+
+    if data == "direct_img_ocr":
+        img_p = context.user_data.get('direct_file_path')
+        if img_p and os.path.exists(img_p):
+            txt = await asyncio.to_thread(extract_text_from_image, img_p)
+            if txt:
+                if len(txt) > 3500:
+                    with tempfile.TemporaryDirectory() as t_dir:
+                        t_file = os.path.join(t_dir, "ocr_text.txt")
+                        with open(t_file, "w", encoding="utf-8") as f_out:
+                            f_out.write(txt)
+                        with open(t_file, "rb") as f_send:
+                            await query.message.reply_document(document=f_send, filename="ocr_text.txt", caption=get_text(user_id, 'ocr_title', context))
+                else:
+                    await query.message.reply_text(f"{get_text(user_id, 'ocr_title', context)}\n\n`{txt}`", parse_mode="Markdown")
+            else:
+                await query.message.reply_text(get_text(user_id, 'ocr_fail', context))
+        cleanup_user_temp_files(context, user_id)
+        return
+
+    if data.startswith("pomo_"):
+        mins = int(data.replace("pomo_", "", 1))
+        is_break = mins in (5, 10)
+        
+        user_now = get_user_now(user_id, context)
+        end_time = user_now + timedelta(minutes=mins)
+        tz_off = get_user_tz_offset(user_id, context)
+        tz_str = f"UTC+{tz_off}" if tz_off >= 0 else f"UTC{tz_off}"
+
+        label = get_text(user_id, 'pomo_break_label', context) if is_break else get_text(user_id, 'pomo_work_label', context)
+        unit = get_text(user_id, 'pomo_mins_unit', context)
+        hdr = get_text(user_id, 'pomo_started', context)
+        lbl_mode = get_text(user_id, 'pomo_mode_lbl', context)
+        lbl_dur = get_text(user_id, 'pomo_dur_lbl', context)
+        lbl_end = get_text(user_id, 'pomo_end_lbl', context)
+
+        card = (
+            f"🍅 *{hdr}*\n\n"
+            f"📌 *{lbl_mode}:* {label}\n"
+            f"⏳ *{lbl_dur}:* `{mins} {unit}`\n"
+            f"🏁 *{lbl_end}:* `{end_time.strftime('%H:%M')}` _({tz_str})_"
+        )
+        await query.message.reply_text(card, parse_mode="Markdown")
+        asyncio.create_task(pomodoro_timer_task(context.bot, user_id, mins, is_break, user_lang))
+        return
+
+    if data == "remind_add":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'remind_input'
+        await query.message.reply_text(get_text(user_id, 'prompt_remind', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
+        return
+
+    if data == "remind_list":
+        rems = get_user_reminders(user_id)
+        if not rems:
+            await query.message.reply_text(get_text(user_id, 'remind_empty', context))
+            return
+        lines = [f"📋 *{get_text(user_id, 'pomo_btn_my_reminds', context)}:*\n"]
+        btns = []
+        for r in rems:
+            lines.append(f"▫️ {r.get('text')} — `{r.get('time')}`")
+            btns.append([InlineKeyboardButton(f"❌ {r.get('text')[:15]}", callback_data=f"del_rem_{r.get('id')}")])
+        await query.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns))
+        return
+
+    if data.startswith("del_rem_"):
+        r_id = data.replace("del_rem_", "", 1)
+        delete_user_reminder(user_id, r_id)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.reply_text(f"🗑️ {get_text(user_id, 'remind_deleted', context)}")
+        return
+
+    if data == "exam_add":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'exam_title_input'
+        await query.message.reply_text(
+            get_text(user_id, 'prompt_exam_title', context),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]])
+        )
+        return
+
+    if data.startswith("sched_"):
+        def_t = get_text(user_id, 'exam_default_title', context)
+        cur_dt = context.user_data.get('exam_draft_dt') or ((get_user_now(user_id, context) + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0))
+        title = context.user_data.get('exam_draft_title', def_t)
+        
+        if data == "sched_day_prev":
+            cur_dt -= timedelta(days=1)
+        elif data == "sched_day_next":
+            cur_dt += timedelta(days=1)
+        elif data == "sched_hour_minus":
+            cur_dt -= timedelta(hours=1)
+        elif data == "sched_hour_plus":
+            cur_dt += timedelta(hours=1)
+        elif data == "sched_min_minus":
+            cur_dt -= timedelta(minutes=15)
+        elif data == "sched_min_plus":
+            cur_dt += timedelta(minutes=15)
+        elif data == "sched_jump_today": 
+            now = get_user_now(user_id, context)
+            cur_dt = cur_dt.replace(year=now.year, month=now.month, day=now.day)
+        elif data == "sched_jump_tmrw": 
+            tmrw = get_user_now(user_id, context) + timedelta(days=1)
+            cur_dt = cur_dt.replace(year=tmrw.year, month=tmrw.month, day=tmrw.day)
+        elif data == "sched_jump_week": 
+            nxt = get_user_now(user_id, context) + timedelta(days=7)
+            cur_dt = cur_dt.replace(year=nxt.year, month=nxt.month, day=nxt.day)
+        elif data == "sched_open_cal":
+            await safe_edit_text_markup(query.message, f"🗓 *{title}*", build_month_calendar(cur_dt.year, cur_dt.month, user_lang), parse_mode="Markdown")
+            return
+        elif data == "sched_confirm":
+            full_dt = cur_dt.strftime("%Y-%m-%d %H:%M")
+            exam_id = add_user_exam(user_id, title, full_dt)
+            cleanup_user_temp_files(context, user_id)
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            card = f"📌 *{title}*\n📅 `{full_dt}`"
+            await context.bot.send_message(chat_id=user_id, text=f"{get_text(user_id, 'exam_saved', context)}\n\n{card}", parse_mode="Markdown")
+            return
+
+        context.user_data['exam_draft_dt'] = cur_dt
+        await safe_edit_text_markup(query.message, format_scheduler_card(title, cur_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
+        return
+
+    if data.startswith("cal_pick_"):
+        def_t = get_text(user_id, 'exam_default_title', context)
+        d_str = data.replace("cal_pick_", "", 1).strip()
+        y, m, d = [int(x) for x in d_str.split("-")]
+        cur_dt = context.user_data.get('exam_draft_dt') or get_user_now(user_id, context).replace(hour=10, minute=0)
+        new_dt = cur_dt.replace(year=y, month=m, day=d)
+        context.user_data['exam_draft_dt'] = new_dt
+        title = context.user_data.get('exam_draft_title', def_t)
+        await safe_edit_text_markup(query.message, format_scheduler_card(title, new_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
+        return
+
+    if data == "cal_back_panel":
+        def_t = get_text(user_id, 'exam_default_title', context)
+        cur_dt = context.user_data.get('exam_draft_dt') or get_user_now(user_id, context)
+        title = context.user_data.get('exam_draft_title', def_t)
+        await safe_edit_text_markup(query.message, format_scheduler_card(title, cur_dt, user_lang), build_scheduler_keyboard(user_lang), parse_mode="Markdown")
+        return
+
+    if data.startswith("cal_nav_"):
+        def_t = get_text(user_id, 'exam_default_title', context)
+        parts = data.split("_")
+        _, _, ny, nm = parts
+        title = context.user_data.get('exam_draft_title', def_t)
+        await safe_edit_text_markup(query.message, f"🗓 *{title}*", build_month_calendar(int(ny), int(nm), user_lang), parse_mode="Markdown")
+        return
 
 # =====================================================================
 # BELGE & DOSYA İŞLEYİCİSİ (HATA DÜZELTİLDİ: raw_text/user_lang NameError)

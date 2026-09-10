@@ -726,6 +726,28 @@ def get_user_prayer_notif(user_id):
     return USER_PRAYER_NOTIFS.get(str(user_id), {"enabled": False, "offset": 0, "last": ""})
 
 # DÜZELTME 3: Tüm geçici durumları ve bayrakları kökten sıfırlama
+
+def factory_reset_user(user_id: int):
+    uid_str = str(user_id)
+    USER_EXAMS.pop(uid_str, None)
+    USER_REMINDERS.pop(uid_str, None)
+    USER_TODOS.pop(uid_str, None)
+    USER_QAZA.pop(uid_str, None)
+    USER_PRAYER_NOTIFS.pop(uid_str, None)
+    USER_FRIDAY_NOTIFS.pop(uid_str, None)
+    save_json(EXAMS_FILE, USER_EXAMS)
+    save_json(REMINDERS_FILE, USER_REMINDERS)
+    save_json(TODOS_FILE, USER_TODOS)
+    save_json(QAZA_FILE, USER_QAZA)
+    save_json(PRAYER_NOTIFS_FILE, USER_PRAYER_NOTIFS)
+    save_json(FRIDAY_NOTIFS_FILE, USER_FRIDAY_NOTIFS)
+
+async def wipe_chat_history(bot, chat_id: int, from_message_id: int, count: int = 80):
+    tasks = []
+    for mid in range(from_message_id, max(1, from_message_id - count), -1):
+        tasks.append(bot.delete_message(chat_id=chat_id, message_id=mid))
+    await asyncio.gather(*tasks, return_exceptions=True)
+
 def cleanup_user_temp_files(context, user_id):
     if not context or not context.user_data:
         return
@@ -2978,8 +3000,9 @@ TEXTS = {
         'btn_adhkar': "📿 Zikrlar & Salovatlar",
         'btn_timezone_hub': "🕒 Vaqt & Joylashuv",
         'btn_lang': "🌐 Tilni tanlash",
+        'prayer_loading': "⏳ Namoz vaqtlari hisoblanmoqda...",
         'btn_reset': "🔄 Qayta boshlash & Tozalash",
-        'reset_success': "🔄 *Bot muvaffaqiyatli yangilandi!*\n\nBarcha vaqtinchalik amallar tozalandi va menyu qayta yuklandi. Asosiy menyudasiz.",
+        'reset_success': "🔄 *Bot qayta ishga tushirildi va chat tozalandi!*\n\nSana, soat va joylashuvingiz saqlab qolindi. Barcha dars maqsadlari, imtihonlar, eslatmalar va eski xabarlar tozalandi.\n\n_Nun Bot xizmatingizda:_ ",
         'btn_timezone': "🕒 Vaqt mintaqasi",
         'btn_city_label': "Shahar",
         'btn_auto_loc': "📍 Avtomatik aniqlash (Joylashuv / Shahar)",
@@ -3103,9 +3126,9 @@ TEXTS = {
             "1️⃣ *Salovati Ibrohimiyya (Namozdagi salovat)*\n"
             "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
             "2️⃣ *Salovati Tibbil Qulub (Qalblar shifosi)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِfāyihā, وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
             "3️⃣ *Salovati Tunjina (Munjiyya)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
         )
     },
     'tr': {
@@ -3142,8 +3165,9 @@ TEXTS = {
         'btn_adhkar': "📿 Zikirler & Salavat",
         'btn_timezone_hub': "🕒 Saat & Konum Ayarı",
         'btn_lang': "🌐 Dil Seçimi",
+        'prayer_loading': "⏳ Namaz vakitleri hesaplanıyor...",
         'btn_reset': "🔄 Yenile & Baştan Başlat",
-        'reset_success': "🔄 *Bot başarıyla yenilendi!*\n\nTüm geçici işlemler temizlendi ve menü sıfırlandı. Ana menüdesiniz.",
+        'reset_success': "🔄 *Bot baştan başlatıldı ve sohbet temizlendi!*\n\nSaat dilimi ve konumunuz korundu; tüm sınavlar, ders hedefleri, hatırlatıcılar ve sohbet geçmişi sıfırlandı.\n\n_Nun Bot hizmetinizdedir:_ ",
         'btn_timezone': "🕒 Saat Dilimi",
         'btn_city_label': "Şehir",
         'btn_auto_loc': "📍 Otomatik Algıla (Konum / Şehir)",
@@ -3265,11 +3289,11 @@ TEXTS = {
         'adhkar_salawat_text': (
             "🤲 *EN MUTEBER SALAVATLAR VE MEALLERİ*\n\n"
             "1️⃣ *Salavat-ı İbrahimiye (Namazdaki Salli-Barik)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَARِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَARَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ\n\n"
             "2️⃣ *Salavat-ı Tıbbi'l-Kulûb (Şifa Salavatı)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِfāyihā, وَنُورِ الْأَبْصَARِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ طِبِّ الْقُلُوبِ وَدَوَائِهَا، وَعَافِيَةِ الْأَبْدَانِ وَشِفَائِهَا، وَنُورِ الْأَبْصَارِ وَضِيَائِهَا، وَعَلَى آلِهِ وَصَحْبِهِ وَسَلِّمْ\n\n"
             "3️⃣ *Salavat-ı Münciye (Tüncina Duası)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَALِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَAJَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّRAJَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَAYَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
+            "اللَّهُمَّ صَلِّ عَلَى سَيِّدِنَا مُحَمَّدٍ صَلَاةً تُنْجِينَا بِهَا مِنْ جَمِيعِ الْأَهْوَالِ وَالْآفَاتِ، وَتَقْضِي لَنَا بِهَا جَمِيعَ الْحَاجَاتِ، وَتُطَهِّرُنَا بِهَا مِنْ جَمِيعِ السَّيِّئَاتِ، وَتَرْفَعُنَا بِهَا عِنْدَكَ أَعْلَى الدَّرَجَاتِ، وَتُبَلِّغُنَا بِهَا أَقْصَى الْغَايَاتِ مِنْ جَمِيعِ الْخَيْرَاتِ فِي الْحَيَاةِ وَبَعْدَ الْمَمَاتِ"
         )
     },
     'ru': {
@@ -3306,8 +3330,9 @@ TEXTS = {
         'btn_adhkar': "📿 Зикры и Салаваты",
         'btn_timezone_hub': "🕒 Время и Геолокация",
         'btn_lang': "🌐 Сменить язык",
+        'prayer_loading': "⏳ Идет расчет времени намаза...",
         'btn_reset': "🔄 Сброс и Перезапуск",
-        'reset_success': "🔄 *Бот успешно перезапущен!*\n\nВсе временные процессы очищены, меню сброшено. Вы в главном меню.",
+        'reset_success': "🔄 *Бот перезапущен и чат очищен!*\n\nВаше время и город сохранены; все задачи, экзамены, напоминания и история сообщений сброшены.\n\n_Nun Bot готов к работе:_ ",
         'btn_timezone': "🕒 Часовой пояс",
         'btn_city_label': "Город",
         'btn_auto_loc': "📍 Автоопределение (Гео / Город)",
@@ -3419,7 +3444,7 @@ TEXTS = {
         'adhkar_salawat_text': (
             "🤲 *ДОСТОВЕРНЫЕ САЛАВАТЫ И ИХ ЗНАЧЕНИЯ*\n\n"
             "1️⃣ *Салават Ибрахимийя (из намаза)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَARِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَARَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
         )
     },
     'en': {
@@ -3456,8 +3481,9 @@ TEXTS = {
         'btn_adhkar': "📿 Adhkar & Salawat",
         'btn_timezone_hub': "🕒 Time & Location",
         'btn_lang': "🌐 Change Language",
+        'prayer_loading': "⏳ Calculating prayer times...",
         'btn_reset': "🔄 Refresh & Reset",
-        'reset_success': "🔄 *Bot successfully refreshed!*\n\nAll temporary states cleared and menu reset. You are at the main menu.",
+        'reset_success': "🔄 *Bot restarted and chat cleared!*\n\nYour timezone and location were preserved; all tasks, exams, reminders, and chat history have been wiped.\n\n_Nun Bot is ready:_ ",
         'btn_timezone': "🕒 Timezone",
         'btn_city_label': "City",
         'btn_auto_loc': "📍 Auto-Detect (Location / City)",
@@ -3569,7 +3595,7 @@ TEXTS = {
         'adhkar_salawat_text': (
             "🤲 *AUTHENTIC SALAWAT & TRANSLATIONS*\n\n"
             "1️⃣ *Salawat Ibrahimiyyah (Prayer Salawat)*\n"
-            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَARِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَARَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
+            "اللَّهُمَّ صَلِّ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا صَلَّيْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ، اللَّهُمَّ بَارِكْ عَلَى مُحَمَّدٍ وَعَلَى آلِ مُحَمَّدٍ كَمَا بَارَكْتَ عَلَى إِبْرَاهِيمَ وَعَلَى آلِ إِبْرَاهِيمَ إِنَّكَ حَمِيدٌ مَجِيدٌ"
         )
     }
 }
@@ -3757,28 +3783,40 @@ def fallback_twitter_download(tweet_id: str, download_dir: str) -> dict:
 
 def _yt_dlp_download(url: str, download_dir: str, audio_only: bool = False) -> dict:
     out_tmpl = os.path.join(download_dir, 'media_%(id)s.%(ext)s')
+    clean_url = url.strip()
     ydl_opts = {
         'outtmpl': out_tmpl,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'noplaylist': True,
-        'socket_timeout': 20,
-        'retries': 3,
-        'format': 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4][filesize<48M]+bestaudio[ext=m4a]/bestvideo[filesize<48M]+bestaudio/best[filesize<48M]/best[ext=mp4]/best',
-        'extract_audio': audio_only,
-        'http_headers': {
+        'socket_timeout': 25,
+        'retries': 4,
+        'max_filesize': 49 * 1024 * 1024,
+    }
+    if audio_only:
+        ydl_opts['format'] = 'bestaudio/best'
+        ydl_opts['extract_audio'] = True
+    else:
+        ydl_opts['format'] = 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
+
+    if 'instagram.com' in clean_url or 'instagr.am' in clean_url:
+        ydl_opts['http_headers'] = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Sec-Fetch-Mode': 'navigate',
             'X-IG-App-ID': '936619743392459',
-        },
-        'extractor_args': {
-            'instagram': {
-                'app_id': ['936619743392459'],
-            }
         }
-    }
+        ydl_opts['extractor_args'] = {'instagram': {'app_id': ['936619743392459']}}
+    elif 'youtube.com' in clean_url or 'youtu.be' in clean_url:
+        ydl_opts['http_headers'] = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        }
+        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'web']}}
+    else:
+        ydl_opts['http_headers'] = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        }
 
     if shutil.which('ffmpeg'):
         ydl_opts['merge_output_format'] = 'mp4'
@@ -4004,13 +4042,22 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
+    chat_id = update.effective_chat.id
+    curr_mid = update.message.message_id
     track_user_activity(user)
+    factory_reset_user(user_id)
     cleanup_user_temp_files(context, user_id)
     context.user_data.clear()
     context.user_data['mode'] = 'auto'
     u_lang = get_user_lang(user_id, context)
     await update_user_bot_commands(context, user_id, u_lang)
-    await update.message.reply_text(get_text(user_id, 'reset_success', context), parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
+    await wipe_chat_history(context.bot, chat_id, curr_mid, count=80)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=get_text(user_id, 'reset_success', context),
+        parse_mode="Markdown",
+        reply_markup=get_reply_menu(user_id, context)
+    )
 
 # =====================================================================
 # SAHİP VE GELİŞTİRİCİ KONTROL PANELİ
@@ -6083,12 +6130,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. EN BAŞTA: YENİLE & BAŞTAN BAŞLAT BUTONU / KOMUTU (DÜZELTME 3)
     reset_labels = [TEXTS[l].get('btn_reset', '') for l in TEXTS] + ["/reset", "/restart_user", "🔄 Yenile & Baştan Başlat", "🔄 Qayta boshlash & Tozalash"]
     if raw_text in reset_labels:
+        curr_mid = update.message.message_id
+        factory_reset_user(user_id)
         cleanup_user_temp_files(context, user_id)
         context.user_data.clear()
         context.user_data['mode'] = 'auto'
         await update_user_bot_commands(context, user_id, user_lang)
-        await update.message.reply_text(
-            get_text(user_id, 'reset_success', context),
+        await wipe_chat_history(context.bot, chat_id, curr_mid, count=80)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=get_text(user_id, 'reset_success', context),
             parse_mode="Markdown",
             reply_markup=get_reply_menu(user_id, context)
         )
@@ -6119,7 +6170,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif mode_val == 'prayer':
                 saved_city = get_user_city(user_id)
                 if saved_city:
-                    status = await update.message.reply_text("⏳ " + get_text(user_id, 'downloading', context))
+                    status = await update.message.reply_text(get_text(user_id, 'prayer_loading', context))
                     try:
                         res_p = await fetch_prayer_times(saved_city, user_id=user_id, user_lang=user_lang)
                         timings, d_name, dt_s, h_s, src = res_p[0], res_p[1], res_p[2], res_p[3], res_p[4]
@@ -6389,18 +6440,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await status.edit_text(get_text(user_id, 'error_size', context))
                 except Exception:
                     pass
+                status = None
             except Exception as e:
                 print(f"[MEDIA_DOWNLOAD_ERROR] {e}")
                 err_msg = get_text(user_id, 'video_error', context)
                 try:
-                    await status.edit_text(err_msg)
+                    await status.edit_text(f"{err_msg}\n\n⚠️ _{safe_md(str(e)[:180])}_", parse_mode="Markdown")
                 except Exception:
-                    pass
+                    try:
+                        await status.edit_text(err_msg)
+                    except Exception:
+                        pass
+                status = None
             finally:
-                try:
-                    await status.delete()
-                except Exception:
-                    pass
+                if status:
+                    try:
+                        await status.delete()
+                    except Exception:
+                        pass
             return
 
     # 5. TO-DO MAQSAD QOʻSHISH

@@ -1,3 +1,6 @@
+import gc
+import math
+import zoneinfo
 import os
 import re
 import difflib
@@ -47,12 +50,115 @@ import yt_dlp
 # =====================================================================
 # RENDER 7/24 SAĞLIK SUNUCUSU & SELF-PINGER
 # =====================================================================
+
+# =====================================================================
+# GLOBAL VE KALICI HTTP BAĞLANTI HAVUZU (KEEP-ALIVE POOL)
+# =====================================================================
+GLOBAL_HTTP_CLIENT = None
+
+def get_http_client() -> httpx.AsyncClient:
+    global GLOBAL_HTTP_CLIENT
+    if GLOBAL_HTTP_CLIENT is None or GLOBAL_HTTP_CLIENT.is_closed:
+        limits = httpx.Limits(max_keepalive_connections=25, max_connections=60, keepalive_expiry=30.0)
+        GLOBAL_HTTP_CLIENT = httpx.AsyncClient(timeout=12.0, follow_redirects=True, limits=limits)
+    return GLOBAL_HTTP_CLIENT
+
+def safe_md(text: str) -> str:
+    if not text:
+        return ""
+    return str(text).replace("*", "\\*").replace("_", "\\_").replace("`", "\\`").replace("[", "\\[")
+
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "application/json; charset=utf-8")
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in ('/ping', '/health', '/'):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok", "service": "NUN_BOT_24_7"}')
+            return
+
+        if parsed.path == '/qibla':
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                lat = float(qs.get('lat', [41.2995])[0])
+                lon = float(qs.get('lon', [69.2401])[0])
+            except Exception:
+                lat, lon = 41.2995, 69.2401
+            q_deg, comp = calculate_qibla(lat, lon)
+            html_page = f'''<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Qibla Compass</title>
+<style>
+body {{ background: #0b1329; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; text-align: center; }}
+.compass-card {{ background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid #334155; border-radius: 24px; padding: 24px; width: 100%; max-width: 360px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
+.compass-box {{ position: relative; width: 260px; height: 260px; border-radius: 50%; border: 4px solid #38bdf8; margin: 20px auto; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, #1e293b 0%, #0f172a 100%); box-shadow: 0 0 25px rgba(56, 189, 248, 0.2); }}
+.dial {{ position: absolute; width: 100%; height: 100%; border-radius: 50%; transition: transform 0.1s ease-out; }}
+.needle {{ position: absolute; width: 6px; height: 105px; background: linear-gradient(to top, transparent 0%, #10b981 100%); border-radius: 3px; top: 25px; left: 127px; }}
+.kaaba-icon {{ position: absolute; top: 8px; left: 118px; font-size: 22px; }}
+.deg-num {{ font-size: 32px; font-weight: 800; color: #ffffff; z-index: 3; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }}
+.info-row {{ margin-top: 15px; font-size: 17px; font-weight: 600; color: #38bdf8; }}
+.sub-row {{ font-size: 13px; color: #94a3b8; margin-top: 8px; line-height: 1.4; }}
+button {{ background: #10b981; color: white; border: none; padding: 12px 28px; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 18px; transition: background 0.2s; }}
+button:active {{ background: #059669; }}
+</style>
+</head>
+<body>
+<div class="compass-card">
+  <h3 style="margin: 0; font-size: 20px;">🧭 Qibla Compass</h3>
+  <div class="compass-box">
+    <div id="dial" class="dial">
+      <div class="needle"></div>
+      <div class="kaaba-icon">🕋</div>
+    </div>
+    <div class="deg-num">{q_deg:.1f}°</div>
+  </div>
+  <div class="info-row">Qibla: {q_deg:.1f}°</div>
+  <div class="sub-row">Telefoningizni tekis ushlang va yashil nishonni kuzating.</div>
+  <button id="permBtn" onclick="requestPermission()">Sensorni Yoqish</button>
+</div>
+<script>
+let qiblaAngle = {q_deg};
+let dial = document.getElementById('dial');
+let permBtn = document.getElementById('permBtn');
+
+function handleOrientation(e) {{
+  let heading = e.webkitCompassHeading || (360 - e.alpha);
+  if (heading !== undefined) {{
+    let rot = qiblaAngle - heading;
+    dial.style.transform = 'rotate(' + rot + 'deg)';
+  }}
+}}
+
+function requestPermission() {{
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {{
+    DeviceOrientationEvent.requestPermission()
+      .then(st => {{
+        if (st === 'granted') {{
+          window.addEventListener('deviceorientation', handleOrientation, true);
+          permBtn.style.display = 'none';
+        }}
+      }}).catch(console.error);
+  }} else {{
+    window.addEventListener('deviceorientation', handleOrientation, true);
+    permBtn.style.display = 'none';
+  }}
+}}
+window.addEventListener('deviceorientation', handleOrientation, true);
+</script>
+</body>
+</html>'''
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(html_page.encode('utf-8'))
+            return
+
+        self.send_response(404)
         self.end_headers()
-        self.wfile.write(b'{"status": "ok", "service": "NUN_BOT_24_7"}')
 
     def do_HEAD(self):
         self.send_response(200)
@@ -194,6 +300,21 @@ TZ_LOCK_FILE = "user_tz_locked.json"
 EXAMS_FILE = "user_exams.json"
 REMINDERS_FILE = "user_reminders.json"
 CITY_FILE = "user_cities.json"
+COORDS_FILE = "user_coords.json"
+PRAYER_NOTIFS_FILE = "user_prayer_notifs.json"
+FRIDAY_NOTIFS_FILE = "user_friday_notifs.json"
+TODOS_FILE = "user_todos.json"
+RECENT_CITIES_FILE = "user_recent_cities.json"
+
+USER_TODOS = {}
+USER_RECENT_CITIES = {}
+
+USER_TODOS = {}
+
+USER_COORDS = {}
+USER_PRAYER_NOTIFS = {}
+USER_FRIDAY_NOTIFS = {}
+DAILY_PRAYER_CACHE = {}
 
 USER_LANGS = {}
 USER_TIMEZONES = {}
@@ -210,7 +331,12 @@ def load_databases():
         (TZ_LOCK_FILE, USER_TZ_LOCKED),
         (EXAMS_FILE, USER_EXAMS),
         (REMINDERS_FILE, USER_REMINDERS),
-        (CITY_FILE, USER_CITIES)
+        (CITY_FILE, USER_CITIES),
+        (COORDS_FILE, USER_COORDS),
+        (PRAYER_NOTIFS_FILE, USER_PRAYER_NOTIFS),
+        (FRIDAY_NOTIFS_FILE, USER_FRIDAY_NOTIFS),
+        (TODOS_FILE, USER_TODOS),
+        (RECENT_CITIES_FILE, USER_RECENT_CITIES)
     ]:
         if os.path.exists(fname):
             try:
@@ -221,10 +347,12 @@ def load_databases():
 
 def save_json(fname, data):
     try:
-        with open(fname, "w", encoding="utf-8") as f:
+        tmp_fname = f"{fname}.tmp"
+        with open(tmp_fname, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
-    except Exception:
-        pass
+        os.replace(tmp_fname, fname)
+    except Exception as e:
+        print(f"save_json hatasi ({fname}): {e}")
 
 def save_user_lang(user_id, lang_code: str):
     USER_LANGS[str(user_id)] = lang_code
@@ -250,8 +378,25 @@ def save_user_timezone(user_id, offset_hours: int, locked: bool = False):
 
 def save_user_city(user_id, city_name: str):
     uid_str = str(user_id)
-    USER_CITIES[uid_str] = city_name.strip().title()
+    c_val = city_name.strip().title()
+    USER_CITIES[uid_str] = c_val
     save_json(CITY_FILE, USER_CITIES)
+    add_recent_city(user_id, c_val)
+
+
+def add_recent_city(user_id: int, city_name: str):
+    uid = str(user_id)
+    if uid not in USER_RECENT_CITIES:
+        USER_RECENT_CITIES[uid] = []
+    c_clean = city_name.strip().title()
+    if c_clean in USER_RECENT_CITIES[uid]:
+        USER_RECENT_CITIES[uid].remove(c_clean)
+    USER_RECENT_CITIES[uid].insert(0, c_clean)
+    USER_RECENT_CITIES[uid] = USER_RECENT_CITIES[uid][:3]
+    save_json(RECENT_CITIES_FILE, USER_RECENT_CITIES)
+
+def get_recent_cities(user_id: int) -> list:
+    return USER_RECENT_CITIES.get(str(user_id), [])
 
 def get_user_city(user_id) -> str:
     return USER_CITIES.get(str(user_id))
@@ -370,6 +515,32 @@ def add_user_reminder(user_id, text: str, target_dt_str: str) -> str:
     save_json(REMINDERS_FILE, USER_REMINDERS)
     return rem_id
 
+
+def add_user_todo(user_id: int, text: str):
+    uid = str(user_id)
+    if uid not in USER_TODOS:
+        USER_TODOS[uid] = []
+    task_id = str(len(USER_TODOS[uid]) + 1)
+    USER_TODOS[uid].append({'id': task_id, 'text': text.strip(), 'done': False})
+    save_json(TODOS_FILE, USER_TODOS)
+
+def toggle_user_todo(user_id: int, task_idx: int):
+    uid = str(user_id)
+    if uid in USER_TODOS and 0 <= task_idx < len(USER_TODOS[uid]):
+        USER_TODOS[uid][task_idx]['done'] = not USER_TODOS[uid][task_idx]['done']
+        save_json(TODOS_FILE, USER_TODOS)
+
+def clear_completed_todos(user_id: int):
+    uid = str(user_id)
+    if uid in USER_TODOS:
+        USER_TODOS[uid] = [t for t in USER_TODOS[uid] if not t['done']]
+        for i, t in enumerate(USER_TODOS[uid]):
+            t['id'] = str(i + 1)
+        save_json(TODOS_FILE, USER_TODOS)
+
+def get_user_todos(user_id: int) -> list:
+    return USER_TODOS.get(str(user_id), [])
+
 def get_user_reminders(user_id) -> list:
     return USER_REMINDERS.get(str(user_id), [])
 
@@ -378,6 +549,34 @@ def delete_user_reminder(user_id, rem_id: str):
     if uid_str in USER_REMINDERS:
         USER_REMINDERS[uid_str] = [r for r in USER_REMINDERS[uid_str] if r.get('id') != rem_id]
         save_json(REMINDERS_FILE, USER_REMINDERS)
+
+
+def save_user_coords(user_id, lat: float, lon: float, elevation: float = 0.0, country: str = ""):
+    uid_str = str(user_id)
+    USER_COORDS[uid_str] = {'lat': float(lat), 'lon': float(lon), 'elevation': float(elevation), 'country': country}
+    save_json(COORDS_FILE, USER_COORDS)
+
+def get_user_coords(user_id):
+    return USER_COORDS.get(str(user_id))
+
+def toggle_user_prayer_notif(user_id, mode: str = "on_time"):
+    uid_str = str(user_id)
+    if uid_str not in USER_PRAYER_NOTIFS:
+        USER_PRAYER_NOTIFS[uid_str] = {"enabled": True, "offset": 0, "last": ""}
+    
+    if mode == "disable":
+        USER_PRAYER_NOTIFS[uid_str]["enabled"] = False
+    elif mode == "15min":
+        USER_PRAYER_NOTIFS[uid_str]["enabled"] = True
+        USER_PRAYER_NOTIFS[uid_str]["offset"] = 15
+    else:
+        USER_PRAYER_NOTIFS[uid_str]["enabled"] = True
+        USER_PRAYER_NOTIFS[uid_str]["offset"] = 0
+    save_json(PRAYER_NOTIFS_FILE, USER_PRAYER_NOTIFS)
+    return USER_PRAYER_NOTIFS[uid_str]
+
+def get_user_prayer_notif(user_id):
+    return USER_PRAYER_NOTIFS.get(str(user_id), {"enabled": False, "offset": 0, "last": ""})
 
 def cleanup_user_temp_files(context, user_id):
     if not context or not context.user_data:
@@ -614,6 +813,86 @@ async def pomodoro_timer_task(bot, chat_id: int, duration_mins: int, is_break: b
         await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown", reply_markup=kb)
     except Exception:
         pass
+
+
+async def prayer_and_friday_worker(app):
+    while True:
+        await asyncio.sleep(30)
+        now_utc = datetime.now(timezone.utc)
+        # Prune old prayer cache entries
+        old_cache_keys = [k for k in list(DAILY_PRAYER_CACHE.keys()) if not k.endswith(today_str)]
+        for k in old_cache_keys:
+            DAILY_PRAYER_CACHE.pop(k, None)
+        
+        # Check all users with prayer notifications or friday reminders
+        for uid_str in list(USER_TIMEZONES.keys()):
+            try:
+                uid = int(uid_str)
+                user_now = get_user_now(uid)
+                today_str = user_now.strftime("%Y-%m-%d")
+                now_hm = user_now.strftime("%H:%M")
+                u_lang = get_user_lang(uid)
+                t = TEXTS.get(u_lang, TEXTS['uz'])
+
+                # 1. Friday Special Reminder (Every Friday morning between 08:30 and 09:30)
+                if user_now.weekday() == 4 and (8 <= user_now.hour < 10):
+                    last_fri = USER_FRIDAY_NOTIFS.get(uid_str, {}).get("last", "")
+                    if last_fri != today_str:
+                        if uid_str not in USER_FRIDAY_NOTIFS:
+                            USER_FRIDAY_NOTIFS[uid_str] = {}
+                        USER_FRIDAY_NOTIFS[uid_str]["last"] = today_str
+                        save_json(FRIDAY_NOTIFS_FILE, USER_FRIDAY_NOTIFS)
+                        try:
+                            msg = f"🌙 *{t['friday_title']}*\n\n{t['friday_text']}"
+                            await app.bot.send_message(chat_id=uid, text=msg, parse_mode="Markdown")
+                        except Exception:
+                            pass
+
+                # 2. Prayer Time Notifications
+                p_cfg = USER_PRAYER_NOTIFS.get(uid_str)
+                if p_cfg and p_cfg.get("enabled", False):
+                    u_coords = get_user_coords(uid)
+                    if u_coords:
+                        c_key = f"{uid_str}_{today_str}"
+                        if c_key in DAILY_PRAYER_CACHE:
+                            timings = DAILY_PRAYER_CACHE[c_key]
+                        else:
+                            tz_off = get_user_tz_offset(uid)
+                            calc = AstroPrayerTimes(u_coords['lat'], u_coords['lon'], elevation=u_coords.get('elevation', 0.0), tz_offset=float(tz_off), country_code=u_coords.get('country', ''))
+                            timings = calc.calculate_times(user_now)
+                            DAILY_PRAYER_CACHE[c_key] = timings
+
+                        offset = p_cfg.get("offset", 0)
+                        prayer_names = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
+                        labels_p = {
+                            'uz': {'Fajr': "BOMDOD", 'Dhuhr': "PESHIN", 'Asr': "ASR", 'Maghrib': "SHOM", 'Isha': "XUFTON"},
+                            'tr': {'Fajr': "İMSAK / SABAH", 'Dhuhr': "ÖĞLE", 'Asr': "İKİNDİ", 'Maghrib': "AKŞAM / İFTAR", 'Isha': "YATSI"},
+                            'ru': {'Fajr': "ФАДЖР", 'Dhuhr': "ЗУХР", 'Asr': "АСР", 'Maghrib': "МАГРИБ", 'Isha': "ИША"},
+                            'en': {'Fajr': "FAJR", 'Dhuhr': "DHUHR", 'Asr': "ASR", 'Maghrib': "MAGHRIB", 'Isha': "ISHA"},
+                        }
+                        
+                        target_dt = user_now + timedelta(minutes=offset)
+                        target_hm = target_dt.strftime("%H:%M")
+                        
+                        for p in prayer_names:
+                            p_time = timings.get(p)
+                            if p_time and p_time == target_hm:
+                                notif_id = f"{today_str}_{p}_{offset}"
+                                if p_cfg.get("last") != notif_id:
+                                    p_cfg["last"] = notif_id
+                                    save_json(PRAYER_NOTIFS_FILE, USER_PRAYER_NOTIFS)
+                                    p_lbl = labels_p.get(u_lang, labels_p['uz']).get(p, p)
+                                    if offset > 0:
+                                        alert_head = f"⏰ 15 daqiqa qoldi" if u_lang=='uz' else ("⏰ 15 Dakika Kaldı" if u_lang=='tr' else "⏰ Осталось 15 минут")
+                                        body = f"🕌 *NUN PROJECT // {alert_head}*\n\n📌 *[ {p_lbl} ]* `{p_time}`\n\n_{t['notif_verse']}_"
+                                    else:
+                                        body = f"🕌 *NUN PROJECT // {t['notif_alert_title']}*\n\n🔔 *[ {p_lbl} ]* {t['notif_entered']} (`{p_time}`)\n\n_{t['notif_verse']}_"
+                                    try:
+                                        await app.bot.send_message(chat_id=uid, text=body, parse_mode="Markdown")
+                                    except Exception:
+                                        pass
+            except Exception:
+                pass
 
 async def reminders_worker(app):
     while True:
@@ -862,47 +1141,683 @@ def clean_time_str(val: str) -> str:
     m = re.search(r"\d{1,2}:\d{2}", str(val))
     return m.group(0) if m else "--:--"
 
-async def fetch_prayer_times(city_input: str, user_id: int = None):
-    c_norm = re.sub(r"['’`ʻʼ]", "", city_input.lower().strip()).replace('i̇', 'i').replace('ı', 'i')
-    headers = {"User-Agent": "Mozilla/5.0"}
 
-    detected_tz = resolve_tz_from_city(c_norm)
-    if user_id and detected_tz is not None:
-        save_user_timezone(user_id, detected_tz)
 
-    slug = UZ_REGIONS.get(c_norm)
-    if not slug:
-        matches = difflib.get_close_matches(c_norm, list(UZ_REGIONS.keys()), n=1, cutoff=0.75)
-        if matches:
-            slug = UZ_REGIONS[matches[0]]
-    if slug:
+# =====================================================================
+# YÜKSEK HASSASİYETLİ ASTRONOMİK VE FIKHİ NAMAZ MOTORU (TEMKİN & RAKIM)
+# =====================================================================
+class AstroPrayerTimes:
+    def __init__(self, lat: float, lon: float, elevation: float = 0.0, tz_offset: float = 5.0, country_code: str = 'UZ'):
+        self.lat = lat
+        self.lon = lon
+        self.elevation = max(0.0, elevation)
+        self.tz_offset = tz_offset
+        self.country_code = (country_code or '').upper()
+
+    def _julian_date(self, year: int, month: int, day: int) -> float:
+        if month <= 2:
+            year -= 1
+            month += 12
+        A = math.floor(year / 100.0)
+        B = 2 - A + math.floor(A / 4.0)
+        return math.floor(365.25 * (year + 4716)) + math.floor(30.6001 * (month + 1)) + day + B - 1524.5
+
+    def _sun_coordinates(self, jd: float):
+        d = jd - 2451545.0
+        g = (357.529 + 0.98560028 * d) % 360.0
+        q = (280.459 + 0.98564736 * d) % 360.0
+        L = (q + 1.915 * math.sin(math.radians(g)) + 0.020 * math.sin(math.radians(2 * g))) % 360.0
+        e = 23.439 - 0.00000036 * d
+        sin_dec = math.sin(math.radians(e)) * math.sin(math.radians(L))
+        dec = math.degrees(math.asin(sin_dec))
+        ra = math.degrees(math.atan2(math.cos(math.radians(e)) * math.sin(math.radians(L)), math.cos(math.radians(L)))) / 15.0
+        ra = (ra + 24.0) % 24.0
+        eqt = (q / 15.0) - ra
+        if eqt > 12.0: eqt -= 24.0
+        if eqt < -12.0: eqt += 24.0
+        return dec, eqt
+
+    def calculate_times(self, date: datetime) -> dict:
+        jd = self._julian_date(date.year, date.month, date.day)
+        dec, eqt = self._sun_coordinates(jd)
+        noon = 12.0 + self.tz_offset - (self.lon / 15.0) - eqt
+        dip = 0.0347 * math.sqrt(self.elevation) if self.elevation > 0 else 0.0
+        sun_rise_angle = 0.833 + dip
+
+        def hour_angle(alpha: float) -> float:
+            lat_r = math.radians(self.lat)
+            dec_r = math.radians(dec)
+            num = -math.sin(math.radians(alpha)) - (math.sin(lat_r) * math.sin(dec_r))
+            denom = math.cos(lat_r) * math.cos(dec_r)
+            val = num / denom
+            if val > 1.0: return 0.0
+            if val < -1.0: return 180.0
+            return math.degrees(math.acos(val))
+
+        shadow_factor = 2.0  # Hanefi Asr-ı Sânî (2x gölge kuralı)
+        asr_alt = math.degrees(math.atan(1.0 / (shadow_factor + math.tan(math.radians(abs(self.lat - dec))))))
+        
+        w_sunrise = hour_angle(sun_rise_angle) / 15.0
+        w_fajr = hour_angle(18.0) / 15.0  # 18° Diyanet & O'MI
+        w_isha = hour_angle(17.0) / 15.0  # 17° Diyanet & O'MI
+        
+        lat_r = math.radians(self.lat)
+        dec_r = math.radians(dec)
+        asr_val = (math.sin(math.radians(asr_alt)) - (math.sin(lat_r) * math.sin(dec_r))) / (math.cos(lat_r) * math.cos(dec_r))
+        asr_val = max(-1.0, min(1.0, asr_val))
+        w_asr = math.degrees(math.acos(asr_val)) / 15.0
+
+        night_length = (24.0 - 2 * w_sunrise) if w_sunrise > 0 else 12.0
+        if w_fajr == 0.0 or w_fajr == 12.0 or (noon - w_fajr) > (noon - w_sunrise):
+            fajr_h = noon - w_sunrise - (night_length / 7.0)
+        else:
+            fajr_h = noon - w_fajr
+
+        if w_isha == 0.0 or w_isha == 12.0:
+            isha_h = noon + w_sunrise + (night_length / 7.0)
+        else:
+            isha_h = noon + w_isha
+
+        # Resmi Temkin ve Emniyet Ofsetleri
+        if self.country_code == 'TR':
+            dhuhr_temkin = 5.0 / 60.0
+            asr_temkin = 4.0 / 60.0
+            maghrib_temkin = 7.0 / 60.0
+            isha_temkin = 2.0 / 60.0
+        else:
+            dhuhr_temkin = 2.0 / 60.0
+            asr_temkin = 2.0 / 60.0
+            maghrib_temkin = 3.0 / 60.0
+            isha_temkin = 1.0 / 60.0
+
+        sunrise_h = noon - w_sunrise
+        dhuhr_h = noon + dhuhr_temkin
+        asr_h = noon + w_asr + asr_temkin
+        sunset_h = noon + w_sunrise + maghrib_temkin
+        isha_h += isha_temkin
+        
+        def fmt(h: float) -> str:
+            h = (h + 24.0) % 24.0
+            hours = int(h)
+            minutes = int(round((h - hours) * 60.0))
+            if minutes == 60:
+                hours = (hours + 1) % 24
+                minutes = 0
+            return f"{hours:02d}:{minutes:02d}"
+
+        return {
+            "Fajr": fmt(fajr_h),
+            "Sunrise": fmt(sunrise_h),
+            "Dhuhr": fmt(dhuhr_h),
+            "Asr": fmt(asr_h),
+            "Maghrib": fmt(sunset_h),
+            "Isha": fmt(isha_h)
+        }
+
+def normalize_location_query(text: str) -> str:
+    t = text.strip()
+    cyr_map = {
+        'қ': 'q', 'Қ': 'Q', 'ғ': 'g', 'Ғ': 'G', 'ў': 'o', 'Ў': 'O', 'ҳ': 'h', 'Ҳ': 'H',
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'j',
+        'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+        'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts',
+        'ч': 'ch', 'ш': 'sh', 'щ': 'sh', 'ъ': '', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+    }
+    for cyr, lat in cyr_map.items():
+        t = t.replace(cyr, lat)
+    return re.sub(r"['’`ʻʼ\-]", "", t).strip()
+
+def resolve_iana_offset(tz_name: str, lat: float, lon: float) -> float:
+    if tz_name:
         try:
-            async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-                resp = await client.get(f"https://namoz-vaqti.uz/index.php?format=json&region={slug}", headers=headers)
-                if resp.status_code == 200:
-                    j = resp.json()
-                    t = j.get("today", {}).get("times", {})
-                    meta = j.get("meta", {})
-                    return {
-                        "Fajr": t.get("bomdod"), "Sunrise": t.get("quyosh"), "Dhuhr": t.get("peshin"),
-                        "Asr": t.get("asr"), "Maghrib": t.get("shom"), "Isha": t.get("xufton")
-                    }, meta.get("region", {}).get("name", city_input.title()), meta.get("date", ""), "", "Oʻzbekiston Din ishlari qoʻmitasi"
+            zi = zoneinfo.ZoneInfo(tz_name)
+            return datetime.now(timezone.utc).astimezone(zi).utcoffset().total_seconds() / 3600.0
         except Exception:
             pass
+    return float(coords_to_tz_offset(lat, lon))
 
+async def fetch_prayer_times_by_coord(lat: float, lon: float, elevation: float, name: str, admin1: str, country: str, tz_name: str = "", user_id: int = None):
+    tz_offset = resolve_iana_offset(tz_name, lat, lon)
+    parts = [p for p in [name, admin1, country] if p]
+    display_name = ", ".join(parts[:2])
+    
+    if user_id:
+        save_user_timezone(user_id, int(round(tz_offset)), locked=True)
+        save_user_city(user_id, display_name)
+        save_user_coords(user_id, lat, lon, elevation or 0.0, country)
+
+    headers = {"User-Agent": "NunBot-Prayer/3.0"}
     try:
-        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-            resp = await client.get(f"https://api.aladhan.com/v1/timingsByAddress?address={urllib.parse.quote(city_input)}", headers=headers)
-            if resp.status_code == 200:
-                data = resp.json().get("data", {})
-                d = data.get("date", {})
-                return data.get("timings", {}), city_input.title(), d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan API"
+        aladhan_url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}&method=13&school=1"
+        client = get_http_client()
+        resp = await client.get(aladhan_url, headers=headers)
+        if resp.status_code == 200:
+            data = resp.json().get("data", {})
+            timings = data.get("timings", {})
+            d = data.get("date", {})
+            return timings, display_name, d.get("readable", ""), d.get("hijri", {}).get("date", ""), "AlAdhan / Diyanet Mezonlari"
     except Exception:
         pass
 
-    return None, None, None, None, None
+    calc = AstroPrayerTimes(lat, lon, elevation=elevation or 0.0, tz_offset=float(tz_offset), country_code=country)
+    now_dt = datetime.now()
+    timings = calc.calculate_times(now_dt)
+    date_str = now_dt.strftime("%d %b %Y")
+    return timings, display_name, date_str, "", "Diyanet & OʻMI Standarti (Astronomik Hisob)"
 
-def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_str: str, source: str, lang: str = 'uz'):
+async def fetch_prayer_times(city_input: str, user_id: int = None, user_lang: str = 'uz'):
+    norm_q = normalize_location_query(city_input)
+    headers = {"User-Agent": "NunBot-Prayer/3.0"}
+    geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(norm_q)}&count=5&language=en&format=json"
+    
+    candidates = []
+    try:
+        client = get_http_client()
+        resp = await client.get(geo_url, headers=headers)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if results:
+                def rank_res(item):
+                    cc = (item.get("country_code") or "").upper()
+                    if user_lang == 'uz' and cc == 'UZ': return 0
+                    if user_lang == 'tr' and cc == 'TR': return 0
+                    if user_lang == 'ru' and cc in ('RU', 'UZ', 'KZ', 'KG', 'TJ', 'AZ'): return 0
+                    return 1
+                results.sort(key=rank_res)
+                seen = set()
+                for r in results:
+                    nm = r.get("name", city_input.title())
+                    ad = r.get("admin1", "")
+                    co = r.get("country", "")
+                    key = (nm.lower(), ad.lower(), co.lower())
+                    if key not in seen:
+                        seen.add(key)
+                        candidates.append({
+                            'lat': float(r["latitude"]),
+                            'lon': float(r["longitude"]),
+                            'elevation': float(r.get("elevation", 0.0)),
+                            'name': nm,
+                            'admin1': ad,
+                            'country': co,
+                            'timezone': r.get("timezone", "")
+                        })
+    except Exception as e:
+        print(f"[GEO_PRAYER_ERROR] {e}")
+
+    # Fallback to local CITY_TIMEZONE_MAP if geocoding failed
+    if not candidates:
+        c_low = norm_q.lower()
+        if c_low in CITY_TIMEZONE_MAP or resolve_tz_from_city(c_low) is not None:
+            tz_detected = resolve_tz_from_city(c_low)
+            DEFAULT_COORDS = {
+                "toshkent": (41.2995, 69.2401, 450), "samarqand": (39.6270, 66.9749, 700),
+                "buxoro": (39.7681, 64.4556, 225), "andijon": (40.7821, 72.3442, 490),
+                "namangan": (40.9983, 71.6726, 450), "fargona": (40.3842, 71.7843, 590),
+                "qoqon": (40.5333, 70.9333, 400), "urganch": (41.5500, 60.6333, 90),
+                "nukus": (42.4602, 59.6166, 75), "qarshi": (38.8606, 65.7891, 375),
+                "navoiy": (40.0844, 65.3792, 380), "termiz": (37.2242, 67.2783, 300),
+                "istanbul": (41.0082, 28.9784, 40), "ankara": (39.9334, 32.8597, 938),
+                "moskva": (55.7558, 37.6173, 150),
+            }
+            if c_low in DEFAULT_COORDS:
+                lt, ln, el = DEFAULT_COORDS[c_low]
+                candidates.append({
+                    'lat': lt, 'lon': ln, 'elevation': el,
+                    'name': city_input.title(), 'admin1': '',
+                    'country': 'Uzbekistan' if user_lang=='uz' else 'Turkey',
+                    'timezone': ''
+                })
+
+    if not candidates:
+        return None, None, None, None, None, None
+
+    # If multiple distinct locations found and user didn't specify exact ID, return candidates for choice
+    if len(candidates) > 1:
+        return None, candidates, None, None, None, "MULTIPLE"
+
+    # Single location: calculate immediately
+    best = candidates[0]
+    timings, d_name, dt_s, h_s, src = await fetch_prayer_times_by_coord(
+        best['lat'], best['lon'], best['elevation'], best['name'], best['admin1'], best['country'], best['timezone'], user_id=user_id
+    )
+    return timings, d_name, dt_s, h_s, src, "SINGLE"
+
+
+def calculate_qibla(lat: float, lon: float) -> tuple:
+    kaaba_lat = math.radians(21.422487)
+    kaaba_lon = math.radians(39.826206)
+    user_lat = math.radians(lat)
+    user_lon = math.radians(lon)
+    delta_lon = kaaba_lon - user_lon
+    y = math.sin(delta_lon)
+    x = math.cos(user_lat) * math.tan(kaaba_lat) - math.sin(user_lat) * math.cos(delta_lon)
+    qibla_deg = math.degrees(math.atan2(y, x))
+    qibla_deg = (qibla_deg + 360.0) % 360.0
+
+    dirs = [
+        (22.5, 67.5, {'uz': ("Shimoli-sharq", "↗️"), 'tr': ("Kuzeydoğu", "↗️"), 'ru': ("Северо-восток", "↗️"), 'en': ("Northeast", "↗️")}),
+        (67.5, 112.5, {'uz': ("Sharq", "➡️"), 'tr': ("Doğu", "➡️"), 'ru': ("Восток", "➡️"), 'en': ("East", "➡️")}),
+        (112.5, 157.5, {'uz': ("Janubi-sharq", "↘️"), 'tr': ("Güneydoğu", "↘️"), 'ru': ("Юго-восток", "↘️"), 'en': ("Southeast", "↘️")}),
+        (157.5, 202.5, {'uz': ("Janub", "⬇️"), 'tr': ("Güney", "⬇️"), 'ru': ("Юг", "⬇️"), 'en': ("South", "⬇️")}),
+        (202.5, 247.5, {'uz': ("Janubi-gʻarb", "↙️"), 'tr': ("Güneybatı", "↙️"), 'ru': ("Юго-запад", "↙️"), 'en': ("Southwest", "↙️")}),
+        (247.5, 292.5, {'uz': ("Gʻarb", "⬅️"), 'tr': ("Batı", "⬅️"), 'ru': ("Запад", "⬅️"), 'en': ("West", "⬅️")}),
+        (292.5, 337.5, {'uz': ("Shimoli-gʻarb", "↖️"), 'tr': ("Kuzeybatı", "↖️"), 'ru': ("Северо-запад", "↖️"), 'en': ("Northwest", "↖️")}),
+    ]
+    compass_name = {'uz': ("Shimol", "⬆️"), 'tr': ("Kuzey", "⬆️"), 'ru': ("Север", "⬆️"), 'en': ("North", "⬆️")}
+    for low, high, trans in dirs:
+        if low <= qibla_deg < high:
+            compass_name = trans
+            break
+    return round(qibla_deg, 1), compass_name
+
+def get_next_prayer_info(timings: dict, now: datetime, lang: str = 'uz') -> str:
+    labels = {
+        'uz': {'Fajr': "Bomdod (Saharlik)", 'Sunrise': "Quyosh", 'Dhuhr': "Peshin", 'Asr': "Asr", 'Maghrib': "Shom (Iftorlik)", 'Isha': "Xufton", 'to': "vaqtiga", 'left': "qoldi", 'hrs': "soat", 'mins': "daq"},
+        'tr': {'Fajr': "İmsak (Sahur sonu)", 'Sunrise': "Güneş", 'Dhuhr': "Öğle", 'Asr': "İkindi", 'Maghrib': "Akşam (İftar)", 'Isha': "Yatsı", 'to': "vaktine", 'left': "kaldı", 'hrs': "saat", 'mins': "dk"},
+        'ru': {'Fajr': "Фаджр (Сухур)", 'Sunrise': "Восход", 'Dhuhr': "Зухр", 'Asr': "Аср", 'Maghrib': "Магриб (Ифтар)", 'Isha': "Иша", 'to': "до времени", 'left': "осталось", 'hrs': "ч.", 'mins': "мин."},
+        'en': {'Fajr': "Fajr (Suhoor)", 'Sunrise': "Sunrise", 'Dhuhr': "Dhuhr", 'Asr': "Asr", 'Maghrib': "Maghrib (Iftar)", 'Isha': "Isha", 'to': "until", 'left': "left", 'hrs': "hrs", 'mins': "mins"}
+    }
+    t_map = labels.get(lang, labels['uz'])
+    today_date = now.date()
+    prayer_order = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
+    upcoming = []
+    for p in prayer_order:
+        t_val = timings.get(p)
+        if not t_val: continue
+        parts = t_val.split(":")
+        h, m = int(parts[0]), int(parts[1][:2])
+        p_dt = datetime(today_date.year, today_date.month, today_date.day, h, m)
+        if p_dt > now:
+            upcoming.append((p, p_dt))
+
+    if not upcoming:
+        t_fajr = timings.get('Fajr', "05:00")
+        parts = t_fajr.split(":")
+        h, m = int(parts[0]), int(parts[1][:2])
+        tomorrow = today_date + timedelta(days=1)
+        next_dt = datetime(tomorrow.year, tomorrow.month, tomorrow.day, h, m)
+        next_prayer = 'Fajr'
+    else:
+        next_prayer, next_dt = upcoming[0]
+
+    diff = next_dt - now
+    total_seconds = int(diff.total_seconds())
+    diff_h = total_seconds // 3600
+    diff_m = (total_seconds % 3600) // 60
+    p_name = t_map[next_prayer]
+
+    if lang == 'ru':
+        return f"⏳ {t_map['to']} *{p_name}*: `{diff_h} {t_map['hrs']} {diff_m} {t_map['mins']} {t_map['left']}`"
+    elif lang == 'en':
+        return f"⏳ `{diff_h} {t_map['hrs']} {diff_m} {t_map['mins']} {t_map['left']}` {t_map['to']} *{p_name}*"
+    else:
+        return f"⏳ *{p_name}* {t_map['to']}: `{diff_h} {t_map['hrs']} {diff_m} {t_map['mins']} {t_map['left']}`"
+
+
+
+# =====================================================================
+# SAHİH HADİS-İ ŞERİF KOLEKSİYONU (BUHÂRÎ, MÜSLİM, RİYÂZÜ'S-SÂLİHÎN)
+# =====================================================================
+SAHIH_HADITHS = [
+    {
+        "id": 1,
+        "source": "Sahih al-Bukhari (1), Sahih Muslim (1907)",
+        "arabic": "إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ، وَإِنَّمَا لِكُلِّ امْرِئٍ مَا نَوَى",
+        "uz": "«Albatta, amallar niyatlarga bogʻliqdir va har bir kishiga faqat niyat qilgani beriladi.»",
+        "tr": "«Ameller ancak niyetlere göredir ve her kişi için ancak niyet ettiği şey vardır.»",
+        "ru": "«Поистине, дела оцениваются только по намерениям, и каждому человеку достанется лишь то, что он намеревался обрести.»",
+        "en": "«Actions are judged by intentions, and every person will get what they intended.»"
+    },
+    {
+        "id": 2,
+        "source": "Sahih al-Bukhari (13), Sahih Muslim (45)",
+        "arabic": "لاَ يُؤْمِنُ أَحَدُكُمْ حَتَّى يُحِبَّ لأَخِيهِ مَا يُحِبُّ لِنَفْسِهِ",
+        "uz": "«Sizlardan birortangiz oʻzi uchun yaxshi koʻrgan narsani birodari uchun ham yaxshi koʻrmaguncha haqiqiy moʻmin boʻla olmaydi.»",
+        "tr": "«Sizden biriniz, kendisi için arzu ettiğini kardeşi için de arzu etmedikçe (tam anlamıyla) iman etmiş olmaz.»",
+        "ru": "«Не уверует никто из вас до тех пор, пока не пожелает брату своему того же, чего желает самому себе.»",
+        "en": "«None of you truly believes until he loves for his brother what he loves for himself.»"
+    },
+    {
+        "id": 3,
+        "source": "Sahih al-Bukhari (6011), Sahih Muslim (2321)",
+        "arabic": "مَنْ كَانَ يُؤْمِنُ بِاللَّهِ وَالْيَوْمِ الآخِرِ فَلْيَقُلْ خَيْرًا أَوْ لِيَصْمُتْ",
+        "uz": "«Kim Allohga va oxirat kuniga iymon keltirgan boʻlsa, faqat yaxshi soʻz aytsin yoki jim tursin!»",
+        "tr": "«Kim Allah'a ve ahiret gününe iman ediyorsa, ya hayır söylesin ya da sussun!»",
+        "ru": "«Кто верует в Аллаха и в Последний день, пусть говорит благое или молчит.»",
+        "en": "«Whoever believes in Allah and the Last Day, let him speak good or remain silent.»"
+    },
+    {
+        "id": 4,
+        "source": "Sahih Muslim (2699)",
+        "arabic": "مَنْ سَلَكَ طَرِيقًا يَلْتَمِسُ فِيهِ عِلْمًا سَهَّلَ اللَّهُ لَهُ بِهِ طَرِيقًا إِلَى الْجَنَّةِ",
+        "uz": "«Kim ilm talab qilish yoʻliga qadam qoʻysa, Alloh taolo u tufayli unga jannat yoʻlini osonlashtiradi.»",
+        "tr": "«Kim ilim öğrenmek için bir yola çıkarsa, Allah ona cennete giden yolu kolaylaştırır.»",
+        "ru": "«Тому, кто встал на путь в поисках знаний, Аллах облегчит путь в Рай.»",
+        "en": "«Whoever treads a path in search of knowledge, Allah will make easy for him the path to Paradise.»"
+    },
+    {
+        "id": 5,
+        "source": "Sahih al-Bukhari (6018), Sahih Muslim (2564)",
+        "arabic": "الرَّاحِمُونَ يَرْحَمُهُمُ الرَّحْمَنُ، ارْحَمُوا مَنْ فِي الأَرْضِ يَرْحَمْكُمْ مَنْ فِي السَّمَاءِ",
+        "uz": "«Rahm qiluvchilarga Rahmon boʻlgan Alloh rahm qiladi. Yerdagilarga rahm qiling, shunda osmondagi Zot sizga rahm qiladi.»",
+        "tr": "«Merhamet edenlere Rahmân da merhamet eder. Siz yerdekilere merhamet edin ki, gökteki de size merhamet etsin.»",
+        "ru": "«Милостивый помилует милосердных. Будьте милосердны к тем, кто на земле, и вас помилует Тот, Кто на небесах.»",
+        "en": "«The merciful are shown mercy by the Most Merciful. Be merciful to those on earth, and the One in the heavens will be merciful to you.»"
+    },
+    {
+        "id": 6,
+        "source": "Sahih al-Bukhari (5027)",
+        "arabic": "خَيْرُكُمْ مَنْ تَعَلَّمَ الْقُرْآنَ وَعَلَّمَهُ",
+        "uz": "«Sizlarning eng yaxshingiz Qurʼonni oʻrganib, uni boshqalarga oʻrgatganingizdir.»",
+        "tr": "«Sizin en hayırlınız, Kur'an'ı öğrenen ve öğretendir.»",
+        "ru": "«Лучшими из вас являются те, кто изучал Коран и обучал ему других.»",
+        "en": "«The best among you are those who learn the Quran and teach it.»"
+    },
+    {
+        "id": 7,
+        "source": "Sahih al-Bukhari (6412), Sahih Muslim (2687)",
+        "arabic": "كَلِمَتَانِ خَفِيفَتَانِ عَلَى اللِّسَانِ، ثَقِيلَتَانِ فِي الْمِيزَانِ، حَبِيبَتَانِ إِلَى الرَّحْمَنِ: سُبْحَانَ اللَّهِ وَبِحَمْدِهِ، سُبْحَانَ اللَّهِ الْعَظِيمِ",
+        "uz": "«Ikkita kalima borki, ular tilga yengil, tarozida ogʻir va Rahmonga suyuklidir: Subhanallohi va bihamdihi, Subhanallohil ʼAziym.»",
+        "tr": "«Dile hafif, mizanda ağır, Rahmân'a sevgili iki kelime vardır: Sübhânallâhi ve bihamdihî, Sübhânallâhil azîm.»",
+        "ru": "«Два слова легки для языка, тяжелы на весах и любимы Милостивым: 'Пречист Аллах и хвала Ему, Пречист Аллах Великий'.»",
+        "en": "«Two phrases are light on the tongue, heavy on the scale, and beloved to the Most Merciful: 'Subhanallahi wa bihamdihi, Subhanallahil-Azim'.»"
+    },
+    {
+        "id": 8,
+        "source": "Sahih al-Bukhari (6407)",
+        "arabic": "مَثَلُ الَّذِي يَذْكُرُ رَبَّهُ وَالَّذِي لاَ يَذْكُرُ رَبَّهُ مَثَلُ الْحَىِّ وَالْمَيِّتِ",
+        "uz": "«Rabbini zikr qiluvchi bilan zikr qilmaydigan kimsaning misoli tirik bilan oʻlikning misoli kabidir.»",
+        "tr": "«Rabbini zikreden kimse ile zikretmeyen kimsenin misali, diri ile ölü gibidir.»",
+        "ru": "«Тот, кто поминает своего Господа, и тот, кто не поминает Его, подобны живому и мертвому.»",
+        "en": "«The example of the one who remembers his Lord and the one who does not is like the living and the dead.»"
+    },
+    {
+        "id": 9,
+        "source": "Sahih al-Bukhari (6416), Sahih Muslim (2742)",
+        "arabic": "نِعْمَتَانِ مَغْبُونٌ فِيهِمَا كَثِيرٌ مِنَ النَّاسِ: الصِّحَّةُ وَالْفَرَاغُ",
+        "uz": "«Ikki ulugʻ neʼmat borki, koʻp odamlar undan gʻaflatda qolib, aldanib qoladilar: sogʻlik va boʻsh vaqt.»",
+        "tr": "«İki nimet vardır ki, insanların çoğu bunların kıymetini bilmekte aldanmıştır: Sağlık ve boş vakit.»",
+        "ru": "«Двух благ лишены многие люди: здоровья и свободного времени.»",
+        "en": "«There are two blessings which many people lose: health and free time for doing good.»"
+    },
+    {
+        "id": 10,
+        "source": "Sahih Muslim (2564)",
+        "arabic": "الْمُسْلِمُ مَنْ سَلِمَ الْمُسْلِمُونَ مِنْ لِسَانِهِ وَيَدِهِ",
+        "uz": "«Haqiqiy musulmon – boshqa musulmonlar uning tili va qoʻlidan omonlikda boʻlgan kishidir.»",
+        "tr": "«Müslüman, dilinden ve elinden diğer Müslümanların emin olduğu kimsedir.»",
+        "ru": "«Мусульманин — это тот, от языка и рук которого находятся в безопасности другие мусульмане.»",
+        "en": "«A true Muslim is the one from whose tongue and hands other Muslims are safe.»"
+    },
+    {
+        "id": 11,
+        "source": "Sahih al-Bukhari (6116), Sahih Muslim (47)",
+        "arabic": "تَبَسُّمُكَ فِي وَجْهِ أَخِيكَ لَكَ صَدَقَةٌ",
+        "uz": "«Birodaring yuziga tabassum bilan boqishing ham sen uchun bir sadaqadir.»",
+        "tr": "«Kardeşine tebessüm etmen senin için bir sadakadır.»",
+        "ru": "«Твоя улыбка в лицо брату твоему — это милостыня.»",
+        "en": "«Your smile in the face of your brother is charity for you.»"
+    },
+    {
+        "id": 12,
+        "source": "Sahih al-Bukhari (24)",
+        "arabic": "الْحَيَاءُ لاَ يَأْتِي إِلاَّ بِخَيْرٍ",
+        "uz": "«Hayo faqatgina yaxshilik keltiradi.»",
+        "tr": "«Haya, sadece ve sadece hayır getirir.»",
+        "ru": "«Стыдливость не приносит ничего, кроме блага.»",
+        "en": "«Modesty does not bring anything except good.»"
+    }
+]
+
+def get_daily_hadith(now: datetime, offset: int = 0) -> dict:
+    day_num = now.timetuple().tm_yday
+    idx = (day_num + offset) % len(SAHIH_HADITHS)
+    return SAHIH_HADITHS[idx], idx
+
+def format_daily_hadith_card(hadith: dict, now: datetime, lang: str = 'uz') -> str:
+    headers = {
+        'uz': "*NUN PROJECT // KUNNING SAHIH HADISI*",
+        'tr': "*NUN PROJECT // GÜNÜN SAHİH HADİS-İ ŞERİFİ*",
+        'ru': "*NUN PROJECT // ДОСТОВЕРНЫЙ ХАДИС ДНЯ*",
+        'en': "*NUN PROJECT // DAILY SAHIH HADITH*"
+    }
+    hdr = headers.get(lang, headers['uz'])
+    date_str = now.strftime("%d.%m.%Y")
+    ar = hadith['arabic']
+    translation = hadith.get(lang, hadith['uz'])
+    source = hadith['source']
+    
+    return (
+        f"{hdr}\n"
+        f"📅 `{date_str}`\n\n"
+        f"{ar}\n\n"
+        f"{translation}\n\n"
+        f"📚 *{source}*"
+    )
+
+# =====================================================================
+# HİCRİ TAKVİM VE DİNİ GÜNLER / ETKİNLİKLER (2026 - 2027)
+# =====================================================================
+ISLAMIC_EVENTS = [
+    ("2026-01-15", {'uz': "Isro va Meʼroj kechasi", 'tr': "Mirac Kandili", 'ru': "Ночь Мирадж", 'en': "Laylat al-Mi'raj"}),
+    ("2026-02-02", {'uz': "Barot kechasi", 'tr': "Berat Kandili", 'ru': "Ночь Бараат", 'en': "Laylat al-Bara'at"}),
+    ("2026-02-18", {'uz': "Muborak Ramazon oyining 1-kuni", 'tr': "Ramazan Başlangıcı (İlk Oruç)", 'ru': "Начало месяца Рамадан", 'en': "First Day of Ramadan"}),
+    ("2026-03-16", {'uz': "Qadr kechasi (Laylatul Qadr)", 'tr': "Kadir Gecesi", 'ru': "Ночь аль-Кадр", 'en': "Laylat al-Qadr"}),
+    ("2026-03-20", {'uz': "Ramazon hayiti (Iyd al-Fitr)", 'tr': "Ramazan Bayramı (1. Gün)", 'ru': "Праздник Ураза-байрам", 'en': "Eid al-Fitr"}),
+    ("2026-05-26", {'uz': "Arafa kuni", 'tr': "Kurban Arefe Günü", 'ru': "День Арафа", 'en': "Day of Arafah"}),
+    ("2026-05-27", {'uz': "Qurbon hayiti (Iyd al-Adha)", 'tr': "Kurban Bayramı (1. Gün)", 'ru': "Праздник Курбан-байрам", 'en': "Eid al-Adha"}),
+    ("2026-06-16", {'uz': "Yangi Hijriy 1448-yil", 'tr': "Hicri Yılbaşı (1 Muharrem 1448)", 'ru': "Мусульманский Новый год (1448 г.х.)", 'en': "Islamic New Year (1448 AH)"}),
+    ("2026-06-25", {'uz': "Ashuro kuni", 'tr': "Aşure Günü", 'ru': "День Ашура", 'en': "Day of Ashura"}),
+    ("2026-08-25", {'uz': "Mavlid kechasi", 'tr': "Mevlid Kandili", 'ru': "Мавлид ан-Наби", 'en': "Mawlid al-Nabi"}),
+    ("2026-12-10", {'uz': "Muborak Uch Oylar (1 Rajab)", 'tr': "Üç Ayların Başlangıcı (1 Recep)", 'ru': "Начало трех священных месяцев (Раджаб)", 'en': "Beginning of Three Holy Months"}),
+    ("2026-12-17", {'uz': "Ragʻoib kechasi", 'tr': "Regaib Kandili", 'ru': "Ночь Рагаиб", 'en': "Laylat al-Raghaib"}),
+    ("2027-01-05", {'uz': "Isro va Meʼroj kechasi", 'tr': "Mirac Kandili", 'ru': "Ночь Мирадж", 'en': "Laylat al-Mi'raj"}),
+    ("2027-01-22", {'uz': "Barot kechasi", 'tr': "Berat Kandili", 'ru': "Ночь Бараат", 'en': "Laylat al-Bara'at"}),
+    ("2027-02-08", {'uz': "Muborak Ramazon oyining 1-kuni", 'tr': "Ramazan Başlangıcı", 'ru': "Начало месяца Рамадан", 'en': "First Day of Ramadan"}),
+    ("2027-03-06", {'uz': "Qadr kechasi", 'tr': "Kadir Gecesi", 'ru': "Ночь аль-Кадр", 'en': "Laylat al-Qadr"}),
+    ("2027-03-10", {'uz': "Ramazon hayiti", 'tr': "Ramazan Bayramı", 'ru': "Праздник Ураза-байрам", 'en': "Eid al-Fitr"}),
+    ("2027-05-16", {'uz': "Qurbon hayiti", 'tr': "Kurban Bayramı", 'ru': "Праздник Курбан-байрам", 'en': "Eid al-Adha"}),
+]
+
+def format_islamic_calendar_card(now: datetime, lang: str = 'uz') -> str:
+    today = now.date()
+    headers = {
+        'uz': "*NUN PROJECT // HIJRIY TAQVIM VA DINIY KUNLAR*",
+        'tr': "*NUN PROJECT // HİCRİ TAKVİM VE DİNİ GÜNLER*",
+        'ru': "*NUN PROJECT // МУСУЛЬМАНСКИЙ КАЛЕНДАРЬ И ПРАЗДНИКИ*",
+        'en': "*NUN PROJECT // ISLAMIC CALENDAR & HOLY DAYS*",
+    }
+    subheads = {
+        'uz': "Yaqinlashib kelayotgan muborak kunlar va kechalar:",
+        'tr': "Yaklaşan mübarek gün ve geceler:",
+        'ru': "Ближайшие священные дни и ночи:",
+        'en': "Upcoming blessed days and nights:",
+    }
+    lbl_left = {'uz': "kun qoldi", 'tr': "gün kaldı", 'ru': "дн. осталось", 'en': "days left"}
+    lbl_today = {'uz': "BUGUN!", 'tr': "BUGÜN!", 'ru': "СЕГОДНЯ!", 'en': "TODAY!"}
+    
+    lines = [headers.get(lang, headers['uz']), f"📅 `{today.strftime('%d.%m.%Y')}`\n", f"_{subheads.get(lang, subheads['uz'])}_\n"]
+    upcoming_count = 0
+    for dt_str, names in ISLAMIC_EVENTS:
+        ev_date = datetime.strptime(dt_str, "%Y-%m-%d").date()
+        diff = (ev_date - today).days
+        if diff >= 0 and upcoming_count < 6:
+            name = names.get(lang, names['uz'])
+            cd_str = f"🎉 *{lbl_today.get(lang, lbl_today['uz'])}*" if diff == 0 else f"⏳ `{diff} {lbl_left.get(lang, lbl_left['uz'])}`"
+            lines.append(f"▫️ *{name}*\n   📅 `{ev_date.strftime('%d.%m.%Y')}` — {cd_str}\n")
+            upcoming_count += 1
+    return "\n".join(lines)
+
+def generate_imsakiye_pdf(output_path: str, location_name: str, lat: float, lon: float, elevation: float, tz_offset: float, country_code: str, lang: str = 'uz'):
+    from reportlab.lib.styles import ParagraphStyle
+    doc = SimpleDocTemplate(output_path, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
+    styles = getSampleStyleSheet()
+    
+    headers_lang = {
+        'uz': ("30 KUNLIK NAMOZ VA IMSOKIYA TAQVIMI", "NUN PROJECT // AKADEMIK VA IBODAT MARKAZI",
+               ["Sana", "Kun", "Bomdod\n(Saharlik)", "Quyosh", "Peshin", "Asr", "Shom\n(Iftorlik)", "Xufton"]),
+        'tr': ("30 GÜNLÜK NAMAZ VE İMSAKİYE VAKİTLERİ", "NUN PROJECT // DİJİTAL ASİSTAN",
+               ["Tarih", "Gün", "İmsak\n(Sahur)", "Güneş", "Öğle", "İkindi", "Akşam\n(İftar)", "Yatsı"]),
+        'ru': ("РАСПИСАНИЕ НАМАЗА НА 30 ДНЕЙ", "NUN PROJECT // ЦЕНТР ЗНАНИЙ",
+               ["Дата", "День", "Фаджр\n(Сухур)", "Восход", "Зухр", "Аср", "Магриб\n(Ифтар)", "Иша"]),
+        'en': ("30-DAY PRAYER & RAMADAN TIMETABLE", "NUN PROJECT // DIGITAL COMPANION",
+               ["Date", "Day", "Fajr\n(Suhoor)", "Sunrise", "Dhuhr", "Asr", "Maghrib\n(Iftar)", "Isha"]),
+    }
+    h_title, sub_title, col_names = headers_lang.get(lang, headers_lang['uz'])
+    days_short = {
+        'uz': ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"],
+        'tr': ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"],
+        'ru': ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
+        'en': ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    }
+    
+    calc = AstroPrayerTimes(lat, lon, elevation=elevation, tz_offset=tz_offset, country_code=country_code)
+    table_data = [col_names]
+    start_date = datetime.now().date()
+    for i in range(30):
+        cur_d = start_date + timedelta(days=i)
+        dt = datetime(cur_d.year, cur_d.month, cur_d.day)
+        times = calc.calculate_times(dt)
+        day_str = days_short.get(lang, days_short['uz'])[cur_d.weekday()]
+        row = [cur_d.strftime("%d.%m"), day_str, times['Fajr'], times['Sunrise'], times['Dhuhr'], times['Asr'], times['Maghrib'], times['Isha']]
+        table_data.append(row)
+        
+    story = []
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=15, leading=19, alignment=1, textColor=colors.HexColor('#111111'))
+    sub_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=13, alignment=1, textColor=colors.HexColor('#555555'))
+    story.append(Paragraph(f"<b>{h_title}</b>", title_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"📍 {location_name.upper()} | {sub_title}", sub_style))
+    story.append(Spacer(1, 10))
+    
+    col_widths = [55, 45, 74, 60, 60, 60, 74, 60]
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t_style = [
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1e3a5f')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
+        ('TOPPADDING', (0,0), (-1,-1), 2.5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#d0d7de')),
+    ]
+    for row_idx in range(1, len(table_data)):
+        if row_idx % 2 == 0:
+            t_style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f6f8fa')))
+        cur_d = start_date + timedelta(days=row_idx-1)
+        if cur_d.weekday() == 4:
+            t_style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#e8f4ea')))
+            t_style.append(('TEXTCOLOR', (1, row_idx), (1, row_idx), colors.HexColor('#137333')))
+    t.setStyle(TableStyle(t_style))
+    story.append(t)
+    story.append(Spacer(1, 8))
+    footer_style = ParagraphStyle('DocFooter', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8, leading=10, alignment=1, textColor=colors.HexColor('#777777'))
+    story.append(Paragraph("Ehl-i Sünnet / Diyanet ve OʻMI standart astronomik mezonlari bilan tayyorlandi.", footer_style))
+    doc.build(story)
+    return True
+
+
+def format_todo_card(user_id: int, now: datetime, lang: str = 'uz'):
+    tasks = get_user_todos(user_id)
+    headers = {
+        'uz': "*NUN PROJECT // KUNLIK DARS REJASI VA VAZIFALAR*",
+        'tr': "*NUN PROJECT // GÜNLÜK DERS HEDEFLERİ (TO-DO)*",
+        'ru': "*NUN PROJECT // ПЛАН И ЗАДАЧИ НА ДЕНЬ (TO-DO)*",
+        'en': "*NUN PROJECT // DAILY STUDY GOALS (TO-DO)*"
+    }
+    hdr = headers.get(lang, headers['uz'])
+    date_str = now.strftime("%d.%m.%Y")
+    
+    if not tasks:
+        empty_lbl = {
+            'uz': "Sizda bugun uchun faol vazifalar yoʻq.\nQuyidagi tugma orqali yangi maqsad qoʻshing:",
+            'tr': "Bugün için henüz bir ders hedefi eklemediniz.\nAşağıdaki butonla yeni hedef ekleyin:",
+            'ru': "У вас пока нет задач на сегодня.\nДобавьте цель с помощью кнопки ниже:",
+            'en': "You have no study tasks for today yet.\nAdd a new goal using the button below:"
+        }
+        return f"{hdr}\n📅 `{date_str}`\n\n_{empty_lbl.get(lang, empty_lbl['uz'])}_"
+
+    lines = [hdr, f"📅 `{date_str}`\n"]
+    completed_cnt = sum(1 for t in tasks if t['done'])
+    for idx, t in enumerate(tasks):
+        icon = "✅" if t['done'] else "⬜"
+        lines.append(f"{icon} `[{idx+1}]` {safe_md(t['text'])}")
+        
+    pct = int((completed_cnt / len(tasks)) * 100)
+    summary_lbl = {
+        'uz': f"\n📊 Jami: {len(tasks)} ta | Bajarildi: {completed_cnt} ta (`{pct}%`)",
+        'tr': f"\n📊 Toplam: {len(tasks)} | Tamamlanan: {completed_cnt} (`{pct}%`)",
+        'ru': f"\n📊 Всего: {len(tasks)} | Выполнено: {completed_cnt} (`{pct}%`)",
+        'en': f"\n📊 Total: {len(tasks)} | Done: {completed_cnt} (`{pct}%`)"
+    }
+    lines.append(summary_lbl.get(lang, summary_lbl['uz']))
+    return "\n".join(lines)
+
+def build_todo_keyboard(user_id: int, lang: str = 'uz'):
+    tasks = get_user_todos(user_id)
+    t = TEXTS.get(lang, TEXTS['uz'])
+    rows = []
+    
+    # Toggle buttons row (up to 5 per row)
+    if tasks:
+        toggle_row = []
+        for idx, it in enumerate(tasks[:5]):
+            icon = "☑️" if not it['done'] else "↩️"
+            toggle_row.append(InlineKeyboardButton(f"{icon} {idx+1}", callback_data=f"todo_tog_{idx}"))
+        rows.append(toggle_row)
+        if len(tasks) > 5:
+            toggle_row2 = []
+            for idx, it in enumerate(tasks[5:10], start=5):
+                icon = "☑️" if not it['done'] else "↩️"
+                toggle_row2.append(InlineKeyboardButton(f"{icon} {idx+1}", callback_data=f"todo_tog_{idx}"))
+            rows.append(toggle_row2)
+
+    lbl_add = {'uz': "➕ Maqsad qoʻshish", 'tr': "➕ Hedef Ekle", 'ru': "➕ Добавить цель", 'en': "➕ Add Goal"}.get(lang, "➕ Add")
+    lbl_clear = {'uz': "🗑️ Bajarilganlarni tozalash", 'tr': "🗑️ Tamamlananları Temizle", 'ru': "🗑️ Очистить выполненные", 'en': "🗑️ Clear Done"}.get(lang, "🗑️ Clear")
+    lbl_back = {'uz': "🔙 Imtihonlarga qaytish", 'tr': "🔙 Sınavlara Dön", 'ru': "🔙 К экзаменам", 'en': "🔙 Back to Exams"}.get(lang, "🔙 Back")
+    
+    rows.append([
+        InlineKeyboardButton(lbl_add, callback_data="todo_add"),
+        InlineKeyboardButton(lbl_clear, callback_data="todo_clear")
+    ])
+    rows.append([InlineKeyboardButton(lbl_back, callback_data="exam_back_hub")])
+    return InlineKeyboardMarkup(rows)
+
+def get_prayer_hub_keyboard(user_id, lang: str = 'uz', lat: float = None, lon: float = None):
+    t = TEXTS.get(lang, TEXTS['uz'])
+    rows = []
+    rows.append([
+        InlineKeyboardButton(t['btn_adhkar_hub'], callback_data="open_adhkar_hub"),
+        InlineKeyboardButton(t['btn_daily_hadith'], callback_data="open_hadith_0")
+    ])
+    rows.append([
+        InlineKeyboardButton(t['btn_hijri_cal'], callback_data="open_hijri_cal"),
+        InlineKeyboardButton(t['btn_imsakiye_pdf'], callback_data="gen_imsakiye_pdf")
+    ])
+    qibla_url = None
+    target_base = get_target_ping_url()
+    if target_base and lat and lon:
+        base_dom = target_base.replace("/ping", "")
+        qibla_url = f"{base_dom}/qibla?lat={lat}&lon={lon}"
+    btn_qibla = InlineKeyboardButton(t['btn_qibla_compass'], url=qibla_url) if qibla_url else InlineKeyboardButton(t['btn_qibla_compass'], callback_data="show_qibla_info")
+    rows.append([
+        btn_qibla,
+        InlineKeyboardButton(t['btn_prayer_notif'], callback_data="open_prayer_notif_menu")
+    ])
+    rows.append([
+        InlineKeyboardButton(t['btn_change_prayer_city'], callback_data="change_prayer_city")
+    ])
+    return InlineKeyboardMarkup(rows)
+
+def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_str: str, source: str, lang: str = 'uz', lat: float = None, lon: float = None, user_now: datetime = None, user_id: int = None):
+    if (lat is None or lon is None) and user_id is not None:
+        uc = get_user_coords(user_id)
+        if uc:
+            lat = uc.get('lat')
+            lon = uc.get('lon')
     t_f = clean_time_str(timings.get("Fajr"))
     t_s = clean_time_str(timings.get("Sunrise"))
     t_d = clean_time_str(timings.get("Dhuhr"))
@@ -923,6 +1838,17 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         lbls = ("BOMDOD", "QUYOSH", "PESHIN", "ASR", "SHOM", "XUFTON")
         hdr = "*NUN PROJECT // NAMOZ VAQTLARI*"
 
+    if not user_now:
+        user_now = datetime.now()
+    countdown_str = get_next_prayer_info(timings, user_now, lang)
+
+    qibla_section = ""
+    if lat is not None and lon is not None:
+        q_lbl = {'uz': "Qibla yoʻnalishi", 'tr': "Kıble Açısı", 'ru': "Направление Киблы", 'en': "Qibla Direction"}.get(lang, "Qibla")
+        q_deg, q_comp = calculate_qibla(lat, lon)
+        d_name, emoji = q_comp.get(lang, q_comp['uz'])
+        qibla_section = f"🧭 *{q_lbl}:* `{q_deg}°` {emoji} *{d_name}*\n"
+
     return (
         f"{hdr}\n"
         f"📍 *[ {display_name.upper()} ]*\n"
@@ -935,6 +1861,8 @@ def format_prayer_card(display_name: str, timings: dict, date_str: str, hijri_st
         f"  ▫️ *{lbls[4]}:*    `{t_m}`\n"
         f"  ▫️ *{lbls[5]}:*    `{t_i}`\n"
         f"└────────────────────────────┘\n"
+        f"{countdown_str}\n"
+        f"{qibla_section}\n"
         f"_{source}_"
     )
 
@@ -975,64 +1903,64 @@ async def fetch_weather(city_query: str, lang: str = 'uz'):
     geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(clean_q)}&count=1&language=en&format=json"
     
     try:
-        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-            resp = await client.get(geo_url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                results = data.get("results")
-                if results and len(results) > 0:
-                    best = results[0]
-                    lat = best["latitude"]
-                    lon = best["longitude"]
-                    name = best.get("name", city_query.title())
-                    admin1 = best.get("admin1", "")
-                    country = best.get("country", "")
+        client = get_http_client()
+        resp = await client.get(geo_url, headers=headers)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results")
+            if results and len(results) > 0:
+                best = results[0]
+                lat = best["latitude"]
+                lon = best["longitude"]
+                name = best.get("name", city_query.title())
+                admin1 = best.get("admin1", "")
+                country = best.get("country", "")
                     
-                    forecast_url = (
-                        f"https://api.open-meteo.com/v1/forecast?"
-                        f"latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m"
-                        f"&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto"
-                    )
-                    w_resp = await client.get(forecast_url, headers=headers)
-                    if w_resp.status_code == 200:
-                        w_data = w_resp.json()
-                        cur = w_data.get("current", {})
-                        daily = w_data.get("daily", {})
+                forecast_url = (
+                    f"https://api.open-meteo.com/v1/forecast?"
+                    f"latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m"
+                    f"&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto"
+                )
+                w_resp = await client.get(forecast_url, headers=headers)
+                if w_resp.status_code == 200:
+                    w_data = w_resp.json()
+                    cur = w_data.get("current", {})
+                    daily = w_data.get("daily", {})
                         
-                        cur_temp = cur.get("temperature_2m", 0.0)
-                        feels_like = cur.get("apparent_temperature", cur_temp)
-                        humidity = cur.get("relative_humidity_2m", 0)
-                        wind_speed = cur.get("wind_speed_10m", 0.0)
-                        w_code = cur.get("weather_code", 0)
+                    cur_temp = cur.get("temperature_2m", 0.0)
+                    feels_like = cur.get("apparent_temperature", cur_temp)
+                    humidity = cur.get("relative_humidity_2m", 0)
+                    wind_speed = cur.get("wind_speed_10m", 0.0)
+                    w_code = cur.get("weather_code", 0)
                         
-                        t_min = daily.get("temperature_2m_min", [cur_temp])[0] if daily.get("temperature_2m_min") else cur_temp
-                        t_max = daily.get("temperature_2m_max", [cur_temp])[0] if daily.get("temperature_2m_max") else cur_temp
+                    t_min = daily.get("temperature_2m_min", [cur_temp])[0] if daily.get("temperature_2m_min") else cur_temp
+                    t_max = daily.get("temperature_2m_max", [cur_temp])[0] if daily.get("temperature_2m_max") else cur_temp
                         
-                        return name, admin1, country, cur_temp, feels_like, humidity, wind_speed, w_code, t_min, t_max
+                    return name, admin1, country, cur_temp, feels_like, humidity, wind_speed, w_code, t_min, t_max
     except Exception as e:
         print(f"[WEATHER_GEO_ERROR] {e}")
 
     try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(f"https://wttr.in/{urllib.parse.quote(city_query)}?format=j1", headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                cur_cond = data.get("current_condition", [{}])[0]
-                area = data.get("nearest_area", [{}])[0]
-                name = area.get("areaName", [{}])[0].get("value", city_query.title())
-                country = area.get("country", [{}])[0].get("value", "")
-                admin1 = area.get("region", [{}])[0].get("value", "")
+        client = get_http_client()
+        resp = await client.get(f"https://wttr.in/{urllib.parse.quote(city_query)}?format=j1", headers=headers)
+        if resp.status_code == 200:
+            data = resp.json()
+            cur_cond = data.get("current_condition", [{}])[0]
+            area = data.get("nearest_area", [{}])[0]
+            name = area.get("areaName", [{}])[0].get("value", city_query.title())
+            country = area.get("country", [{}])[0].get("value", "")
+            admin1 = area.get("region", [{}])[0].get("value", "")
                 
-                cur_temp = float(cur_cond.get("temp_C", 0.0))
-                feels_like = float(cur_cond.get("FeelsLikeC", cur_temp))
-                humidity = int(cur_cond.get("humidity", 0))
-                wind_speed = float(cur_cond.get("windspeedKmph", 0.0))
+            cur_temp = float(cur_cond.get("temp_C", 0.0))
+            feels_like = float(cur_cond.get("FeelsLikeC", cur_temp))
+            humidity = int(cur_cond.get("humidity", 0))
+            wind_speed = float(cur_cond.get("windspeedKmph", 0.0))
                 
-                weather = data.get("weather", [{}])[0]
-                t_min = float(weather.get("mintempC", cur_temp))
-                t_max = float(weather.get("maxtempC", cur_temp))
+            weather = data.get("weather", [{}])[0]
+            t_min = float(weather.get("mintempC", cur_temp))
+            t_max = float(weather.get("maxtempC", cur_temp))
                 
-                return name, admin1, country, cur_temp, feels_like, humidity, wind_speed, 1, t_min, t_max
+            return name, admin1, country, cur_temp, feels_like, humidity, wind_speed, 1, t_min, t_max
     except Exception as e:
         print(f"[WEATHER_WTTR_FALLBACK_ERROR] {e}")
         
@@ -1104,7 +2032,7 @@ def format_scheduler_card(title: str, dt: datetime, lang: str = 'uz') -> str:
 
     return (
         f"{header}\n"
-        f"📌 {lbl_exam}: *{clean_title}*\n\n"
+        f"📌 {lbl_exam}: *{safe_md(clean_title)}*\n\n"
         f"┌──────────────────────────────┐\n"
         f"  🗓 {lbl_date}:   `{dt.day} {m_name} {dt.year}`\n"
         f"  ⏰ {lbl_time}:   `{dt.strftime('%H : %M')}`\n"
@@ -1263,7 +2191,14 @@ TEXTS = {
         'welcome': "Assalomu alaykum! Nun Botga xush kelibsiz.\nQuyidagi menyudan kerakli boʻlimni tanlang:",
         'menu_title': "📋 Asosiy menyu:",
         'btn_video': "🎬 Video yuklash",
-        'btn_prayer': "🕌 Namoz vaqtlari",
+                'btn_prayer': "🕌 Namoz & Ibodat",
+        'btn_adhkar_hub': "📿 Zikrlar & Salovatlar",
+        'btn_daily_hadith': "📖 Kunning hadisi",
+        'btn_exam_todo': "📝 Kunlik vazifalar (To-Do)",
+        'prompt_todo_add': "✍️ Bajarmoqchi boʻlgan yangi dars maqsadingizni yozib yuboring:\n_(Masalan: Matematika 20 ta masala, Fizika laboratoriya tayyorlash)_ ",
+        'btn_imsakiye_pdf': "📄 30 kunlik Imsokiya (PDF)",
+        'btn_qibla_compass': "🧭 Jonli Qibla kompasi",
+        'btn_hijri_cal': "🌙 Diniy kunlar taqvimi",
         'btn_weather': "🌤️ Ob-havo",
         'btn_pdf_hub': "📄 PDF & Hujjatlar",
         'btn_exam': "🎓 Imtihon & Taymer",
@@ -1342,6 +2277,19 @@ TEXTS = {
         'city_not_found': "Shahar topilmadi. Shahar nomini toʻgʻri yozing.",
         'weather_loading': "🌤️ Ob-havo maʼlumoti olinmoqda...",
         'weather_city_not_found': "Aholi punkti topilmadi. Iltimos, shahar yoki tuman nomini toʻgʻri kiriting.",
+        'loc_prompt_multimatch': "📍 *BIR NECHTA HUDUD TOPILDI*\n\nIltimos, sizga kerakli boʻlgan hududni tanlang:",
+        'btn_prayer_notif': "🔔 Ezon & Vaqt bildirishnomasi",
+        'notif_menu_title': "🔔 *NAMOZ VAQTI BILDIRISHNOMALARI*",
+        'notif_menu_desc': "Namoz vaqtlari kirganida bot sizga avtomatik eslatma yuborsinmi?\nKerakli rejimni tanlang:",
+        'notif_btn_on_time': "✅ Aynan vaqtida (Ezon)",
+        'notif_btn_15m': "⏱️ 15 daqiqa oldin",
+        'notif_btn_off': "🔕 Oʻchirish",
+        'notif_saved': "Bildirishnoma sozlamasi saqlandi!",
+        'notif_alert_title': "NAMOZ VAQTI BILDIRISHNOMASI",
+        'notif_entered': "vaqti kirdi!",
+        'notif_verse': "«Albatta, namoz moʻminlarga vaqtida tayinlangan farzdir.» (Niso, 103)",
+        'friday_title': "JUMA AYYOMINGIZ MUBORAK BOʻLSIN!",
+        'friday_text': "Bugun muborak Juma kuni! Paygʻambarimizga (s.a.v.) koʻproq salovat aytish va Kahf surasini oʻqish sunnatdir. 🤲",
         'downloading': "Media yuklab olinmoqda, iltimos kuting...",
         'uploading': "Telegramga yuklanmoqda...",
         'error_size': "⚠️ Fayl hajmi Telegram Bot cheklovidan (50 MB) katta. Iltimos, qisqaroq video yuboring.",
@@ -1429,7 +2377,14 @@ TEXTS = {
         'welcome': "Merhaba! Nun Bot'a hoş geldiniz.\nAşağıdaki menüden işlem seçiniz:",
         'menu_title': "📋 Ana Menü:",
         'btn_video': "🎬 Video İndir",
-        'btn_prayer': "🕌 Namaz Vakitleri",
+                'btn_prayer': "🕌 Namaz & İbadet",
+        'btn_adhkar_hub': "📿 Zikirler & Salavat",
+        'btn_daily_hadith': "📖 Günün Hadis-i Şerifi",
+        'btn_exam_todo': "📝 Günlük Ders Hedefleri (To-Do)",
+        'prompt_todo_add': "✍️ Eklemek istediğiniz ders hedefini yazıp gönderin:\n_(Örneğin: Matematik 20 soru çözümü, Fizik raporunu hazırla)_ ",
+        'btn_imsakiye_pdf': "📄 30 Günlük İmsakiye (PDF)",
+        'btn_qibla_compass': "🧭 Canlı Kıble Pusulası",
+        'btn_hijri_cal': "🌙 Dini Günler Takvimi",
         'btn_weather': "🌤️ Hava Durumu",
         'btn_pdf_hub': "📄 PDF & Belgeler",
         'btn_exam': "🎓 Sınav & Geri Sayım",
@@ -1508,6 +2463,19 @@ TEXTS = {
         'city_not_found': "Şehir bulunamadı. Lütfen şehir adını doğru yazın.",
         'weather_loading': "🌤️ Hava durumu bilgisi alınıyor...",
         'weather_city_not_found': "Konum bulunamadı. Lütfen il veya ilçe adını kontrol edip tekrar yazın.",
+        'loc_prompt_multimatch': "📍 *BİRDEN FAZLA KONUM BULUNDU*\n\nLütfen aradığınız doğru bölgeyi seçiniz:",
+        'btn_prayer_notif': "🔔 Ezan & Vakit Bildirimi",
+        'notif_menu_title': "🔔 *NAMAZ VAKTİ BİLDİRİMLERİ*",
+        'notif_menu_desc': "Namaz vakitleri girdiğinde botun size otomatik bildirim göndermesini ister misiniz?\nİstediğiniz modu seçiniz:",
+        'notif_btn_on_time': "✅ Tam Vaktinde (Ezan)",
+        'notif_btn_15m': "⏱️ 15 Dakika Önce",
+        'notif_btn_off': "🔕 Kapat",
+        'notif_saved': "Bildirim ayarınız kaydedildi!",
+        'notif_alert_title': "NAMAZ VAKTİ BİLDİRİMİ",
+        'notif_entered': "vakti girdi!",
+        'notif_verse': "«Şüphesiz namaz, mü'minler üzerine vakitleri belirlenmiş bir farzdır.» (Nisâ, 103)",
+        'friday_title': "HAYIRLI CUMALAR!",
+        'friday_text': "Bugün mübarek Cuma günü! Peygamber Efendimiz'e (s.a.v.) bolca salavat getirmeyi ve Kehf suresini okumayı unutmayınız. 🤲",
         'downloading': "Medya indiriliyor, lütfen bekleyin...",
         'uploading': "Telegram'a yükleniyor...",
         'error_size': "⚠️ Dosya boyutu Telegram'ın 50 MB sınırından büyük olduğu için gönderilemiyor.",
@@ -1594,7 +2562,14 @@ TEXTS = {
         'welcome': "Здравствуйте! Добро пожаловать в Nun Bot.\nВыберите действие в меню:",
         'menu_title': "📋 Главное меню:",
         'btn_video': "🎬 Скачать видео",
-        'btn_prayer': "🕌 Время намаза",
+                'btn_prayer': "🕌 Намаз и Ибадат",
+        'btn_adhkar_hub': "📿 Зикры и Салаваты",
+        'btn_daily_hadith': "📖 Хадис дня",
+        'btn_exam_todo': "📝 Задачи на день (To-Do)",
+        'prompt_todo_add': "✍️ Напишите учебную задачу на сегодня:\n_(Например: Решить 20 задач по математике, повторить конспект)_ ",
+        'btn_imsakiye_pdf': "📄 Расписание на 30 дней",
+        'btn_qibla_compass': "🧭 Компас Киблы",
+        'btn_hijri_cal': "🌙 Мусульманский календарь",
         'btn_weather': "🌤️ Прогноз погоды",
         'btn_pdf_hub': "📄 PDF и Документы",
         'btn_exam': "🎓 Экзамены & Таймер",
@@ -1673,6 +2648,19 @@ TEXTS = {
         'city_not_found': "Город не найден. Напишите правильное название.",
         'weather_loading': "🌤️ Получение прогноза погоды...",
         'weather_city_not_found': "Населенный пункт не найден. Проверьте правильность написания.",
+        'loc_prompt_multimatch': "📍 *НАЙДЕНО НЕСКОЛЬКО МЕСТ*\n\nПожалуйста, выберите нужный населенный пункт:",
+        'btn_prayer_notif': "🔔 Уведомления о намазе",
+        'notif_menu_title': "🔔 *УВЕДОМЛЕНИЯ О ВРЕМЕНИ НАМАЗА*",
+        'notif_menu_desc': "Хотите получать автоматические напоминания при наступлении времени намаза?\nВыберите режим:",
+        'notif_btn_on_time': "✅ Точно вовремя",
+        'notif_btn_15m': "⏱️ За 15 минут до",
+        'notif_btn_off': "🔕 Отключить",
+        'notif_saved': "Настройки уведомлений сохранены!",
+        'notif_alert_title': "УВЕДОМЛЕНИЕ О НАМАЗЕ",
+        'notif_entered': "время наступило!",
+        'notif_verse': "«Воистину, намаз предписан верующим в определенное время.» (Ан-Ниса, 103)",
+        'friday_title': "БЛАГОСЛОВЕННОЙ ПЯТНИЦЫ!",
+        'friday_text': "Сегодня благословенная пятница! Не забудьте произносить больше салаватов Пророку (мир ему) и читать суру Аль-Кахф. 🤲",
         'downloading': "Скачивается, пожалуйста подождите...",
         'uploading': "Отправка в Telegram...",
         'error_size': "⚠️ Размер файла превышает лимит Telegram (50 МБ).",
@@ -1759,7 +2747,14 @@ TEXTS = {
         'welcome': "Hello! Welcome to Nun Bot.\nChoose an option from the menu:",
         'menu_title': "📋 Main Menu:",
         'btn_video': "🎬 Download Video",
-        'btn_prayer': "🕌 Prayer Times",
+                'btn_prayer': "🕌 Prayer & Worship",
+        'btn_adhkar_hub': "📿 Adhkar & Salawat",
+        'btn_daily_hadith': "📖 Daily Hadith",
+        'btn_exam_todo': "📝 Daily Study Goals (To-Do)",
+        'prompt_todo_add': "✍️ Type your study goal or task for today:\n_(e.g. Solve 20 Math problems, read Biology chapter 3)_ ",
+        'btn_imsakiye_pdf': "📄 30-Day Timetable (PDF)",
+        'btn_qibla_compass': "🧭 Live Qibla Compass",
+        'btn_hijri_cal': "🌙 Islamic Calendar & Events",
         'btn_weather': "🌤️ Weather Forecast",
         'btn_pdf_hub': "📄 PDF & Documents",
         'btn_exam': "🎓 Exams & Countdown",
@@ -1838,6 +2833,19 @@ TEXTS = {
         'city_not_found': "City not found. Please enter a valid city name.",
         'weather_loading': "🌤️ Fetching weather data...",
         'weather_city_not_found': "Location not found. Please check spelling and try again.",
+        'loc_prompt_multimatch': "📍 *MULTIPLE LOCATIONS FOUND*\n\nPlease select your exact location:",
+        'btn_prayer_notif': "🔔 Prayer Time Notifications",
+        'notif_menu_title': "🔔 *PRAYER TIME NOTIFICATIONS*",
+        'notif_menu_desc': "Would you like to receive automated notifications when prayer time arrives?\nSelect your preference:",
+        'notif_btn_on_time': "✅ Exactly on Time",
+        'notif_btn_15m': "⏱️ 15 Minutes Before",
+        'notif_btn_off': "🔕 Turn Off",
+        'notif_saved': "Notification settings saved!",
+        'notif_alert_title': "PRAYER TIME NOTIFICATION",
+        'notif_entered': "time has arrived!",
+        'notif_verse': "«Indeed, prayer has been decreed upon the believers a decree of specified times.» (An-Nisa, 103)",
+        'friday_title': "BLESSED FRIDAY!",
+        'friday_text': "Blessed Friday! Sending peace and blessings upon the Prophet (pbuh) and reciting Surah Al-Kahf is highly virtuous today. 🤲",
         'downloading': "Downloading media, please wait...",
         'uploading': "Uploading to Telegram...",
         'error_size': "⚠️ File exceeds Telegram's 50 MB limit.",
@@ -1934,8 +2942,7 @@ def get_reply_menu(user_id, context=None):
         [KeyboardButton(t['btn_weather']), KeyboardButton(t['btn_pdf_hub'])],
         [KeyboardButton(t['btn_exam']), KeyboardButton(t['btn_schedule_img'])],
         [KeyboardButton(t['btn_pomodoro']), KeyboardButton(t['btn_translit'])],
-        [KeyboardButton(t['btn_adhkar']), KeyboardButton(t['btn_timezone_hub'])],
-        [KeyboardButton(t['btn_lang'])]
+        [KeyboardButton(t['btn_timezone_hub']), KeyboardButton(t['btn_lang'])],
     ], resize_keyboard=True)
 
 # =====================================================================
@@ -2284,6 +3291,11 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = TEXTS.get(u_lang, TEXTS['uz'])
     tz_sign = "+" if tz_offset >= 0 else ""
     
+    loc_lbl = "GPS Joylashuv" if u_lang=='uz' else ("GPS Konumu" if u_lang=='tr' else ("GPS Локация" if u_lang=='ru' else "GPS Location"))
+    timings, d_name, dt_s, h_s, src = await fetch_prayer_times_by_coord(
+        loc.latitude, loc.longitude, 0.0, loc_lbl, f"{loc.latitude:.3f}, {loc.longitude:.3f}", "", user_id=user_id
+    )
+    
     card = (
         f"📍 *{t['tz_loc_detected']}*\n\n"
         f"🕒 {t['btn_timezone']}: `UTC{tz_sign}{tz_offset}`\n"
@@ -2291,6 +3303,11 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"_{t['tz_synced_hint']}_"
     )
     await update.message.reply_text(card, parse_mode="Markdown", reply_markup=get_reply_menu(user_id, context))
+    
+    if timings:
+        p_card = format_prayer_card(f"{loc_lbl} ({loc.latitude:.3f}, {loc.longitude:.3f})", timings, dt_s, h_s, src, u_lang, lat=loc.latitude, lon=loc.longitude, user_now=user_now, user_id=user_id)
+        kb = get_prayer_hub_keyboard(user_id, u_lang, loc.latitude, loc.longitude)
+        await update.message.reply_text(p_card, parse_mode="Markdown", reply_markup=kb)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2398,6 +3415,162 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # NAMOZ SHAHARINI O'ZGARTIRISH
+    if data.startswith("open_hadith_"):
+        offset = int(data.replace("open_hadith_", "", 1))
+        now = get_user_now(user_id, context)
+        h_obj, cur_idx = get_daily_hadith(now, offset)
+        h_card = format_daily_hadith_card(h_obj, now, user_lang)
+        lbl_next = {'uz': "🔄 Boshqa hadis", 'tr': "🔄 Başka Hadis", 'ru': "🔄 Другой хадис", 'en': "🔄 Another Hadith"}.get(user_lang, "🔄 Next")
+        kb_h = InlineKeyboardMarkup([
+            [InlineKeyboardButton(lbl_next, callback_data=f"open_hadith_{offset+1}")],
+            [InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]
+        ])
+        await query.message.reply_text(h_card, parse_mode="Markdown", reply_markup=kb_h)
+        return
+
+    if data == "open_todo_hub":
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await query.message.reply_text(card_t, parse_mode="Markdown", reply_markup=kb_t)
+        return
+
+    if data.startswith("todo_tog_"):
+        idx_t = int(data.replace("todo_tog_", "", 1))
+        toggle_user_todo(user_id, idx_t)
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_t, reply_markup=kb_t, parse_mode="Markdown")
+        return
+
+    if data == "todo_clear":
+        clear_completed_todos(user_id)
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await safe_edit_text_markup(query.message, card_t, reply_markup=kb_t, parse_mode="Markdown")
+        return
+
+    if data == "todo_add":
+        cleanup_user_temp_files(context, user_id)
+        context.user_data['mode'] = 'todo_input'
+        await query.message.reply_text(get_text(user_id, 'prompt_todo_add', context), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")]]))
+        return
+
+    if data == "exam_back_hub":
+        exams = get_user_exams(user_id)
+        now = get_user_now(user_id, context)
+        cards = []
+        if exams:
+            for e in exams:
+                cd_str = format_exam_countdown(e.get('date', ''), now, user_lang)
+                cards.append(f"📌 *{e.get('title')}*\n📅 `{e.get('date')}`\n{cd_str}\n")
+        else:
+            cards = [get_text(user_id, 'exam_empty', context)]
+        hdr = get_text(user_id, 'exam_hub_title', context)
+        kb_ex = InlineKeyboardMarkup([
+            [InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add"),
+             InlineKeyboardButton(get_text(user_id, 'btn_exam_todo', context), callback_data="open_todo_hub")]
+        ])
+        await safe_edit_text_markup(query.message, f"{hdr}\n\n" + "\n".join(cards), reply_markup=kb_ex, parse_mode="Markdown")
+        return
+
+    if data == "open_adhkar_hub":
+        await query.message.reply_text(get_text(user_id, 'prompt_adhkar', context), reply_markup=get_adhkar_selection_keyboard(user_lang))
+        return
+
+    if data == "open_hijri_cal":
+        now = get_user_now(user_id, context)
+        card_cal = format_islamic_calendar_card(now, user_lang)
+        await query.message.reply_text(card_cal, parse_mode="Markdown")
+        return
+
+    if data == "show_qibla_info":
+        u_coords = get_user_coords(user_id)
+        if u_coords:
+            q_deg, q_comp = calculate_qibla(u_coords['lat'], u_coords['lon'])
+            d_name, emoji = q_comp.get(user_lang, q_comp['uz'])
+            q_lbl = {'uz': "Qibla yoʻnalishi", 'tr': "Kıble Açısı", 'ru': "Направление Киблы", 'en': "Qibla Direction"}.get(user_lang, "Qibla")
+            q_hint = {'uz': "Qibla tomon burilish uchun telefon kompasini ishlating.", 'tr': "Kıble yönüne dönmek için telefonunuzun pusulasını kullanabilirsiniz.", 'ru': "Используйте компас телефона, чтобы сориентироваться на Киблу.", 'en': "Use your phone compass to face the Qibla."}.get(user_lang, "")
+            msg = f"🧭 *{q_lbl}:* `{q_deg}°` {emoji} *{d_name}*\n\n_{q_hint}_"
+            await query.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await query.message.reply_text("📍 " + get_text(user_id, 'prompt_prayer', context))
+        return
+
+    if data == "gen_imsakiye_pdf":
+        u_coords = get_user_coords(user_id)
+        saved_c = get_user_city(user_id) or "Shahar"
+        if not u_coords:
+            await query.message.reply_text("📍 " + get_text(user_id, 'prompt_prayer', context))
+            return
+        status = await query.message.reply_text("⏳ " + get_text(user_id, 'doc_processing', context))
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                out_pdf = os.path.join(tmp_dir, f"imsakiye_{user_id}.pdf")
+                tz_off = get_user_tz_offset(user_id, context)
+                generate_imsakiye_pdf(out_pdf, saved_c, u_coords['lat'], u_coords['lon'], u_coords.get('elevation', 0.0), float(tz_off), u_coords.get('country', ''), user_lang)
+                cap = f"📄 *{saved_c}* — " + {'uz': "30 kunlik namoz va imsokiya taqvimi", 'tr': "30 Günlük Namaz ve İmsakiye Çizelgesi", 'ru': "Расписание намаза на 30 дней", 'en': "30-Day Prayer and Ramadan Timetable"}.get(user_lang, "İmsakiye")
+                with open(out_pdf, "rb") as f_doc:
+                    await query.message.reply_document(document=f_doc, filename=f"imsakiye_{user_lang}.pdf", caption=cap, parse_mode="Markdown")
+        finally:
+            gc.collect()
+            try:
+                await status.delete()
+            except Exception:
+                pass
+        return
+
+    if data == "open_prayer_notif_menu":
+        cfg = get_user_prayer_notif(user_id)
+        cur_status = "✅ " + t['notif_btn_on_time'] if (cfg.get("enabled") and cfg.get("offset")==0) else ("⏱️ " + t['notif_btn_15m'] if (cfg.get("enabled") and cfg.get("offset")==15) else "🔕 " + t['notif_btn_off'])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t['notif_btn_on_time'], callback_data="set_pnotif_0")],
+            [InlineKeyboardButton(t['notif_btn_15m'], callback_data="set_pnotif_15")],
+            [InlineKeyboardButton(t['notif_btn_off'], callback_data="set_pnotif_off")],
+            [InlineKeyboardButton(t['btn_cancel'], callback_data="cancel_action")],
+        ])
+        msg = f"{t['notif_menu_title']}\n\n{t['notif_menu_desc']}\n\n📌 *{cur_status}*"
+        await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=kb)
+        return
+
+    if data.startswith("set_pnotif_"):
+        mode_val = data.replace("set_pnotif_", "", 1)
+        if mode_val == "off":
+            toggle_user_prayer_notif(user_id, "disable")
+        elif mode_val == "15":
+            toggle_user_prayer_notif(user_id, "15min")
+        else:
+            toggle_user_prayer_notif(user_id, "on_time")
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(chat_id=user_id, text=f"✅ {t['notif_saved']}")
+        return
+
+    if data.startswith("sel_prayer_cand_"):
+        idx = int(data.replace("sel_prayer_cand_", "", 1))
+        cands = context.user_data.get('prayer_candidates', [])
+        if 0 <= idx < len(cands):
+            c = cands[idx]
+            context.user_data.pop('prayer_candidates', None)
+            cleanup_user_temp_files(context, user_id)
+            timings, d_name, dt_s, h_s, src = await fetch_prayer_times_by_coord(
+                c['lat'], c['lon'], c['elevation'], c['name'], c['admin1'], c['country'], c['timezone'], user_id=user_id
+            )
+            if timings:
+                card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang, user_now=get_user_now(user_id, context), user_id=user_id)
+                u_coords = get_user_coords(user_id)
+                kb = get_prayer_hub_keyboard(user_id, user_lang, u_coords.get('lat') if u_coords else None, u_coords.get('lon') if u_coords else None)
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                await context.bot.send_message(chat_id=user_id, text=card, parse_mode="Markdown", reply_markup=kb)
+                return
+
     if data == "change_prayer_city":
         cleanup_user_temp_files(context, user_id)
         context.user_data['mode'] = 'prayer'
@@ -2630,6 +3803,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================================================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    # Adhkar direct button support
+    adhkar_variants = ["📿 Zikrlar & Salovatlar", "📿 Zikrlar & Salavatlar", "📿 Zikirler & Salavat", "📿 Зикры и Салаваты", "📿 Adhkar & Salawat"]
+    if raw_text in adhkar_variants:
+        cleanup_user_temp_files(context, user_id)
+        await update.message.reply_text(get_text(user_id, 'prompt_adhkar', context), reply_markup=get_adhkar_selection_keyboard(user_lang))
+        return
+
     mode = context.user_data.get('mode', 'auto')
     doc = update.message.document
     if not doc:
@@ -2836,6 +4016,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         allowed_texts = [TEXTS[l].get(b_key, '') for l in TEXTS]
         if b_key == 'btn_translit':
             allowed_texts.extend(["🔤 Krill ⇄ Lotin", "🔤 Kiril ⇄ Latin", "🔤 Кирилл ⇄ Латиница", "🔤 Кириллица ⇄ Латиница"])
+        elif b_key == 'btn_prayer':
+            allowed_texts.extend(["🕌 Namoz vaqtlari", "🕌 Namaz Vakitleri", "🕌 Время намаза", "🕌 Prayer Times", "🕌 Namoz & Ibadat", "🕌 Namoz & Ibodat", "🕌 Namaz & İbadet"])
         if raw_text in allowed_texts:
             cleanup_user_temp_files(context, user_id)
             if mode_val == 'video':
@@ -2845,17 +4027,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if saved_city:
                     status = await update.message.reply_text("⏳ " + get_text(user_id, 'downloading', context))
                     try:
-                        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(saved_city, user_id=user_id)
+                        res_p = await fetch_prayer_times(saved_city, user_id=user_id, user_lang=user_lang)
+                        timings, d_name, dt_s, h_s, src = res_p[0], res_p[1], res_p[2], res_p[3], res_p[4]
                     finally:
                         try:
                             await status.delete()
                         except Exception:
                             pass
                     if timings:
-                        card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang)
-                        kb = InlineKeyboardMarkup([
-                            [InlineKeyboardButton(get_text(user_id, 'btn_change_prayer_city', context), callback_data="change_prayer_city")]
-                        ])
+                        card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang, user_now=get_user_now(user_id, context), user_id=user_id)
+                        u_coords = get_user_coords(user_id)
+                        kb = get_prayer_hub_keyboard(user_id, user_lang, u_coords.get('lat') if u_coords else None, u_coords.get('lon') if u_coords else None)
                         await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
                         return
                 context.user_data['mode'] = 'prayer'
@@ -2897,7 +4079,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     f"{hdr}\n\n" + "\n".join(cards),
                     parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add")]])
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(get_text(user_id, 'exam_btn_add', context), callback_data="exam_add"),
+                         InlineKeyboardButton(get_text(user_id, 'btn_exam_todo', context), callback_data="open_todo_hub")]
+                    ])
                 )
             elif mode_val == 'schedule_img':
                 context.user_data['mode'] = 'schedule_img_input'
@@ -2941,7 +4126,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             now_str = user_now.strftime("%H:%M")
             tz_sign = "+" if tz_detected >= 0 else ""
             
-            timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text, user_id=user_id)
+            res_p = await fetch_prayer_times(raw_text, user_id=user_id, user_lang=user_lang)
+            timings, d_name = res_p[0], (res_p[1] if isinstance(res_p[1], str) else raw_text.title())
             prayer_sync_text = f"\n\n🕌 *{d_name}* {t['tz_prayer_synced_lbl']}" if timings else ""
 
             card = (
@@ -2963,6 +4149,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             w_res = await fetch_weather(raw_text, user_lang)
         finally:
+            gc.collect()
             try:
                 await status.delete()
             except Exception:
@@ -3033,6 +4220,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # 3. KORUMALI SINAV GİRİŞİ (CANLI AYARLAYICI)
+    if mode == 'todo_input':
+        add_user_todo(user_id, raw_text)
+        cleanup_user_temp_files(context, user_id)
+        now = get_user_now(user_id, context)
+        card_t = format_todo_card(user_id, now, user_lang)
+        kb_t = build_todo_keyboard(user_id, user_lang)
+        await update.message.reply_text(card_t, parse_mode="Markdown", reply_markup=kb_t)
+        return
+
     if mode == 'exam_title_input':
         title_clean = raw_text.strip()
         context.user_data['exam_draft_title'] = title_clean
@@ -3062,6 +4258,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_document(document=f_doc, filename=f"timetable_{user_lang}.png")
             cleanup_user_temp_files(context, user_id)
         finally:
+            gc.collect()
             try:
                 await status.delete()
             except Exception:
@@ -3102,18 +4299,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(get_text(user_id, 'prompt_remind', context), parse_mode="Markdown")
         return
 
-    # 6. NAMAZ VAKTİ
+    # 6. NAMAZ VAKTİ (ÇOKLU KÖY/İLÇE BUTON DESTEĞİ)
     if mode == 'prayer':
-        timings, d_name, dt_s, h_s, src = await fetch_prayer_times(raw_text, user_id=user_id)
+        res_p = await fetch_prayer_times(raw_text, user_id=user_id, user_lang=user_lang)
+        timings, d_name, dt_s, h_s, src, status_type = res_p[0], res_p[1], res_p[2], res_p[3], res_p[4], res_p[5]
+        if status_type == "MULTIPLE" and isinstance(d_name, list):
+            candidates = d_name
+            context.user_data['prayer_candidates'] = candidates
+            buttons = []
+            for idx, c in enumerate(candidates[:4]):
+                p_label = f"📍 {c['name']}"
+                if c['admin1']:
+                    p_label += f" ({c['admin1']})"
+                if c['country']:
+                    p_label += f", {c['country']}"
+                buttons.append([InlineKeyboardButton(p_label[:40], callback_data=f"sel_prayer_cand_{idx}")])
+            buttons.append([InlineKeyboardButton(get_text(user_id, 'btn_cancel', context), callback_data="cancel_action")])
+            await update.message.reply_text(
+                get_text(user_id, 'loc_prompt_multimatch', context),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            return
+
         if timings:
-            save_user_city(user_id, d_name)
-            tz_detected = resolve_tz_from_city(raw_text)
-            if tz_detected is not None:
-                save_user_timezone(user_id, tz_detected, locked=True)
-            card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang)
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(get_text(user_id, 'btn_change_prayer_city', context), callback_data="change_prayer_city")]
-            ])
+            card = format_prayer_card(d_name, timings, dt_s, h_s, src, user_lang, user_now=get_user_now(user_id, context), user_id=user_id)
+            u_coords = get_user_coords(user_id)
+            kb = get_prayer_hub_keyboard(user_id, user_lang, u_coords.get('lat') if u_coords else None, u_coords.get('lon') if u_coords else None)
             await update.message.reply_text(card, parse_mode="Markdown", reply_markup=kb)
             cleanup_user_temp_files(context, user_id)
             return
@@ -3122,16 +4334,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 7. ÇEVİRİ (KUSURSUZ İKİ YÖNLÜ ÇEVİRİ MOTORU)
     if mode == 'translit' or len(raw_text.split()) >= 3:
+        lbl_latin = {'uz': "Lotin", 'tr': "Latin", 'ru': "Латиница", 'en': "Latin"}.get(user_lang, "Latin")
+        lbl_cyril = {'uz': "Kirill", 'tr': "Kiril", 'ru': "Кириллица", 'en': "Cyrillic"}.get(user_lang, "Kirill")
         if is_mostly_cyrillic(raw_text):
-            await update.message.reply_text(f"🔤 *Lotin:*\n\n{cyrillic_to_latin(raw_text)}", parse_mode="Markdown")
+            await update.message.reply_text(f"🔤 *{lbl_latin}:*\n\n{cyrillic_to_latin(raw_text)}", parse_mode="Markdown")
         else:
-            await update.message.reply_text(f"🔤 *Кирилл:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
+            await update.message.reply_text(f"🔤 *{lbl_cyril}:*\n\n{latin_to_cyrillic(raw_text)}", parse_mode="Markdown")
         return
 
     await update.message.reply_text(get_text(user_id, 'menu_title', context), reply_markup=get_reply_menu(user_id, context))
 
 async def post_init_setup(application):
     asyncio.create_task(reminders_worker(application))
+    asyncio.create_task(prayer_and_friday_worker(application))
 
 def main():
     token = os.environ.get("BOT_TOKEN")
